@@ -48,7 +48,8 @@ src/
 │  └─ mockArtwork.ts      #   contracts/mock + contracts/assets を読む
 └─ types/               # contracts/ Schema の写像
    ├─ artwork.ts
-   └─ assetManifest.ts
+   ├─ assetManifest.ts
+   └─ generateResponse.ts  # 生成成功Response（上2つを束ねるだけ・再定義しない）
 ```
 
 共通Mockは `frontend/` 配下へコピーせず、Repository Root の `contracts/` を直接読む
@@ -59,6 +60,8 @@ src/
 - 3D Preview は Read Only。Artwork Data を書き換えない
 - Pixel座標は描画時のみ。保存時は正規化 `x` / `y` / `scale` へ戻す（`artwork/geometry.ts`）
 - `assetId` → URL は必ず Asset Manifest 経由。Artwork Data 内にURLを期待しない
+- 生成成功Responseの形は `/contracts/generate-success-response.schema.json` が正本。
+  Frontend側で独自のResponse型を正本にしない
 - `layers[]` / `sourcePhotos[]` を固定長として扱わない。配列位置に意味を持たせない
 - 2D Edit 後にAIを呼ばない。更新後の Artwork Data からロジックベースで再描画する
 - MockかRealかで Artwork の解釈を分岐させない

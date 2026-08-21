@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omoi.example/contracts/generate-success-response.schema.json",
+  "title": "omoi Generate Success Response",
+  "description": "POST /api/v1/artworks/generate の最終成功Result（Frontend ↔ Backend の生成成功境界）。Artwork Data と Asset Manifest を束ねるだけの層であり、両者の定義はここで再定義せず既存Schemaを $ref する。同期 / 非同期のどちらを採っても最終成功Resultはこの形（技術設計 §14.2）。失敗時は AGENTS.md §4 の Error形式であり本Schemaではない。",
+  "type": "object",
+  "required": ["artwork", "assetManifest"],
+  "additionalProperties": false,
+  "properties": {
+    "artwork": {
+      "description": "作品構成のSingle Source of Truth。正本は artwork.schema.json。",
+      "$ref": "https://omoi.example/contracts/artwork.schema.json"
+    },
+    "assetManifest": {
+      "description": "assetId を Browser から取得可能な url へ解決する表。正本は asset-manifest.schema.json。Artwork Data 本体へ Runtime依存URLを埋め込まないための分離レイヤー。",
+      "$ref": "https://omoi.example/contracts/asset-manifest.schema.json"
+    }
+  }
+}

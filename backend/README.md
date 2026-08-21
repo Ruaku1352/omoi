@@ -23,6 +23,8 @@ uv run ruff format . # Format
 
 `MOCK_AI=true` にすると実Geminiを呼ばず、共通Mock（`../contracts/mock/artwork.json` +
 `../contracts/assets/`）を **Real生成と同じ形式**で返す。
+返る形は `../contracts/mock/generate-success-response.json` と同じ
+（`url` だけRuntime依存なので環境ごとに変わる）。
 
 ```bash
 MOCK_AI=true CORS_ORIGINS=http://localhost:5173 uv run uvicorn app.main:app --reload
@@ -36,8 +38,8 @@ curl -F photos=@../contracts/assets/source-p1.jpg -F memoryText=海に行った�
 
 - Request: `multipart/form-data` — `photos`（複数・可変長）/ `memoryText`（任意）
 - Response: `{"artwork": ..., "assetManifest": ...}`
-  - `artwork` は `/contracts/artwork.schema.json`
-  - `assetManifest` は `/contracts/asset-manifest.schema.json`
+  - Schema正本: `/contracts/generate-success-response.schema.json`
+    （`artwork.schema.json` と `asset-manifest.schema.json` を `$ref` するだけの層）
 - Error: `/AGENTS.md` §4 の形式
 
 `GET /health` は担当裁量のHealth Check。OpenAPIには載せず、Product API Contractに含めない。
@@ -56,6 +58,7 @@ backend/
 │  ├─ errors.py             # AGENTS.md §4 の Error形式と例外Handler
 │  ├─ api/v1/artworks.py    # POST /api/v1/artworks/generate
 │  ├─ models/               # contracts/ Schema の写像（Pydantic）
+│  │                        #   api.py = GenerateSuccessResponse
 │  └─ services/
 │     ├─ validation.py      # Schemaで表現できない規則の検証
 │     ├─ asset_store.py     # Asset Binary → URL（方式は【未決定】）

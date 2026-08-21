@@ -7,12 +7,20 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { Artwork } from '../types/artwork'
+import type { AssetManifest } from '../types/assetManifest'
+import type { GenerateSuccessResponse } from '../types/generateResponse'
 import { buildAssetIndex, resolveAssetUrl } from './assetIndex'
 import { fromLayerRectPx, layerHeightRatio, toLayerPlane, toLayerRectPx } from './geometry'
 import { normalizeLayerIndexes, sortByLayerIndex } from './layerOrder'
 
+function readMock<T>(name: string): T {
+  return JSON.parse(
+    readFileSync(fileURLToPath(new URL(`../../../contracts/mock/${name}`, import.meta.url)), 'utf-8'),
+  ) as T
+}
+
 const mockPath = fileURLToPath(new URL('../../../contracts/mock/artwork.json', import.meta.url))
-const artwork = JSON.parse(readFileSync(mockPath, 'utf-8')) as Artwork
+const artwork = readMock<Artwork>('artwork.json')
 
 describe('共通Mockの前提', () => {
   it('可変長として読む（長さを決め打ちしない）', () => {
@@ -74,6 +82,30 @@ describe('geometry', () => {
     expect(back.x).toBeCloseTo(layer.x)
     expect(back.y).toBeCloseTo(layer.y)
     expect(back.scale).toBeCloseTo(layer.scale)
+  })
+})
+
+describe('生成成功Response（contracts/generate-success-response.schema.json）', () => {
+  const response = readMock<GenerateSuccessResponse>('generate-success-response.json')
+  const manifest = readMock<AssetManifest>('asset-manifest.json')
+
+  it('artwork / assetManifest を束ねただけの形', () => {
+    expect(Object.keys(response).sort()).toEqual(['artwork', 'assetManifest'])
+    expect(response.artwork).toEqual(artwork)
+    expect(response.assetManifest).toEqual(manifest)
+  })
+
+  it('Artworkが参照する全AssetをManifestが解決できる', () => {
+    const index = buildAssetIndex(response.assetManifest)
+    for (const layer of response.artwork.layers) {
+      expect(() => resolveAssetUrl(index, layer.asset.assetId)).not.toThrow()
+      for (const candidate of layer.replacementCandidates) {
+        expect(() => resolveAssetUrl(index, candidate.asset.assetId)).not.toThrow()
+      }
+    }
+    for (const photo of response.artwork.sourcePhotos) {
+      expect(() => resolveAssetUrl(index, photo.asset.assetId)).not.toThrow()
+    }
   })
 })
 

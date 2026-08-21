@@ -2,19 +2,17 @@
  * POST /api/v1/artworks/generate
  *
  * 唯一FIXされている生成Endpoint（AGENTS.md §4）。
- * 成功Resultは Artwork Data + Asset Manifest。同期/非同期どちらになっても
- * 最終成功Resultの形は変わらないので、呼び出し側はこの戻り値だけを見る。
+ * 成功Resultは Artwork Data + Asset Manifest。Schema正本は
+ * `/contracts/generate-success-response.schema.json`。
+ * 同期/非同期どちらになっても最終成功Resultの形は変わらないので、
+ * 呼び出し側はこの戻り値だけを見る。
  */
 
 import { apiBaseUrl } from '../config/env'
-import type { Artwork } from '../types/artwork'
-import type { AssetManifest } from '../types/assetManifest'
+import type { GenerateSuccessResponse } from '../types/generateResponse'
 import { ApiError, toApiError } from './errors'
 
-export interface GenerateArtworkResult {
-  artwork: Artwork
-  assetManifest: AssetManifest
-}
+export type { GenerateSuccessResponse }
 
 export interface GenerateArtworkInput {
   /** 可変長。固定5枚ではない（AGENTS.md §4）。 */
@@ -26,7 +24,7 @@ export interface GenerateArtworkInput {
 
 export async function generateArtwork(
   input: GenerateArtworkInput,
-): Promise<GenerateArtworkResult> {
+): Promise<GenerateSuccessResponse> {
   const form = new FormData()
   for (const photo of input.photos) {
     form.append('photos', photo)
@@ -45,7 +43,7 @@ export async function generateArtwork(
     throw await toApiError(response)
   }
 
-  const result = (await response.json()) as GenerateArtworkResult
+  const result = (await response.json()) as GenerateSuccessResponse
   if (!result?.artwork || !result?.assetManifest) {
     throw new ApiError({
       code: 'INTERNAL_ERROR',

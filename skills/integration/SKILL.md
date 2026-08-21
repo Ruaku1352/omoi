@@ -9,13 +9,26 @@ description: 担当間の接続を確認するときに使う。Mock と Real �
 
 ## Contract Test
 ```bash
-python scripts/generate_mock_assets.py    # ダミーAssetを再生成
-python scripts/validate_contracts.py      # 共通Mockを検証
+python scripts/generate_mock_assets.py     # ダミーAssetを再生成
+python scripts/validate_contracts.py       # 共通Mock一式を検証
+python scripts/validate_contracts.py x.json  # Artwork / 生成成功Response（形は自動判定）
 ```
 
 - 共通MockがSchema Validationを通ること
 - **Real生成結果が同じSchemaを満たすこと**が接続確認の条件
 - Frontend / Physical Output 側で独自にField名を読み替えないこと
+
+### Frontend ↔ Backend の生成成功境界
+
+正本は `contracts/generate-success-response.schema.json`。
+
+```json
+{ "artwork": { ... }, "assetManifest": { "assets": [ ... ] } }
+```
+
+- Artwork / Asset Manifest の定義は `$ref` 先が持つ。ここで再定義しない
+- Artworkが参照する全 `assetId` を Manifest が解決できることまで検証される
+- 共通Mockは `contracts/mock/generate-success-response.json`
 
 ## Mock / Real の切り替え
 - Backend: `MOCK_AI=true` で実Geminiを呼ばずに同じ形式を返す

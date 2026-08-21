@@ -10,11 +10,20 @@
  * 消費側から見た形は Backend が返す Asset Manifest と同一。
  */
 
+import rawManifest from '../../../contracts/mock/asset-manifest.json'
 import rawArtwork from '../../../contracts/mock/artwork.json'
 import type { Artwork, AssetRef } from '../types/artwork'
 import type { AssetManifest, AssetManifestEntry } from '../types/assetManifest'
 
 export const mockArtwork = rawArtwork as Artwork
+
+/**
+ * 共通Mock の Asset Manifest（`/contracts/mock/asset-manifest.json`）。
+ *
+ * `url` はPlaceholderで実際には取得できない。形を合わせるためのFixtureであり、
+ * 画面表示には下の `buildMockAssetManifest()` が返す開発用Manifestを使う。
+ */
+export const mockAssetManifest = rawManifest as AssetManifest
 
 const MIME_BY_EXT: Record<string, AssetManifestEntry['mimeType']> = {
   png: 'image/png',
