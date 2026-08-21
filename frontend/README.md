@@ -60,8 +60,9 @@ src/
 - 3D Preview は Read Only。Artwork Data を書き換えない
 - Pixel座標は描画時のみ。保存時は正規化 `x` / `y` / `scale` へ戻す（`artwork/geometry.ts`）
 - `assetId` → URL は必ず Asset Manifest 経由。Artwork Data 内にURLを期待しない
-- 生成成功Responseの形は `/contracts/generate-success-response.schema.json` が正本。
-  Frontend側で独自のResponse型を正本にしない
+- 生成成功Responseの形は `/contracts/generate-success-response.schema.json` に従う。
+  Frontend側で独自のResponse型を正本にしない。
+  外側のKey名は【確認待ち：チーム】なので `src/types/generateResponse.ts` に閉じ込めてある
 - `layers[]` / `sourcePhotos[]` を固定長として扱わない。配列位置に意味を持たせない
 - 2D Edit 後にAIを呼ばない。更新後の Artwork Data からロジックベースで再描画する
 - MockかRealかで Artwork の解釈を分岐させない

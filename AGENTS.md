@@ -19,6 +19,7 @@ Machine Readableな契約の正本は `contracts/` — `artwork.schema.json` /
 |---|---|---|
 | **【FIX】** | 確定。この前提で実装する | そのまま実装する。変更提案は可、独断変更は不可 |
 | **【仮決定】** | 当面のP0開発前提。検証後に最終FIX | 実装してよいが、切り替え可能な形にする |
+| **【確認待ち：担当名】** | 初案。関係者が確認してからFIXする | 実装してよいが**FIX扱いにしない**。変える提案が来たら追随する |
 | **【PoC後FIX】** | 検証結果を見て決める | **値をハードコードして確定扱いにしない**。環境変数・設定に逃がす |
 | **【未決定】** | 現時点で固定しない | **Directory / Service / Endpoint を先回りで作らない** |
 | **【担当裁量】** | 担当者が決めてよい | 自由に決めてよい |
@@ -28,7 +29,6 @@ Driveの「技術設計」§2 とはラベル名が一部違う。意味は同�
 | 本ファイル | Drive「技術設計」 |
 |---|---|
 | 【未決定】 | 【検討中】 |
-| （対応なし） | 【確認待ち：担当名】— 担当の確認待ち。Agentは実装前提にしない |
 
 「たぶん必要だから」で【未決定】のものを作らないこと。実際に必要になった時点で追加する。
 
@@ -134,9 +134,12 @@ Top Levelは担当者別ではなく、**「一緒にBuild / Deploy / 実行さ�
 - Artwork Dataは `assetId` / `mimeType` / `widthPx` / `heightPx` のみ持つ
 - **Runtime依存のURLをArtwork Data本体へ埋め込まない**
 - Frontendへの生成成功結果は **Artwork Data + Asset Manifest**。Manifestは最低限
-  `assetId` / `url` / `mimeType` / `widthPx` / `heightPx` を持つ（`contracts/asset-manifest.schema.json`）
-- 両者を束ねた生成成功Responseの正本は `contracts/generate-success-response.schema.json`。
-  Artwork / Manifest の定義を再定義せず `$ref` するだけの層
+  `assetId` / `url` / `mimeType` / `widthPx` / `heightPx` を持つ
+- **Asset Manifest のSchema正本は `contracts/asset-manifest.schema.json`**【FIX】
+  （技術設計 §9.5 / §24.1）。Fieldの意味を変える場合は Artwork Contract と同じ扱いで共有する
+- 両者を束ねた生成成功Responseは `contracts/generate-success-response.schema.json`。
+  Artwork / Manifest の定義を再定義せず `$ref` するだけの層。
+  **外側のKey名は【確認待ち：チーム】**（下記 §4）
 - 透過Layer Assetは **RGBA PNG**
 - Artwork Bundleでは同じ `assetId` のBinaryを `assets/` 配下へ置く
 
@@ -163,8 +166,12 @@ Prefix: `/api/v1`
 { "artwork": { ... }, "assetManifest": { "assets": [ ... ] } }
 ```
 
-- Schema正本: `contracts/generate-success-response.schema.json`【FIX】。
-  既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない
+- **外側のKey名（`artwork` / `assetManifest`）は【確認待ち：チーム】。**
+  技術設計にまだ定義が無く、Backendが既に返している形へ合わせたRepository側の暫定案。
+  公開チャンネルで確認中であり **FIXではない**。変わる場合は Schema / Mock / 両実装を同時に直す
+- Schema: `contracts/generate-success-response.schema.json`。
+  既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない。
+  **`$ref` 先の2つは【FIX】された正本**であり、確認待ちなのは束ね方だけ
 - 共通Mock: `contracts/mock/generate-success-response.json`
 - JSONのKeyはArtwork Schemaと同じ **camelCase** を維持する【FIX】
 - 同期 / 非同期どちらで返すかは【PoC後FIX】。**どちらでも最終成功Resultの形は同じ**
@@ -296,6 +303,9 @@ layerHeightMm  = layerWidthMm * asset.heightPx / asset.widthPx
 - Web Applicationから3D Printerを直接操作する構成にしない【FIX】
 - Portable Artwork Bundle: ZIPまたは展開済みDirectory。最低限 `artwork.json` と
   参照される `assets/` を含む。`artwork.json` は通常のArtwork Dataと同じSchema【FIX】
+- **BundleへのSerializeは常に必須ではない**【FIX】（技術設計 §16.1 / §26.1）。
+  別Runtime / Toolへ渡す方式を採る場合のみ必要で、同一Runtime内で
+  Artwork Data + Assets を直接扱うなら不要。**Mock Bundle も先回りで作らない**
 - STL生成方式、板形状、厚み、Layer Gap、Material、実行場所、Repository配置は【PoC後FIX】
 
 ---

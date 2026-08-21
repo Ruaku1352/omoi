@@ -51,7 +51,7 @@ Mermaid構成図と sequenceDiagram の2枚固定は必須ではない。必要�
 ├─ contracts/         # Deploy Unitを跨ぐ共通Contract（Machine Readableな正本）
 │  ├─ artwork.schema.json                   # Artwork Data Schema
 │  ├─ asset-manifest.schema.json            # assetId → url の解決表
-│  ├─ generate-success-response.schema.json # 生成成功Response（上の2つを束ねる）
+│  ├─ generate-success-response.schema.json # 生成成功Response（束ねるだけ・Key名は確認中）
 │  ├─ mock/artwork.json                     # 共通Mock（写真5枚・4層）
 │  ├─ mock/asset-manifest.json              # 共通MockのAsset Manifest
 │  ├─ mock/generate-success-response.json   # 共通Mockの生成成功Response
@@ -113,7 +113,7 @@ Real AIの完成を待たずに各担当が開発を始められるよう、
 |---|---|
 | `mock/artwork.json` | Artwork Data を読む側すべて（3D / 2D / 物理出力） |
 | `mock/asset-manifest.json` | `assetId` → URL の解決を組む側 |
-| `mock/generate-success-response.json` | Frontend ↔ Backend の生成成功境界 |
+| `mock/generate-success-response.json` | Frontend ↔ Backend の生成成功境界（Key名は確認中） |
 
 - 写真5枚・4層の代表ケース。ただし `layers[]` / `sourcePhotos[]` は**可変長**
 - 差し替えUIを単独検証できるよう `replacementCandidates` を持つLayerを含む

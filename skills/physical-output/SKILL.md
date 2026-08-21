@@ -23,6 +23,10 @@ Frontend内部State / Canvas Pixel / Three.js座標 / AI Prompt へ依存しな�
 最低限 `artwork.json` と参照される `assets/`）を使う。
 同一Runtime内で生成する場合はBundleへのSerializeを必須にしない。
 
+**Mock Bundle を先回りで作らない。** 別Runtime / Toolへ渡す方式を採る場合のみ
+必要になる（技術設計 §16.1 / §26.1）。まずは `contracts/mock/` の
+Artwork + Assets をそのまま読んでPoCを進める。
+
 ## 実寸変換【FIX】
 ```
 targetHeightMm = targetWidthMm / canvas.aspectRatio

@@ -20,14 +20,18 @@ python scripts/validate_contracts.py x.json  # Artwork / 生成成功Response（
 
 ### Frontend ↔ Backend の生成成功境界
 
-正本は `contracts/generate-success-response.schema.json`。
+Schemaは `contracts/generate-success-response.schema.json`。
 
 ```json
 { "artwork": { ... }, "assetManifest": { "assets": [ ... ] } }
 ```
 
-- Artwork / Asset Manifest の定義は `$ref` 先が持つ。ここで再定義しない
+- **外側のKey名は【確認待ち：チーム】。** 技術設計に定義が無く、Backendが返している形へ
+  合わせた暫定案。FIXではないので、変わったらSchema / Mock / 両実装を同時に直す
+- `$ref` 先の `artwork.schema.json` / `asset-manifest.schema.json` は【FIX】された正本。
+  ここで再定義しない
 - Artworkが参照する全 `assetId` を Manifest が解決できることまで検証される
+  （余分なManifest Entryは契約違反ではないので弾かない）
 - 共通Mockは `contracts/mock/generate-success-response.json`
 
 ## Mock / Real の切り替え

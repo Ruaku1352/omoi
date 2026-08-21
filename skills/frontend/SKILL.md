@@ -19,6 +19,7 @@ Router / 状態管理 / CSS方式 / Component分割は担当裁量。
 4. 3Dへ戻って再描画できることを確認する（**AIは呼ばない**）
 5. 最後に `POST /api/v1/artworks/generate` へ差し替える。
    成功Responseの形は `contracts/generate-success-response.schema.json`（`{artwork, assetManifest}`）。
+   外側のKey名は【確認待ち：チーム】なので、Response型を1箇所に閉じ込めて差し替え可能にしておく。
    `VITE_API_BASE_URL` で接続先を切り替える
 
 ## 守ること

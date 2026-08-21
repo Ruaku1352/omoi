@@ -2,17 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omoi.example/contracts/generate-success-response.schema.json",
   "title": "omoi Generate Success Response",
-  "description": "POST /api/v1/artworks/generate の最終成功Result（Frontend ↔ Backend の生成成功境界）。Artwork Data と Asset Manifest を束ねるだけの層であり、両者の定義はここで再定義せず既存Schemaを $ref する。同期 / 非同期のどちらを採っても最終成功Resultはこの形（技術設計 §14.2）。失敗時は AGENTS.md §4 の Error形式であり本Schemaではない。",
+  "description": "POST /api/v1/artworks/generate の最終成功Result（Frontend ↔ Backend の生成成功境界）。同期 / 非同期のどちらを採っても最終成功Resultはこの形（技術設計 §14.2）。失敗時は AGENTS.md §4 の Error形式であり本Schemaではない。【確認待ち：チーム】この層の外側Key名（artwork / assetManifest）は技術設計にまだ定義が無く、Backendが既に返している形へ合わせたRepository側の暫定案。公開チャンネルで確認中であり、FIXではない。内側の artwork / assetManifest はそれぞれの正本Schemaを $ref するだけで、ここでは再定義しない。$ref 先（artwork.schema.json / asset-manifest.schema.json）は【FIX】された正本。",
   "type": "object",
   "required": ["artwork", "assetManifest"],
   "additionalProperties": false,
   "properties": {
     "artwork": {
-      "description": "作品構成のSingle Source of Truth。正本は artwork.schema.json。",
+      "description": "作品構成のSingle Source of Truth。正本は artwork.schema.json【FIX】。",
       "$ref": "https://omoi.example/contracts/artwork.schema.json"
     },
     "assetManifest": {
-      "description": "assetId を Browser から取得可能な url へ解決する表。正本は asset-manifest.schema.json。Artwork Data 本体へ Runtime依存URLを埋め込まないための分離レイヤー。",
+      "description": "assetId を Browser から取得可能な url へ解決する表。正本は asset-manifest.schema.json【FIX】（技術設計 §9.5 / §24.1）。Artwork Data 本体へ Runtime依存URLを埋め込まないための分離レイヤー。",
       "$ref": "https://omoi.example/contracts/asset-manifest.schema.json"
     }
   }
