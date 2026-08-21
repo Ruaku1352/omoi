@@ -28,9 +28,12 @@ description: Artwork Data のSchema、正規化座標系、layerIndex、Asset参
 ## 検証
 
 ```bash
-python scripts/validate_contracts.py                       # 共通Mock
-python scripts/validate_contracts.py path/to/artwork.json  # 任意のArtwork
+python scripts/validate_contracts.py                        # 共通Mock一式
+python scripts/validate_contracts.py path/to/artwork.json   # 任意のArtwork
+python scripts/validate_contracts.py path/to/response.json  # 生成成功Response
 ```
+
+Artwork単体か `{artwork, assetManifest}` かは中身から自動判定する。
 
 Real生成結果も同じSchemaを満たすことが接続確認の条件。
 JSON Schemaで表現できない規則（layerIndexの連番性、Asset実体の一致、rotation不在）も

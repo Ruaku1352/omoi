@@ -20,9 +20,10 @@ Job管理・Asset Binary Storageは必要性が確定した場合のみ追加す
 
 ## 実装順
 1. `POST /api/v1/artworks/generate` の受け口（multipart）と Pydantic モデル
-2. `MOCK_AI=true` で `contracts/mock/artwork.json` 相当を返すMode
+2. `MOCK_AI=true` で `contracts/mock/generate-success-response.json` 相当を返すMode
 3. Artwork Schema Validation と Asset参照整合性チェック
-4. Asset Manifest の組み立て
+4. Asset Manifest の組み立て。返す形の正本は
+   `contracts/generate-success-response.schema.json`（`{artwork, assetManifest}`）
 5. AI Module を **Python Function / Module 境界**で呼ぶ（内部HTTP Microserviceにしない）
 6. CORS を `CORS_ORIGINS` から設定して Cloud Run へDeploy
 

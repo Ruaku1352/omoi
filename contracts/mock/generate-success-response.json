@@ -1,0 +1,255 @@
+{
+  "artwork": {
+    "schemaVersion": "1.0",
+    "artworkId": "mock-artwork-001",
+    "canvas": {
+      "aspectRatio": 1.333333
+    },
+    "sourcePhotos": [
+      {
+        "sourcePhotoId": "p1",
+        "asset": {
+          "assetId": "source-p1",
+          "mimeType": "image/jpeg",
+          "widthPx": 1600,
+          "heightPx": 1200
+        }
+      },
+      {
+        "sourcePhotoId": "p2",
+        "asset": {
+          "assetId": "source-p2",
+          "mimeType": "image/jpeg",
+          "widthPx": 1600,
+          "heightPx": 1200
+        }
+      },
+      {
+        "sourcePhotoId": "p3",
+        "asset": {
+          "assetId": "source-p3",
+          "mimeType": "image/jpeg",
+          "widthPx": 1600,
+          "heightPx": 1200
+        }
+      },
+      {
+        "sourcePhotoId": "p4",
+        "asset": {
+          "assetId": "source-p4",
+          "mimeType": "image/jpeg",
+          "widthPx": 1600,
+          "heightPx": 1200
+        }
+      },
+      {
+        "sourcePhotoId": "p5",
+        "asset": {
+          "assetId": "source-p5",
+          "mimeType": "image/jpeg",
+          "widthPx": 1600,
+          "heightPx": 1200
+        }
+      }
+    ],
+    "layers": [
+      {
+        "layerId": "layer-1",
+        "sourcePhotoId": "p2",
+        "sourceLayerId": "segment-p2-1",
+        "asset": {
+          "assetId": "layer-1",
+          "mimeType": "image/png",
+          "widthPx": 1600,
+          "heightPx": 1200
+        },
+        "label": "背景（空と海）",
+        "x": 0.5,
+        "y": 0.5,
+        "scale": 1.0,
+        "layerIndex": 0,
+        "replacementCandidates": []
+      },
+      {
+        "layerId": "layer-2",
+        "sourcePhotoId": "p4",
+        "sourceLayerId": "segment-p4-2",
+        "asset": {
+          "assetId": "layer-2",
+          "mimeType": "image/png",
+          "widthPx": 600,
+          "heightPx": 600
+        },
+        "label": "花",
+        "x": 0.21,
+        "y": 0.74,
+        "scale": 0.26,
+        "layerIndex": 1,
+        "replacementCandidates": [
+          {
+            "candidateId": "cand-2a",
+            "sourcePhotoId": "p1",
+            "sourceLayerId": "segment-p1-3",
+            "asset": {
+              "assetId": "cand-2a",
+              "mimeType": "image/png",
+              "widthPx": 600,
+              "heightPx": 600
+            },
+            "label": "花（別カット）"
+          }
+        ]
+      },
+      {
+        "layerId": "layer-3",
+        "sourcePhotoId": "p5",
+        "sourceLayerId": "segment-p5-1",
+        "asset": {
+          "assetId": "layer-3",
+          "mimeType": "image/png",
+          "widthPx": 700,
+          "heightPx": 600
+        },
+        "label": "犬",
+        "x": 0.77,
+        "y": 0.71,
+        "scale": 0.3,
+        "layerIndex": 2,
+        "replacementCandidates": []
+      },
+      {
+        "layerId": "layer-4",
+        "sourcePhotoId": "p1",
+        "sourceLayerId": "segment-p1-1",
+        "asset": {
+          "assetId": "layer-4",
+          "mimeType": "image/png",
+          "widthPx": 800,
+          "heightPx": 1000
+        },
+        "label": "人物",
+        "x": 0.5,
+        "y": 0.55,
+        "scale": 0.42,
+        "layerIndex": 3,
+        "replacementCandidates": [
+          {
+            "candidateId": "cand-4a",
+            "sourcePhotoId": "p3",
+            "sourceLayerId": "segment-p3-1",
+            "asset": {
+              "assetId": "cand-4a",
+              "mimeType": "image/png",
+              "widthPx": 800,
+              "heightPx": 1000
+            },
+            "label": "人物（別カット）"
+          },
+          {
+            "candidateId": "cand-4b",
+            "sourcePhotoId": "p5",
+            "sourceLayerId": "segment-p5-2",
+            "asset": {
+              "assetId": "cand-4b",
+              "mimeType": "image/png",
+              "widthPx": 800,
+              "heightPx": 1000
+            },
+            "label": "人物（後ろ姿）"
+          }
+        ]
+      }
+    ],
+    "physicalOutput": {
+      "mode": "layered-2.5d-3d-print-poc"
+    }
+  },
+  "assetManifest": {
+    "assets": [
+      {
+        "assetId": "source-p1",
+        "url": "https://mock.omoi.example/assets/source-p1.jpg",
+        "mimeType": "image/jpeg",
+        "widthPx": 1600,
+        "heightPx": 1200
+      },
+      {
+        "assetId": "source-p2",
+        "url": "https://mock.omoi.example/assets/source-p2.jpg",
+        "mimeType": "image/jpeg",
+        "widthPx": 1600,
+        "heightPx": 1200
+      },
+      {
+        "assetId": "source-p3",
+        "url": "https://mock.omoi.example/assets/source-p3.jpg",
+        "mimeType": "image/jpeg",
+        "widthPx": 1600,
+        "heightPx": 1200
+      },
+      {
+        "assetId": "source-p4",
+        "url": "https://mock.omoi.example/assets/source-p4.jpg",
+        "mimeType": "image/jpeg",
+        "widthPx": 1600,
+        "heightPx": 1200
+      },
+      {
+        "assetId": "source-p5",
+        "url": "https://mock.omoi.example/assets/source-p5.jpg",
+        "mimeType": "image/jpeg",
+        "widthPx": 1600,
+        "heightPx": 1200
+      },
+      {
+        "assetId": "layer-1",
+        "url": "https://mock.omoi.example/assets/layer-1.png",
+        "mimeType": "image/png",
+        "widthPx": 1600,
+        "heightPx": 1200
+      },
+      {
+        "assetId": "layer-2",
+        "url": "https://mock.omoi.example/assets/layer-2.png",
+        "mimeType": "image/png",
+        "widthPx": 600,
+        "heightPx": 600
+      },
+      {
+        "assetId": "cand-2a",
+        "url": "https://mock.omoi.example/assets/cand-2a.png",
+        "mimeType": "image/png",
+        "widthPx": 600,
+        "heightPx": 600
+      },
+      {
+        "assetId": "layer-3",
+        "url": "https://mock.omoi.example/assets/layer-3.png",
+        "mimeType": "image/png",
+        "widthPx": 700,
+        "heightPx": 600
+      },
+      {
+        "assetId": "layer-4",
+        "url": "https://mock.omoi.example/assets/layer-4.png",
+        "mimeType": "image/png",
+        "widthPx": 800,
+        "heightPx": 1000
+      },
+      {
+        "assetId": "cand-4a",
+        "url": "https://mock.omoi.example/assets/cand-4a.png",
+        "mimeType": "image/png",
+        "widthPx": 800,
+        "heightPx": 1000
+      },
+      {
+        "assetId": "cand-4b",
+        "url": "https://mock.omoi.example/assets/cand-4b.png",
+        "mimeType": "image/png",
+        "widthPx": 800,
+        "heightPx": 1000
+      }
+    ]
+  }
+}

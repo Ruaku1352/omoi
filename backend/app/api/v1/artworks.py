@@ -19,7 +19,7 @@ from ai.errors import AiError, AiRateLimitedError, AiTimeoutError
 from ai.types import ArtworkGenerator, InputPhoto
 from app.config import Settings, get_settings
 from app.errors import ApiError, ErrorCode
-from app.models.api import GenerateArtworkResponse
+from app.models.api import GenerateSuccessResponse
 from app.models.artwork import Artwork
 from app.services.asset_store import AssetStore
 from app.services.validation import check_artwork_rules, check_assets_present
@@ -76,7 +76,7 @@ async def _read_photos(photos: list[UploadFile], settings: Settings) -> list[Inp
     return result
 
 
-@router.post("/generate", response_model=GenerateArtworkResponse, response_model_by_alias=True)
+@router.post("/generate", response_model=GenerateSuccessResponse, response_model_by_alias=True)
 async def generate_artwork(
     request: Request,
     photos: Annotated[list[UploadFile], File(description="複数画像。固定5枚ではない。")],
@@ -84,7 +84,7 @@ async def generate_artwork(
     generator: Annotated[ArtworkGenerator, Depends(get_generator)],
     asset_store: Annotated[AssetStore, Depends(get_asset_store)],
     memory_text: Annotated[str | None, Form(alias="memoryText")] = None,
-) -> GenerateArtworkResponse:
+) -> GenerateSuccessResponse:
     input_photos = await _read_photos(photos, settings)
 
     try:
@@ -128,4 +128,4 @@ async def generate_artwork(
             log_message=f"asset publish failed: {type(exc).__name__}",
         ) from exc
 
-    return GenerateArtworkResponse(artwork=artwork, asset_manifest=manifest)
+    return GenerateSuccessResponse(artwork=artwork, asset_manifest=manifest)

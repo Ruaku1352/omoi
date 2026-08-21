@@ -4,7 +4,10 @@
 人間向けの共通技術仕様の正本はDriveの「技術設計」。本ファイルはそのコピーではなく、
 実装時に必要な要約・参照先・禁止事項を持つ。齟齬があった場合はDriveの「技術設計」が優先。
 
-Machine Readableな契約の正本は `contracts/artwork.schema.json` と `contracts/mock/`。
+Machine Readableな契約の正本は `contracts/` — `artwork.schema.json` /
+`asset-manifest.schema.json` / `generate-success-response.schema.json` と `contracts/mock/`。
+
+人間側の入口はRepositoryではなくDrive。全体像は「ドパガキ向け_5分でわかる設計理解」。
 
 ---
 
@@ -19,6 +22,13 @@ Machine Readableな契約の正本は `contracts/artwork.schema.json` と `contr
 | **【PoC後FIX】** | 検証結果を見て決める | **値をハードコードして確定扱いにしない**。環境変数・設定に逃がす |
 | **【未決定】** | 現時点で固定しない | **Directory / Service / Endpoint を先回りで作らない** |
 | **【担当裁量】** | 担当者が決めてよい | 自由に決めてよい |
+
+Driveの「技術設計」§2 とはラベル名が一部違う。意味は同じなので対応表で読む。
+
+| 本ファイル | Drive「技術設計」 |
+|---|---|
+| 【未決定】 | 【検討中】 |
+| （対応なし） | 【確認待ち：担当名】— 担当の確認待ち。Agentは実装前提にしない |
 
 「たぶん必要だから」で【未決定】のものを作らないこと。実際に必要になった時点で追加する。
 
@@ -101,7 +111,7 @@ Top Levelは担当者別ではなく、**「一緒にBuild / Deploy / 実行さ�
 
 - Schema正本: `contracts/artwork.schema.json`
 - 共通Mock: `contracts/mock/artwork.json` + `contracts/assets/`
-- 検証: `python scripts/validate_contracts.py`
+- 検証: `python scripts/validate_contracts.py`（Artwork単体 / 生成成功Response どちらでも可）
 
 ### 3.1 座標系【FIX】
 
@@ -125,6 +135,8 @@ Top Levelは担当者別ではなく、**「一緒にBuild / Deploy / 実行さ�
 - **Runtime依存のURLをArtwork Data本体へ埋め込まない**
 - Frontendへの生成成功結果は **Artwork Data + Asset Manifest**。Manifestは最低限
   `assetId` / `url` / `mimeType` / `widthPx` / `heightPx` を持つ（`contracts/asset-manifest.schema.json`）
+- 両者を束ねた生成成功Responseの正本は `contracts/generate-success-response.schema.json`。
+  Artwork / Manifest の定義を再定義せず `$ref` するだけの層
 - 透過Layer Assetは **RGBA PNG**
 - Artwork Bundleでは同じ `assetId` のBinaryを `assets/` 配下へ置く
 
@@ -146,7 +158,17 @@ Prefix: `/api/v1`
   - `photos`: 複数画像（固定5枚ではない）。JPEG / PNG / WebP 基準。HEIC / HEIFは実機確認後【PoC後FIX】
   - `memoryText`: 任意String。未入力可
 - 最終成功Result: **Artwork Data + Asset Manifest**
+
+```json
+{ "artwork": { ... }, "assetManifest": { "assets": [ ... ] } }
+```
+
+- Schema正本: `contracts/generate-success-response.schema.json`【FIX】。
+  既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない
+- 共通Mock: `contracts/mock/generate-success-response.json`
+- JSONのKeyはArtwork Schemaと同じ **camelCase** を維持する【FIX】
 - 同期 / 非同期どちらで返すかは【PoC後FIX】。**どちらでも最終成功Resultの形は同じ**
+- 失敗時は下記のError形式であり、この生成成功Response Schemaではない
 
 ### 作らないもの【FIX】
 
@@ -280,7 +302,11 @@ layerHeightMm  = layerWidthMm * asset.heightPx / asset.widthPx
 
 ## 9. Mock / 並行開発
 
-- `contracts/mock/artwork.json` + `contracts/assets/` が全担当の共通Fixture【FIX】
+- `contracts/mock/` + `contracts/assets/` が全担当の共通Fixture【FIX】
+  - `mock/artwork.json` — Artwork Data を読む側すべて
+  - `mock/asset-manifest.json` — `assetId` → URL の解決を組む側
+  - `mock/generate-success-response.json` — Frontend ↔ Backend の生成成功境界
+  - Mock Manifest の `url` はPlaceholder。実URLはRuntime依存なので固定値を前提にしない
 - 各担当は他領域の完成を待たず、このMockとの契約を前提に開発する【FIX】
 - Backendは `MOCK_AI=true` で実Geminiを呼ばず、Real生成と**同じ形式**を返せるModeを持つ【FIX】
 - FrontendはMockかReal AIかで**Artwork Schemaの解釈を切り替えない**【FIX】
@@ -310,7 +336,9 @@ layerHeightMm  = layerWidthMm * asset.heightPx / asset.widthPx
 以下は**Agentの判断だけで実行してはならない**。必要と判断した場合は実装せず、
 理由と影響範囲を提示して人間の確認を求めること。
 
-1. `contracts/artwork.schema.json` の変更（Field追加・削除・意味の変更・型変更）
+1. `contracts/` 配下のSchema変更（Field追加・削除・意味の変更・型変更）。
+   `artwork.schema.json` / `asset-manifest.schema.json` /
+   `generate-success-response.schema.json` はいずれも同じ扱い
 2. `layers[]` / `sourcePhotos[]` を固定長前提で実装すること
 3. Layerの配列位置に固定の意味（背景 / 中景 / 前景）を持たせること
 4. `rotation` をArtwork Dataや2D Edit操作へ追加すること
@@ -333,9 +361,11 @@ layerHeightMm  = layerWidthMm * asset.heightPx / asset.widthPx
 
 - 領域別の詳細: `skills/` 配下（`project-context` / `artwork-data` / `frontend` /
   `backend` / `ai-image-processing` / `physical-output` / `integration`）
-- Schema正本: `contracts/artwork.schema.json`
-- 共通Mock: `contracts/mock/artwork.json`
-- 人間向け仕様正本: Drive「要件定義」「技術設計」
+- Machine Readable Contract正本: `contracts/`
+  - `artwork.schema.json` / `asset-manifest.schema.json` / `generate-success-response.schema.json`
+  - 共通Mock: `contracts/mock/`
+- 人間向け仕様正本: Drive「技術設計」。全体像は Drive「ドパガキ向け_5分でわかる設計理解」、
+  作るものは Drive「要件定義」
 
 Skillsは本ファイルと `contracts/` を**参照する**構造にする。同じ契約本文を各Skillへコピーしない。
 共通仕様が変わったら、技術設計だけでなく AGENTS.md と関連Skills も同期する。
