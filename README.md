@@ -67,7 +67,16 @@ cp .env.example frontend/.env
 cp .env.example backend/.env
 ```
 
-`frontend/` と `backend/` は未Scaffold。各担当が初期化する。
+### frontend / backend
+
+```bash
+cd frontend && npm install && npm run dev   # Vite Dev Server
+cd backend  && uv sync --all-groups \
+            && MOCK_AI=true uv run uvicorn app.main:app --reload
+```
+
+Scaffold済み。詳細は `frontend/README.md` / `backend/README.md`。
+画面とReal AI処理はこれから各担当が積む。
 
 ---
 
