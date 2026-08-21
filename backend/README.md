@@ -38,8 +38,10 @@ curl -F photos=@../contracts/assets/source-p1.jpg -F memoryText=海に行った�
 
 - Request: `multipart/form-data` — `photos`（複数・可変長）/ `memoryText`（任意）
 - Response: `{"artwork": ..., "assetManifest": ...}`
-  - Schema正本: `/contracts/generate-success-response.schema.json`
+  - Schema: `/contracts/generate-success-response.schema.json`
     （`artwork.schema.json` と `asset-manifest.schema.json` を `$ref` するだけの層）
+  - **外側のKey名は【確認待ち：チーム】。** 技術設計に定義が無く、この実装に合わせた暫定案。
+    `$ref` 先の2つは【FIX】された正本
 - Error: `/AGENTS.md` §4 の形式
 
 `GET /health` は担当裁量のHealth Check。OpenAPIには載せず、Product API Contractに含めない。
