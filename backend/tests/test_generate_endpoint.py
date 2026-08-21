@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi.testclient import TestClient
+
+
+def _keys(value: Any) -> set[str]:
+    """入れ子を含む全Key名を集める。"""
+
+    if isinstance(value, dict):
+        return set(value) | {k for v in value.values() for k in _keys(v)}
+    if isinstance(value, list):
+        return {k for v in value for k in _keys(v)}
+    return set()
 
 
 def test_mock_mode_returns_artwork_and_asset_manifest(client: TestClient, photo_upload) -> None:
@@ -18,8 +30,8 @@ def test_mock_mode_returns_artwork_and_asset_manifest(client: TestClient, photo_
 
     artwork = body["artwork"]
     assert artwork["schemaVersion"] == "1.0"
-    # Artwork Data 本体へ Runtime依存URLを埋め込まない
-    assert "url" not in response.text.split('"assetManifest"')[0]
+    # Artwork Data 本体へ Runtime依存URLもBase64 Binaryも埋め込まない（AGENTS.md §3.3）
+    assert not _keys(artwork) & {"url", "data", "base64", "src"}
 
     manifest_ids = {a["assetId"] for a in body["assetManifest"]["assets"]}
     referenced = {layer["asset"]["assetId"] for layer in artwork["layers"]}
