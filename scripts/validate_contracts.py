@@ -93,10 +93,10 @@ def check_manifest_covers_artwork(artwork: dict, manifest: dict) -> list[str]:
                 f"Artwork側 {expected} と一致しない"
             )
 
-    unused = sorted(set(by_id) - {ref["assetId"] for _, ref in _iter_asset_refs(artwork)})
-    if unused:
-        errs.append(f"Artworkから参照されないManifest Entryがある: {', '.join(unused)}")
-
+    # 未参照のManifest Entryはここでは弾かない。
+    # asset-manifest.schema.json も技術設計 §9.5 も「参照を解決できること」しか要求しておらず、
+    # 余分なEntryを禁止していない。Real Responseを誤ってNGにしないため、
+    # 過不足なしの確認は共通Mockに対してのみ行う（check_mock_consistency）。
     return errs
 
 
@@ -238,6 +238,15 @@ def check_mock_consistency() -> list[str]:
             "mock: generate-success-response.json の assetManifest が "
             "asset-manifest.json と一致しない"
         )
+
+    # 共通Mockは全担当のFixtureなので、参照とManifestを過不足なく一致させておく。
+    # （Real Responseには課さない。上の check_manifest_covers_artwork のコメント参照）
+    referenced = {ref["assetId"] for _, ref in _iter_asset_refs(artwork)}
+    listed = {a["assetId"] for a in manifest["assets"]}
+    unused = sorted(listed - referenced)
+    if unused:
+        errs.append(f"mock: Artworkから参照されないManifest Entryがある: {', '.join(unused)}")
+
     return errs
 
 
