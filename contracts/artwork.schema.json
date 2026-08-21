@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omoi.example/contracts/artwork.schema.json",
+  "title": "omoi Artwork Data",
+  "description": "AI・画像処理 / Backend / Frontend / 3D Preview / 2D Edit / Physical Output を横断する作品構成の Single Source of Truth。正本は本ファイル。人間向け仕様は Drive「技術設計」を参照。Runtime依存のURLはここに含めない（Asset Manifest 側で解決する）。",
+  "type": "object",
+  "required": ["schemaVersion", "artworkId", "canvas", "sourcePhotos", "layers"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "description": "Artwork Schema の版。破壊的変更時に上げる。変更は公開チャンネルで共有し Mock / AGENTS.md / Skills を同時更新する。",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "artworkId": { "$ref": "#/$defs/opaqueId" },
+    "canvas": {
+      "type": "object",
+      "required": ["aspectRatio"],
+      "additionalProperties": false,
+      "properties": {
+        "aspectRatio": {
+          "description": "Canvas幅 / Canvas高さ。4:3 Landscape なら 1.333333。Schema上で固定値にしない。",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "sourcePhotos": {
+      "description": "入力写真。可変長。固定5枚の契約にしない。",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/sourcePhoto" }
+    },
+    "layers": {
+      "description": "作品を構成するLayer。可変長。各Layerに前景/中景/背景の固定意味を持たせない。",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/layer" }
+    },
+    "physicalOutput": {
+      "description": "物理出力のmode表明のみ。targetWidthMm / layerGapMm 等の製造条件は PhysicalOutputConfig 側で持ち、Artwork Data を物理都合のmm値で上書きしない。",
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "opaqueId": {
+      "description": "衝突しないOpaque ID。空白・引用符・パス区切りを含まない。具体的な生成方式は担当裁量。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "assetRef": {
+      "description": "Binary本体は保持せず識別子とMetadataのみを持つ。Base64埋め込み禁止。Runtime依存URLを埋め込まない。",
+      "type": "object",
+      "required": ["assetId", "mimeType", "widthPx", "heightPx"],
+      "additionalProperties": false,
+      "properties": {
+        "assetId": { "$ref": "#/$defs/opaqueId" },
+        "mimeType": {
+          "type": "string",
+          "enum": ["image/png", "image/jpeg", "image/webp"]
+        },
+        "widthPx": { "type": "integer", "minimum": 1 },
+        "heightPx": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "layerAssetRef": {
+      "description": "透過Layer Asset。RGBA PNG固定。",
+      "allOf": [
+        { "$ref": "#/$defs/assetRef" },
+        {
+          "properties": { "mimeType": { "const": "image/png" } }
+        }
+      ]
+    },
+    "sourcePhoto": {
+      "type": "object",
+      "required": ["sourcePhotoId", "asset"],
+      "additionalProperties": false,
+      "properties": {
+        "sourcePhotoId": { "$ref": "#/$defs/opaqueId" },
+        "asset": { "$ref": "#/$defs/assetRef" }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "required": [
+        "layerId",
+        "sourcePhotoId",
+        "sourceLayerId",
+        "asset",
+        "label",
+        "x",
+        "y",
+        "scale",
+        "layerIndex",
+        "replacementCandidates"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "layerId": { "$ref": "#/$defs/opaqueId" },
+        "sourcePhotoId": { "$ref": "#/$defs/opaqueId" },
+        "sourceLayerId": { "$ref": "#/$defs/opaqueId" },
+        "asset": { "$ref": "#/$defs/layerAssetRef" },
+        "label": {
+          "description": "人間が確認できる短い意味Label。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x": {
+          "description": "Layer中心のX。0.0〜1.0。原点はCanvas左上、右方向が正。",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "y": {
+          "description": "Layer中心のY。0.0〜1.0。原点はCanvas左上、下方向が正。",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "scale": {
+          "description": "Layer表示幅 / Canvas幅 の正規化値。高さは asset の Aspect Ratio から導出する。minScale / maxScale の制約値は物理PoC後にFIXするため Schema では上限を固定しない。",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "layerIndex": {
+          "description": "奥行き順。0が最背面、値が大きいほど手前。同一Artwork内で 0..N-1 の重複なし連番へ正規化する（連番性は Schema では表現できないため validate_contracts.py で検証する）。前後変更は配列位置ではなく本値の変更として扱う。",
+          "type": "integer",
+          "minimum": 0
+        },
+        "replacementCandidates": {
+          "description": "差し替え候補。差し替え時は x / y / scale / layerIndex を原則維持し、sourcePhotoId / sourceLayerId / asset / label を置き換える。",
+          "type": "array",
+          "items": { "$ref": "#/$defs/replacementCandidate" }
+        }
+      },
+      "comment-additionalProperties": "AI評価Score等、Frontend / Physical Output が必須としないMetadataは optional として追加してよい（担当裁量）。ただし上記の必須Fieldの意味を変えない。"
+    },
+    "replacementCandidate": {
+      "type": "object",
+      "required": ["candidateId", "sourcePhotoId", "sourceLayerId", "asset", "label"],
+      "additionalProperties": true,
+      "properties": {
+        "candidateId": { "$ref": "#/$defs/opaqueId" },
+        "sourcePhotoId": { "$ref": "#/$defs/opaqueId" },
+        "sourceLayerId": { "$ref": "#/$defs/opaqueId" },
+        "asset": { "$ref": "#/$defs/layerAssetRef" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    }
+  }
+}
