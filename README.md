@@ -49,13 +49,13 @@ Mermaid構成図と sequenceDiagram の2枚固定は必須ではない。必要�
 ├─ backend/           # Cloud Run Deploy Unit（FastAPI）
 │  └─ ai/             #   AI・画像処理Module（独立Serviceにしない）
 ├─ contracts/         # Deploy Unitを跨ぐ共通Contract（Machine Readableな正本）
-│  ├─ artwork.schema.json                  # Artwork Data Schema
-│  ├─ asset-manifest.schema.json           # assetId → url の解決表
+│  ├─ artwork.schema.json                   # Artwork Data Schema
+│  ├─ asset-manifest.schema.json            # assetId → url の解決表
 │  ├─ generate-success-response.schema.json # 生成成功Response（上の2つを束ねる）
-│  ├─ mock/artwork.json                    # 共通Mock（写真5枚・4層）
-│  ├─ mock/asset-manifest.json             # 共通MockのAsset Manifest
-│  ├─ mock/generate-success-response.json  # 共通Mockの生成成功Response
-│  └─ assets/                              # Mockが参照するダミーAsset
+│  ├─ mock/artwork.json                     # 共通Mock（写真5枚・4層）
+│  ├─ mock/asset-manifest.json              # 共通MockのAsset Manifest
+│  ├─ mock/generate-success-response.json   # 共通Mockの生成成功Response
+│  └─ assets/                               # Mockが参照するダミーAsset
 ├─ skills/            # AI Coding Agent向けSkills（7領域）
 ├─ scripts/           # 開発補助
 ├─ AGENTS.md
