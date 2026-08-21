@@ -3,6 +3,9 @@
 共通Mock（`/contracts/mock/artwork.json` + `/contracts/assets/`）を
 Real生成と**同じ形式**で返す。明示的に有効化する開発・デモ用Modeであり、
 Real処理失敗時の隠れFallbackではない（AGENTS.md §9）。
+
+`ai/` ではなくBackend側に置く。`ai/` は AI・画像処理担当の領域で、
+呼び出し境界（`ai/types.py`）とReal実装（`ai/gemini.py`）だけを持たせる。
 """
 
 from __future__ import annotations

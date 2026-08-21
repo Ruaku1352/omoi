@@ -1,7 +1,7 @@
 .app {
-  max-width: 48rem;
+  max-width: 52rem;
   margin: 0 auto;
-  padding: 3rem 1.5rem;
+  padding: 2.5rem 1.5rem 4rem;
 }
 
 .app h1 {
@@ -9,27 +9,100 @@
   font-size: 2rem;
 }
 
-.app .tagline {
+.app h2 {
+  font-size: 1.1rem;
+  margin: 2.5rem 0 0.75rem;
+}
+
+.tagline {
   margin: 0 0 2rem;
   opacity: 0.7;
 }
 
-.app dl {
+.muted {
+  opacity: 0.6;
+  font-weight: 400;
+  font-size: 0.85em;
+}
+
+.meta dl,
+.props {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.25rem 1rem;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
   margin: 0;
 }
 
-.app dt {
-  opacity: 0.7;
+.meta dt,
+.props dt {
+  opacity: 0.6;
+  font-size: 0.85rem;
 }
 
-.app dd {
+.meta dd,
+.props dd {
   margin: 0;
+  font-size: 0.9rem;
 }
 
-.app code {
+code {
   font-family: ui-monospace, monospace;
-  font-size: 0.9em;
+  font-size: 0.85em;
+}
+
+.layers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.layer {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 8px;
+}
+
+.thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex: none;
+  /* 透過PNGであることが分かるように市松模様を敷く */
+  background-image:
+    linear-gradient(45deg, color-mix(in srgb, currentColor 12%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, currentColor 12%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, currentColor 12%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, currentColor 12%, transparent) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  border-radius: 4px;
+}
+
+.body {
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.badge {
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+footer {
+  margin-top: 3rem;
 }

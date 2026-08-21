@@ -26,11 +26,14 @@ cp ../.env.example .env
 
 ## 現在の状態
 
-Scaffold + 共通Contractの型・変換だけが入っている。画面はまだ無い。
-`src/App.tsx` はPlaceholder。`skills/frontend/SKILL.md` の実装順で積んでいく。
+Scaffold + 共通Contractの型・変換 + **動作確認ページ**まで。
+`npm run dev` で共通Mockの `layers[]` が `layerIndex` 昇順（0が最背面）で一覧表示される。
+
+3D Preview / 2D Edit は未実装。`skills/frontend/SKILL.md` の実装順で積んでいく。
 
 ```
 src/
+├─ App.tsx              # 動作確認ページ（Mockのlayer一覧。3D / 2D の本実装ではない）
 ├─ api/                 # Backend API境界
 │  ├─ generateArtwork.ts  #   POST /api/v1/artworks/generate（唯一FIXのEndpoint）
 │  └─ errors.ts           #   AGENTS.md §4 の Error形式
@@ -41,10 +44,15 @@ src/
 ├─ config/
 │  ├─ artworkEditing.ts   #   minScale / maxScale / previewDepthStep【PoC後FIX】
 │  └─ env.ts              #   VITE_ 環境変数の読み口
+├─ mock/                # 開発中の動作確認用。Real失敗時のFallback経路にしない
+│  └─ mockArtwork.ts      #   contracts/mock + contracts/assets を読む
 └─ types/               # contracts/ Schema の写像
    ├─ artwork.ts
    └─ assetManifest.ts
 ```
+
+共通Mockは `frontend/` 配下へコピーせず、Repository Root の `contracts/` を直接読む
+（`vite.config.ts` の `server.fs.allow`）。正本を二重に持たないため。
 
 ## 守ること
 

@@ -59,11 +59,12 @@ backend/
 │  └─ services/
 │     ├─ validation.py      # Schemaで表現できない規則の検証
 │     ├─ asset_store.py     # Asset Binary → URL（方式は【未決定】）
-│     └─ generator.py       # Mock / Real の選択（Fallback経路を作らない）
-├─ ai/                      # AI・画像処理Module（Python Module境界で呼ぶ）
-│  ├─ types.py              #   InputPhoto / AssetBlob / GenerationResult
-│  ├─ mock.py               #   MOCK_AI=true 用
-│  └─ gemini.py             #   Real（未実装。担当が中身を入れる）
+│     ├─ generator.py       # Mock / Real の選択（Fallback経路を作らない）
+│     └─ mock_generator.py  # MOCK_AI=true 用。共通Mockを同じ形式で返す
+├─ ai/                      # AI・画像処理Module（**呼び出し境界だけ**）
+│  ├─ types.py              #   InputPhoto / AssetBlob / GenerationResult / Protocol
+│  ├─ errors.py             #   AiError系。HTTP StatusやUI文言はここで決めない
+│  └─ gemini.py             #   Real実装の入口。中身は AI担当（クメ先生）が入れる
 └─ tests/
 ```
 
@@ -77,7 +78,8 @@ backend/
   暫定の静的配信は `/api/v1` 配下に置いていない
 - `GET|PUT /api/v1/artworks/{artworkId}` / finalize / bundle / jobs も作らない。
   `tests/test_no_extra_endpoints.py` がAPI表面を固定している
-- Real AI失敗時に黙ってMockへ落ちる経路を作らない。`MOCK_AI` は明示Modeのみ
+- Real AI失敗時に黙ってMockへ落ちる経路を作らない。`MOCK_AI` は明示Modeのみ。
+  Mockの実装は Backend側（`app/services/mock_generator.py`）に置き、`ai/` は境界だけに保つ
 - Upload制限・モデルID等の【PoC後FIX】値は `app/config.py` に集約し、環境変数で差し替える
 
 ## 単独でFIXしないこと

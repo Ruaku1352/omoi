@@ -7,9 +7,9 @@ Real処理が失敗したときに黙ってMockへ落ちる経路をここへ作
 from __future__ import annotations
 
 from ai.gemini import GeminiArtworkGenerator
-from ai.mock import MockArtworkGenerator
 from ai.types import ArtworkGenerator
 from app.config import Settings
+from app.services.mock_generator import MockArtworkGenerator
 
 
 def build_generator(settings: Settings) -> ArtworkGenerator:
