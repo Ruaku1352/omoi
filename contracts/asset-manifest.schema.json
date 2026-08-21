@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omoi.example/contracts/asset-manifest.schema.json",
+  "title": "omoi Asset Manifest",
+  "description": "生成成功時に Artwork Data と併せて Frontend へ返す Asset 解決表。assetId を Browser から取得可能な url へ解決する。Artwork Data 本体へ Runtime依存URLを埋め込まないための分離レイヤー。url が Object Storage URL / Backend経由URL / Browser Blob URL のどれになるかは Asset Binary 保持方式（未決定）に従うが、この境界の形は変えない。",
+  "type": "object",
+  "required": ["assets"],
+  "additionalProperties": false,
+  "properties": {
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["assetId", "url", "mimeType", "widthPx", "heightPx"],
+        "additionalProperties": true,
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "url": {
+            "description": "Browser から取得可能なURL。http(s) / blob: を想定。",
+            "type": "string",
+            "minLength": 1
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": ["image/png", "image/jpeg", "image/webp"]
+          },
+          "widthPx": { "type": "integer", "minimum": 1 },
+          "heightPx": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

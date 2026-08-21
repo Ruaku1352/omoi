@@ -1,0 +1,39 @@
+# Secret — 絶対にCommitしない
+.env
+.env.local
+.env.*.local
+*.pem
+*-service-account*.json
+credentials.json
+
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+*.log
+npm-debug.log*
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Cloud / Deploy
+.firebase/
+firebase-debug.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 生成物（Assetは scripts/generate_mock_assets.py で再生成できる場合はCommit不要だが、
+# 共通Fixtureとして全担当が同じものを使うため contracts/assets/ は追跡する）
+/tmp/

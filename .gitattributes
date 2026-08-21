@@ -1,0 +1,19 @@
+# 改行コードをRepository側で統一する。
+# 各自の core.autocrlf 設定に依存させない（Windows / Mac / Linux混在対策）。
+* text=auto eol=lf
+
+# Binary。差分表示・行末変換の対象外にする。
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.stl   binary
+*.3mf   binary
+*.gltf  binary
+*.glb   binary
+
+# Lock File。生成物なのでdiffを抑制し、レビュー時のノイズを減らす。
+package-lock.json  -diff linguist-generated
+*.lock             -diff
+uv.lock            -diff
+poetry.lock        -diff
