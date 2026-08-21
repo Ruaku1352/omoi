@@ -1,0 +1,46 @@
+[project]
+name = "omoi-backend"
+version = "0.0.0"
+description = "omoi Backend — Cloud Run Deploy Unit (FastAPI)"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    # 【仮決定】FastAPI 0.139系 / Pydantic（AGENTS.md §6）
+    "fastapi~=0.139.0",
+    "pydantic~=2.13",
+    "pydantic-settings~=2.15",
+    # multipart/form-data の受け口に必要
+    "python-multipart~=0.0.32",
+    "uvicorn[standard]~=0.52",
+]
+
+[project.optional-dependencies]
+# Real AI 実装時に有効化する。未実装のうちからDefault依存へ入れない。
+gemini = ["google-genai~=2.19", "pillow~=12.0"]
+
+[dependency-groups]
+dev = [
+    "httpx~=0.28",
+    "pytest~=9.0",
+    "ruff~=0.16",
+    # contracts/ の正本Schemaに対して生成結果を突き合わせるテスト用
+    "jsonschema~=4.26",
+    "pillow~=12.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# backend/ai は Backend と同一実行環境の内部Module（独立Serviceにしない）
+packages = ["app", "ai"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
