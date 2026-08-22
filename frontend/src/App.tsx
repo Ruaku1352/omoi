@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import './App.css'
 import { buildAssetIndex, resolveAssetUrl } from './artwork/assetIndex'
 import { layerHeightRatio } from './artwork/geometry'
@@ -14,7 +15,7 @@ import ArtworkEditor from './edit/ArtworkEditor'
  * それらは Frontend担当が `skills/frontend/SKILL.md` の実装順で積む。
  */
 export default function App() {
-  const artwork = mockArtwork
+ const [artwork, setArtwork] = useState(mockArtwork)
   // `layers[]` の配列位置は奥行き順ではない。必ず layerIndex で並べ替える。
   const layers = sortByLayerIndex(artwork.layers)
   const assets = buildAssetIndex(buildMockAssetManifest(artwork))
@@ -26,7 +27,7 @@ export default function App() {
         <p className="tagline">Our Memories, One Image — Frontend Scaffold</p>
       </header>
       <ArtworkPreview artwork={artwork} />
-      <ArtworkEditor artwork={artwork} />
+     <ArtworkEditor artwork={artwork} onChange={setArtwork} />
 
       <section className="meta">
         <dl>

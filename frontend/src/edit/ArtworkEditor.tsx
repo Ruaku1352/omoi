@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Stage, Layer, Image as KonvaImage } from 'react-konva'
 import { buildAssetIndex, resolveAssetUrl } from '../artwork/assetIndex'
-import { toLayerRectPx } from '../artwork/geometry'
+import { fromLayerRectPx, toLayerRectPx } from '../artwork/geometry'
 import { sortByLayerIndex } from '../artwork/layerOrder'
 import { buildMockAssetManifest } from '../mock/mockArtwork'
 import type { Artwork, Layer as ArtworkLayer } from '../types/artwork'
@@ -29,11 +29,13 @@ function LayerImage({
   url,
   stageWidth,
   stageHeight,
+  onMove,
 }: {
   layer: ArtworkLayer
   url: string
   stageWidth: number
   stageHeight: number
+  onMove: (next: Pick<ArtworkLayer, 'x' | 'y' | 'scale'>) => void
 }) {
   const image = useImage(url)
   const rect = toLayerRectPx(layer, stageWidth, stageHeight)
@@ -47,18 +49,42 @@ function LayerImage({
       y={rect.topPx}
       width={rect.widthPx}
       height={rect.heightPx}
+      draggable
+      onDragEnd={(e) => {
+        onMove(
+          fromLayerRectPx(
+            { leftPx: e.target.x(), topPx: e.target.y(), widthPx: rect.widthPx },
+            stageWidth,
+            stageHeight,
+            layer,
+          ),
+        )
+      }}
     />
   )
 }
 
-export default function ArtworkEditor({ artwork }: { artwork: Artwork }) {
+export default function ArtworkEditor({
+  artwork,
+  onChange,
+}: {
+  artwork: Artwork
+  onChange: (next: Artwork) => void
+}) {
   const layers = sortByLayerIndex(artwork.layers)
   const assets = buildAssetIndex(buildMockAssetManifest(artwork))
   const stageWidth = STAGE_WIDTH
   const stageHeight = STAGE_WIDTH / artwork.canvas.aspectRatio
 
+  const moveLayer = (layerId: string, next: Pick<ArtworkLayer, 'x' | 'y' | 'scale'>) => {
+    onChange({
+      ...artwork,
+      layers: artwork.layers.map((l) => (l.layerId === layerId ? { ...l, ...next } : l)),
+    })
+  }
+
   return (
-    <div style={{ background: '#111', display: 'inline-block' }}>
+    <div style={{ background: 'var(--editor-bg)', display: 'inline-block' }}>
       <Stage width={stageWidth} height={stageHeight}>
         <Layer>
           {layers.map((layer) => (
@@ -68,6 +94,7 @@ export default function ArtworkEditor({ artwork }: { artwork: Artwork }) {
               url={resolveAssetUrl(assets, layer.asset.assetId)}
               stageWidth={stageWidth}
               stageHeight={stageHeight}
+              onMove={(next) => moveLayer(layer.layerId, next)}
             />
           ))}
         </Layer>
