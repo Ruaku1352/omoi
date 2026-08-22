@@ -5,6 +5,7 @@ import { sortByLayerIndex } from './artwork/layerOrder'
 import { apiBaseUrl } from './config/env'
 import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
 import ArtworkPreview from './preview/ArtworkPreview'
+import ArtworkEditor from './edit/ArtworkEditor'
 
 /**
  * 共通Mockの `layers[]` を **layerIndex 昇順（0が最背面）** で並べて確認するページ。
@@ -24,7 +25,8 @@ export default function App() {
         <h1>omoi</h1>
         <p className="tagline">Our Memories, One Image — Frontend Scaffold</p>
       </header>
-      <ArtworkPreview />
+      <ArtworkPreview artwork={artwork} />
+      <ArtworkEditor artwork={artwork} />
 
       <section className="meta">
         <dl>

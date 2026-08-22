@@ -1,11 +1,11 @@
-import { Suspense, useRef, type ComponentRef } from 'react'   // ← 変更
+import { Suspense, useRef, type ComponentRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useTexture } from '@react-three/drei'
 import { buildAssetIndex, resolveAssetUrl } from '../artwork/assetIndex'
 import { toLayerPlane } from '../artwork/geometry'
 import { sortByLayerIndex } from '../artwork/layerOrder'
 import { previewDepthStep } from '../config/artworkEditing'
-import { buildMockAssetManifest, mockArtwork } from '../mock/mockArtwork'
+import { buildMockAssetManifest } from '../mock/mockArtwork'
 import type { Artwork, Layer } from '../types/artwork'
 
 function LayerPlane({
@@ -28,17 +28,13 @@ function LayerPlane({
   )
 }
 
-export default function ArtworkPreview() {
-  const artwork = mockArtwork
+export default function ArtworkPreview({ artwork }: { artwork: Artwork }) {
   const layers = sortByLayerIndex(artwork.layers)
   const assets = buildAssetIndex(buildMockAssetManifest(artwork))
-
-  // ← 追加：OrbitControls を掴んでおくための入れ物
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null)
 
   return (
     <div style={{ position: 'relative', height: 400, background: '#111' }}>
-      {/* ← 追加：3Dの上に重ねるボタン */}
       <button
         type="button"
         onClick={() => controlsRef.current?.reset()}
@@ -48,7 +44,7 @@ export default function ArtworkPreview() {
       </button>
 
       <Canvas camera={{ position: [0, 0, 2] }}>
-        <OrbitControls ref={controlsRef} makeDefault />   {/* ← 変更 */}
+        <OrbitControls ref={controlsRef} makeDefault />
         <Suspense fallback={null}>
           {layers.map((layer) => (
             <LayerPlane
