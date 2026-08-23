@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+
+from app.config import REPO_ROOT, Settings
+from app.main import create_app
 
 
 def _keys(value: Any) -> set[str]:
@@ -51,6 +55,29 @@ def test_published_asset_url_is_fetchable(client: TestClient, photo_upload) -> N
     fetched = client.get(url)
     assert fetched.status_code == 200
     assert fetched.headers["content-type"].startswith("image/")
+
+
+def test_asset_url_scheme_is_https_when_deployed(tmp_path: Path, photo_upload) -> None:
+    """Cloud RunはTLSをFrontendで終端するため、Container内のRequestはhttpに見える。
+    APP_ENV=deployed のときはAsset ManifestのURLをhttpsへ補正する（Mixed Content対策）。
+    ローカル開発（APP_ENV=local既定値）はこの補正をしない。conftest.pyのclientで確認済み。
+    """
+
+    settings = Settings(
+        app_env="deployed",
+        mock_ai=True,
+        contracts_dir=REPO_ROOT / "contracts",
+        cors_origins="http://localhost:5173",
+        asset_dir=tmp_path / "assets",
+        _env_file=None,
+    )
+    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+        response = client.post("/api/v1/artworks/generate", files=[photo_upload])
+
+    assert response.status_code == 200
+    urls = [asset["url"] for asset in response.json()["assetManifest"]["assets"]]
+    assert urls
+    assert all(url.startswith("https://") for url in urls)
 
 
 def test_photos_are_variable_length(client: TestClient, photo_upload) -> None:
