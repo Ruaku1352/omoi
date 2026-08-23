@@ -233,23 +233,33 @@ Scale to Zero）と相性が悪い。** `backend/app/services/asset_store.py` �
   Asset正本として運用し続けることは想定しない。恒久策は上記のGCS移行（またはそれに準ずる
   外部Storage）であり、方式決定・実装は別タスクとして扱う
 
-### 副次的に見つかった論点: Asset URLのScheme
+### Asset URLのScheme【対応済み】
 
 `LocalDirAssetStore.publish()` はURLの組み立てに `request_base_url`（＝Requestの`base_url`）を
 使っている。Cloud RunはTLSをGoogle側のFrontendで終端し、Container自体へはHTTPで転送するため、
-`ASSET_PUBLIC_BASE_URL` を明示的に設定しない場合、生成されるAsset URLが `http://` のまま
-返る可能性がある（FrontendがHTTPSの場合、Mixed Contentでブラウザにブロックされ得る）。
+補正しないと生成されるAsset URLが `http://` のまま返っていた。
 
-回避策は2つ:
+実機Deployで実際に踏んだ: `curl` では `http://` URLが302で `https://` へRedirectされ配信は
+できていたが、**Browserのmixed Content判定はRedirect前のURL Schemeだけを見てBlockする**ため、
+HTTPSのFirebase HostingからFrontendが呼ぶと画像が一切表示されない不具合になっていた。
 
-1. `ASSET_PUBLIC_BASE_URL` にCloud RunのService URL（`https://...`）を明示的に設定する
-   （設定1つで済むのでこちらを推奨）
-2. `uvicorn` 起動時に `--proxy-headers --forwarded-allow-ips=*` を付けて `X-Forwarded-Proto` を
-   信頼させ、`request.base_url` 自体が `https` を返すようにする
+対応: `app/api/v1/artworks.py` の `_public_base_url()` が、`APP_ENV=deployed` のときだけ
+`request.base_url` のschemeを `https://` へ補正する（ローカル開発 `APP_ENV=local` 既定値では
+何もしない）。Cloud Runの公開Endpointは常にHTTPSでしか外部到達できない
+（`http://`は自動でRedirectされる）という事実に乗っているだけなので、
+`X-Forwarded-Proto` を信頼する方式（`--proxy-headers`）より単純で、Header偽装等を
+気にしなくてよい。`ASSET_PUBLIC_BASE_URL` を明示的に設定した場合はそちらが優先されるので、
+将来カスタムドメインを使う等の理由で必要になったときの逃げ道は残っている。
 
-いずれもAsset Binary Storage方式そのものの決定ではないので、GCS移行を待たずに
-Local Directory実装のままでも直せる。ただし数値・設定値としてどちらを採るかは
-実際にDeployして挙動を見てから決める（【PoC後FIX】寄りの話なので、ここでは選ばない）。
+この修正に伴い、`generate_artwork` Endpointが読む `Settings` の取得経路を
+`Depends(get_settings)`（Process全体でキャッシュされた、実環境変数を読むだけの関数）から
+`Depends(get_settings_dep)`（`request.app.state.settings` を返す）へ揃えた。
+`app.state.generator` / `app.state.asset_store` は元々 `create_app()` に渡された
+Settingsから作られていたのに、Endpoint内の `settings` だけ別経路を見ていて、
+テストでSettingsを差し替えても反映されない食い違いがあったため。
+
+`tests/test_generate_endpoint.py::test_asset_url_scheme_is_https_when_deployed` で
+`APP_ENV=deployed` 時にAsset ManifestのURLが `https://` になることを確認している。
 
 ---
 
