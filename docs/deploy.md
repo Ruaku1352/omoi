@@ -227,6 +227,11 @@ Scale to Zero）と相性が悪い。** `backend/app/services/asset_store.py` �
     チーム確認してから実装する
 - **デモ限定の暫定策**: `--min-instances=1 --max-instances=1` にして、かつDeployし直さない
   短時間の検証・デモ用途だけに使う、と明示して割り切る。本番運用や複数人での並行アクセスには使わない
+- **恒久策にしないことの明記**: Local Filesystemを、複数Request・複数Instanceをまたぐ
+  Assetの正本として扱わない（技術設計§22.5）。`--min/max-instances=1` はこの前提を
+  一時的に回避しているだけであり、Local Directory実装そのものをそのまま本番の
+  Asset正本として運用し続けることは想定しない。恒久策は上記のGCS移行（またはそれに準ずる
+  外部Storage）であり、方式決定・実装は別タスクとして扱う
 
 ### 副次的に見つかった論点: Asset URLのScheme
 
