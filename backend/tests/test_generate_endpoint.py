@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import REPO_ROOT, Settings
@@ -55,6 +57,20 @@ def test_published_asset_url_is_fetchable(client: TestClient, photo_upload) -> N
     fetched = client.get(url)
     assert fetched.status_code == 200
     assert fetched.headers["content-type"].startswith("image/")
+
+
+def test_generate_logs_elapsed_time(
+    client: TestClient, photo_upload, caplog: pytest.LogCaptureFixture
+) -> None:
+    """同期/非同期判断(【PoC後FIX】)の実測材料。Responseの形は変えず、Log行だけで残す。"""
+
+    with caplog.at_level(logging.INFO, logger="app.api.v1.artworks"):
+        response = client.post("/api/v1/artworks/generate", files=[photo_upload])
+
+    assert response.status_code == 200
+    messages = [r.message for r in caplog.records]
+    assert any(m.startswith("ai_generate elapsed=") for m in messages)
+    assert any(m.startswith("generate_artwork elapsed=") for m in messages)
 
 
 def test_asset_url_scheme_is_https_when_deployed(tmp_path: Path, photo_upload) -> None:

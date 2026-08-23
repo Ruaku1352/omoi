@@ -10,6 +10,7 @@ P0で作るEndpointはこれだけ【FIX】。
 from __future__ import annotations
 
 import logging
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -113,8 +114,12 @@ async def generate_artwork(
     asset_store: Annotated[AssetStore, Depends(get_asset_store)],
     memory_text: Annotated[str | None, Form(alias="memoryText")] = None,
 ) -> GenerateSuccessResponse:
+    # 同期/非同期の判断(【PoC後FIX】)には代表ケースの実測が要る。
+    # ResponseへはTimingを含めず(Contractを変えない)、Server Logだけに残す。
+    request_started_at = time.perf_counter()
     input_photos = await _read_photos(photos, settings)
 
+    ai_started_at = time.perf_counter()
     try:
         result = await generator.generate(input_photos, memory_text)
     except AiTimeoutError as exc:
@@ -128,6 +133,13 @@ async def generate_artwork(
     except AiError as exc:
         # AI失敗をMockで埋め合わせない。失敗はそのままErrorとして返す。
         raise ApiError(ErrorCode.AI_FAILED, _GENERIC_AI_MESSAGE, log_message=str(exc)) from exc
+    finally:
+        logger.info(
+            "ai_generate elapsed=%.3fs mock_ai=%s photos=%d",
+            time.perf_counter() - ai_started_at,
+            settings.mock_ai,
+            len(input_photos),
+        )
 
     # AI Moduleの結果をそのまま信用せず、必ず契約へ通す。
     try:
@@ -158,4 +170,12 @@ async def generate_artwork(
             log_message=f"asset publish failed: {type(exc).__name__}",
         ) from exc
 
+    logger.info(
+        "generate_artwork elapsed=%.3fs mock_ai=%s photos=%d layers=%d assets=%d",
+        time.perf_counter() - request_started_at,
+        settings.mock_ai,
+        len(input_photos),
+        len(artwork.layers),
+        len(manifest.assets),
+    )
     return GenerateSuccessResponse(artwork=artwork, asset_manifest=manifest)
