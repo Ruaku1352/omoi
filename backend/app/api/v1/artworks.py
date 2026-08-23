@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from ai.errors import AiError, AiRateLimitedError, AiTimeoutError
 from ai.types import ArtworkGenerator, InputPhoto
-from app.config import Settings, get_settings
+from app.config import Settings
 from app.errors import ApiError, ErrorCode
 from app.models.api import GenerateSuccessResponse
 from app.models.artwork import Artwork
@@ -40,6 +40,34 @@ def get_generator(request: Request) -> ArtworkGenerator:
 
 def get_asset_store(request: Request) -> AssetStore:
     return request.app.state.asset_store
+
+
+def get_settings_dep(request: Request) -> Settings:
+    """`app.state.settings`（`create_app()`へ渡されたSettings）を返す。
+
+    `app.config.get_settings()` を直接Dependしないのは、Requestごとに
+    `app.state.generator` / `app.state.asset_store` を作った時のSettingsと
+    別のSettingsを見てしまう食い違いを避けるため（テスト時にSettingsを
+    差し替えても反映されない不具合になる）。
+    """
+
+    return request.app.state.settings
+
+
+def _public_base_url(request: Request, settings: Settings) -> str:
+    """Asset ManifestのURLに使うBase URL。
+
+    Cloud RunはTLSをFrontendで終端するため、Container内から見たRequestは常にhttp。
+    公開Endpoint自体は常にhttpsでしか外部から到達できない（httpは自動でhttpsへ
+    Redirectされる）ので、`APP_ENV=deployed` のときだけschemeをhttpsへ補正する。
+    ローカル開発（`APP_ENV=local` 既定値）はhttpのまま変えない。
+    `ASSET_PUBLIC_BASE_URL` が設定されていればこの関数の結果はAssetStore側で無視される。
+    """
+
+    base_url = str(request.base_url)
+    if settings.app_env == "deployed" and base_url.startswith("http://"):
+        base_url = "https://" + base_url[len("http://") :]
+    return base_url
 
 
 async def _read_photos(photos: list[UploadFile], settings: Settings) -> list[InputPhoto]:
@@ -80,7 +108,7 @@ async def _read_photos(photos: list[UploadFile], settings: Settings) -> list[Inp
 async def generate_artwork(
     request: Request,
     photos: Annotated[list[UploadFile], File(description="複数画像。固定5枚ではない。")],
-    settings: Annotated[Settings, Depends(get_settings)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
     generator: Annotated[ArtworkGenerator, Depends(get_generator)],
     asset_store: Annotated[AssetStore, Depends(get_asset_store)],
     memory_text: Annotated[str | None, Form(alias="memoryText")] = None,
@@ -120,7 +148,9 @@ async def generate_artwork(
         )
 
     try:
-        manifest = asset_store.publish(artwork.artwork_id, result.assets, str(request.base_url))
+        manifest = asset_store.publish(
+            artwork.artwork_id, result.assets, _public_base_url(request, settings)
+        )
     except Exception as exc:
         raise ApiError(
             ErrorCode.ASSET_BUILD_FAILED,
