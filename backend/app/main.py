@@ -19,6 +19,14 @@ from app.services.generator import build_generator
 
 API_V1_PREFIX = "/api/v1"
 
+# uvicornは自分のLogger("uvicorn"系)しか設定しない。Root Loggerには何もHandlerが
+# 無いままなので、Python標準の"handler of last resort"（WARNING以上だけ・Formatなし）
+# しか働かず、`logger.info(...)`はどこにも出ない。Cloud Run(標準出力をLogとして収集)でも
+# ローカルでも同じなので、明示的に設定してINFOログを見えるようにする。
+# `logging.basicConfig`はRoot Loggerに既にHandlerがあれば何もしない(冪等)ので、
+# `create_app()`がテストで何度呼ばれても問題ない。
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 logger = logging.getLogger(__name__)
 
 
