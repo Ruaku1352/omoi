@@ -5,6 +5,7 @@ import { layerHeightRatio } from './artwork/geometry'
 import { sortByLayerIndex } from './artwork/layerOrder'
 import { apiBaseUrl } from './config/env'
 import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
+import PhotoSelect from './screens/PhotoSelect'
 import ArtworkPreview from './preview/ArtworkPreview'
 import ArtworkEditor from './edit/ArtworkEditor'
 
@@ -15,10 +16,11 @@ import ArtworkEditor from './edit/ArtworkEditor'
  * それらは Frontend担当が `skills/frontend/SKILL.md` の実装順で積む。
  */
 export default function App() {
- const [artwork, setArtwork] = useState(mockArtwork)
+const [artwork, setArtwork] = useState(mockArtwork)
+const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
   // `layers[]` の配列位置は奥行き順ではない。必ず layerIndex で並べ替える。
   const layers = sortByLayerIndex(artwork.layers)
-  const assets = buildAssetIndex(buildMockAssetManifest(artwork))
+  const assets = buildAssetIndex(manifest)
 
   return (
     <main className="app">
@@ -26,9 +28,15 @@ export default function App() {
         <h1>omoi</h1>
         <p className="tagline">Our Memories, One Image — Frontend Scaffold</p>
       </header>
-      <ArtworkPreview artwork={artwork} />
-     <ArtworkEditor artwork={artwork} onChange={setArtwork} />
+       <PhotoSelect
+        onGenerated={(nextArtwork, nextManifest) => {
+          setArtwork(nextArtwork)
+          setManifest(nextManifest)
+        }}
+      />
 
+    <ArtworkPreview artwork={artwork} assets={assets} />
+<ArtworkEditor artwork={artwork} onChange={setArtwork} assets={assets} />
       <section className="meta">
         <dl>
           <dt>Source</dt>

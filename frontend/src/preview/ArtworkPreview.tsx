@@ -1,11 +1,10 @@
 import { Suspense, useRef, type ComponentRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useTexture } from '@react-three/drei'
-import { buildAssetIndex, resolveAssetUrl } from '../artwork/assetIndex'
+import { resolveAssetUrl, type AssetIndex } from '../artwork/assetIndex'
 import { toLayerPlane } from '../artwork/geometry'
 import { sortByLayerIndex } from '../artwork/layerOrder'
 import { previewDepthStep } from '../config/artworkEditing'
-import { buildMockAssetManifest } from '../mock/mockArtwork'
 import type { Artwork, Layer } from '../types/artwork'
 
 function LayerPlane({
@@ -28,13 +27,18 @@ function LayerPlane({
   )
 }
 
-export default function ArtworkPreview({ artwork }: { artwork: Artwork }) {
+export default function ArtworkPreview({
+  artwork,
+  assets,
+}: {
+  artwork: Artwork
+  assets: AssetIndex
+}) {
   const layers = sortByLayerIndex(artwork.layers)
-  const assets = buildAssetIndex(buildMockAssetManifest(artwork))
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null)
 
   return (
-    <div style={{ position: 'relative', height: 400, background: '#111' }}>
+    <div style={{ position: 'relative', height: 400, background: 'var(--preview-bg)' }}>
       <button
         type="button"
         onClick={() => controlsRef.current?.reset()}
