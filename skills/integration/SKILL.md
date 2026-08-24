@@ -56,3 +56,17 @@ Backend（Secret含む）: `GEMINI_API_KEY` / `GEMINI_MODEL` / `GEMINI_SEGMENTAT
 `.env` はCommitしない。`.env.example` はKey名だけ。
 Frontend と Backend は別Originなので、Productionでは `CORS_ORIGINS` を
 Firebase Hosting の Origin に限定する。
+
+### CORS の確認
+
+**CORSの失敗はServer側から見えない。** 許可Originが一致しなくてもHTTPは200で返り、
+足りないのは `Access-Control-Allow-Origin` だけなので、
+**curlでは成功して見えてブラウザだけが失敗する。**
+
+実際に効いている許可Originは Health Check で確認する。
+
+```bash
+curl -s https://<backend>/health   # corsOrigins / corsOriginsInvalid を見る
+```
+
+Port違いは別Origin。Deployコマンドと `^|^` 記法は `docs/deploy.md`。
