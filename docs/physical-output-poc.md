@@ -88,7 +88,7 @@ python scripts/flat_photo_parts_poc.py
 - `contourSimplifyMm`: 0.10
 - `gridCellMm`: 2
 - `mountMode`: rear
-- `tabWidthMm`: 8
+- `tabWidthMm`: 16
 - `tabHeightMm`: 7
 - `tabOverlapMm`: 1
 - `slotClearanceMm`: 0.4
@@ -244,6 +244,7 @@ python scripts/flat_photo_parts_poc.py --mount-mode front-tab --base-front-margi
 - 各層の差し込み口: 3
 - スロット幅: `partThicknessMm + slotClearanceMm` = 2.0mm
 - 各差し込み口の長さ: 16mm
+- 各パーツの差し込み足幅: 16mm
 - 正面から奥への割り当て: 人物、犬、花、空き
 
 検証は次で行った。
@@ -259,4 +260,8 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-
 
 結果は成功。新しい土台STLは `tmp/physical-eval-sample/out-square-base/flat-photo-parts-slot-base.stl` に出した。説明画像は `tmp/physical-eval-sample/comparison/square-grid-base-20260824.png` に作成した。
 
-まだ未検証なのは、実際のパーツ足を3スロットのどれへ差すか、差し込み口3つを全て使う専用足にするかである。次の実プリントでは、土台の安定性、穴のきつさ、4層目の空きが見た目として邪魔でないかを確認する。
+土台を先に作ったため、2026-08-24にパーツ側の差し込み足を8mmから16mmへ広げた。土台側の1穴は実開口が約16.8mmで、16mm足に対して左右合計0.8mmの余裕が残る。
+
+再生成結果は成功。評価用の花、犬、人物はいずれも差し込み足が16mmになった。土台側の1穴は16.8mmなので、各パーツに0.8mmの余裕が残る。説明画像は `tmp/physical-eval-sample/comparison/part-tab-width-20260824.png` に作成した。
+
+まだ未検証なのは、16mm足が花の細い茎や犬・人物の下部で見た目の邪魔にならないか、実物で穴にきつすぎず緩すぎず入るかである。次の実プリントでは、土台の安定性、穴のきつさ、4層目の空きが見た目として邪魔でないかを確認する。
