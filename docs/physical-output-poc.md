@@ -83,14 +83,19 @@ python scripts/flat_photo_parts_poc.py
 
 - `targetWidthMm`: 160
 - `partThicknessMm`: 1.6
-- `outlineMarginMm`: 2
+- `outlineMarginMm`: 0.6
+- `shapeMode`: contour
+- `contourSimplifyMm`: 0.25
 - `gridCellMm`: 2
 - `tabWidthMm`: 8
 - `tabHeightMm`: 7
+- `tabOverlapMm`: 1
 - `slotClearanceMm`: 0.4
 - `baseLayerGapMm`: 7
 - `baseHeightMm`: 8
 - `material`: PLA
+
+既定の形状生成は、2mmグリッドではなく輪郭ポリゴン押し出しにした。OpenCVが使えない、または輪郭の三角形化に失敗した場合だけグリッド方式へフォールバックする。意図せずフォールバックした場合は、レポートの `warnings` に出す。
 
 ### 出力
 
@@ -146,3 +151,34 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-
 結果はどちらも成功。花、犬、人物の3つの実物寄りLayerから、差し込み足つき平面パーツSTL、スロット土台STL、1:1印刷用SVGを生成できた。警告は出ていない。
 
 ただし、ここで確認できたのは「実物寄り透過PNGを取り込んで平面パーツ化できること」までである。実プリント時のスロットのきつさ、足の強度、反り、細部の欠け、飾り物としての見た目は未検証。
+
+### 2mmグリッド外形の修正
+
+実物寄りの花PNGをBambu Studioで見ると、花びら、葉、茎が「丸い塊」に近くなり、茎や下部の細い情報が消えて見えた。原因はSAMや写真生成ではなく、平面パーツ化の後段にあった。旧方式はalphaを2mmグリッドへ量子化し、さらに2mmの外形余白で太らせていたため、細い茎や葉のくびれがマス目へ吸収されていた。
+
+2026-08-24に、平面パーツの既定生成を次のように直した。
+
+- `shapeMode: contour` を既定にし、RGBA alphaから外部輪郭を取り出してポリゴン押し出しする
+- `outlineMarginMm` を2.0mmから0.6mmへ下げ、細部を必要以上に太らせない
+- `gridCellMm` は比較用・フォールバック用に残す
+- 差し込み足はパーツ下部の実際の支持区間から置き、1.0mmだけ本体へ重ねる
+- 既定の輪郭生成に失敗してグリッドへ戻った場合は、レポートに警告を出す
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py
+python scripts/validate_contracts.py
+python scripts/physical_output_mock_poc.py
+python scripts/flat_photo_parts_poc.py
+python scripts/validate_contracts.py tmp/physical-eval-sample/artwork.json --assets tmp/physical-eval-sample/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-contour>
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-grid-fallback> --shape-mode grid
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-grid-2mm-margin> --shape-mode grid --outline-margin-mm 2
+```
+
+結果は成功。評価用の花、犬、人物は既定で `geometry.strategy: contour` になった。花は旧条件では15 x 21の2mmグリッドに潰れていたが、修正後は1つの外部輪郭、88頂点、360三角形の平面STLになり、葉と茎のまとまりが残る。
+
+比較画像は `tmp/physical-eval-sample/comparison/flower-contour-fix-20260824.png` に出した。これは共有Fixtureではなく、今回の原因確認用のローカル評価物である。
+
+まだ未検証なのは、実プリント後の強度である。輪郭は残るようになったが、細い茎が実物として折れないか、スロットがきつすぎないか、反りが出ないかはBambu Studioのスライスと実印刷で確認する必要がある。
