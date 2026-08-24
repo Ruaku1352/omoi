@@ -92,7 +92,12 @@ python scripts/flat_photo_parts_poc.py
 - `tabHeightMm`: 7
 - `tabOverlapMm`: 1
 - `slotClearanceMm`: 0.4
-- `baseFrontMarginYMm`: 3
+- `baseMode`: square-grid
+- `baseSideMm`: 90
+- `baseLayerCapacity`: 4
+- `baseSlotsPerLayer`: 3
+- `baseSlotLengthMm`: 16
+- `baseFrontMarginYMm`: 8
 - `baseBackMarginYMm`: 24
 - `baseLayerGapMm`: 7
 - `baseHeightMm`: 8
@@ -227,3 +232,31 @@ python scripts/flat_photo_parts_poc.py --mount-mode front-tab --base-front-margi
 結果は成功。背面土台版のSTLは `tmp/physical-eval-sample/out-rear-base/` に出した。旧方式との説明画像は `tmp/physical-eval-sample/comparison/rear-base-direction-20260824.png` に作成した。土台寸法は旧方式が幅184mm / 奥行き36mm / 前後余白8mmずつ、新方式が幅184mm / 奥行き47mm / 前余白3mm / 後ろ余白24mmである。
 
 まだ未検証なのは、背面方向に伸ばした支えと後ろへ長い土台が、実物の重心に対して十分に安定するかである。Bambu Studioで配置を確認し、必要なら支えを別パーツ化するか、土台側に背面リブを追加する。
+
+### 90mm四方・4層3スロット土台への変更
+
+2026-08-24に、土台をさらに見直した。前回の背面土台は「前より後ろへ伸びる」意図は合っていたが、幅184mmの横長バーで、スロット数も各レイヤーの足の位置に依存していた。Bambu A1 miniで扱うことや、見た目の分かりやすさを考えると、まずは土台を規格化した方がよい。
+
+既定を `baseMode: square-grid` に変更した。`flat-photo-parts-slot-base.stl` は90mm四方、厚み8mmの正方形ベースになり、正面から奥へ4層分のスロット列を持つ。各層には3つの差し込み口を固定で置く。評価用Artworkは3レイヤーなので、4層目は空きとして残る。
+
+- 土台寸法: 90 x 90 x 8mm
+- 層数: 4
+- 各層の差し込み口: 3
+- スロット幅: `partThicknessMm + slotClearanceMm` = 2.0mm
+- 各差し込み口の長さ: 16mm
+- 正面から奥への割り当て: 人物、犬、花、空き
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py
+python scripts/validate_contracts.py
+python scripts/physical_output_mock_poc.py
+python scripts/flat_photo_parts_poc.py
+python scripts/validate_contracts.py tmp/physical-eval-sample/artwork.json --assets tmp/physical-eval-sample/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-square-base>
+```
+
+結果は成功。新しい土台STLは `tmp/physical-eval-sample/out-square-base/flat-photo-parts-slot-base.stl` に出した。説明画像は `tmp/physical-eval-sample/comparison/square-grid-base-20260824.png` に作成した。
+
+まだ未検証なのは、実際のパーツ足を3スロットのどれへ差すか、差し込み口3つを全て使う専用足にするかである。次の実プリントでは、土台の安定性、穴のきつさ、4層目の空きが見た目として邪魔でないかを確認する。
