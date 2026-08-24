@@ -58,6 +58,7 @@ Mermaid構成図と sequenceDiagram の2枚固定は必須ではない。必要�
 │  └─ assets/                               # Mockが参照するダミーAsset
 ├─ skills/            # AI Coding Agent向けSkills（7領域）
 ├─ scripts/           # 開発補助
+├─ docs/              # Deploy手順等（人間向け運用メモ）
 ├─ AGENTS.md
 └─ README.md
 ```

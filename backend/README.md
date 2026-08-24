@@ -32,6 +32,14 @@ curl -F photos=@../contracts/assets/source-p1.jpg -F memoryText=海に行った�
   http://127.0.0.1:8000/api/v1/artworks/generate
 ```
 
+## Deploy
+
+Cloud Run へのDeploy手順・環境変数・CORSのハマりどころは
+[`/docs/deploy.md`](../docs/deploy.md)。
+
+`CORS_ORIGINS` は **gcloud に `^|^` 記法で渡さないと値のカンマが区切りと誤認される。**
+Deploy後は `curl <SERVICE_URL>/health` の `corsOrigins` で実効値を確認できる。
+
 ## API
 
 `POST /api/v1/artworks/generate`（**P0で作るProduct Endpointはこれだけ**）
