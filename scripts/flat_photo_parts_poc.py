@@ -38,7 +38,7 @@ class FlatPhotoPartConfig:
     contour_simplify_mm: float = 0.10
     grid_cell_mm: float = 2.0
     mount_mode: str = "rear"
-    tab_width_mm: float = 8.0
+    tab_width_mm: float = 16.0
     tab_height_mm: float = 7.0
     tab_overlap_mm: float = 1.0
     tab_edge_margin_mm: float = 4.0
@@ -200,6 +200,30 @@ def _box_triangles(
         (v010, v011, v111), (v010, v111, v110),
         (v000, v001, v011), (v000, v011, v010),
         (v100, v110, v111), (v100, v111, v101),
+    ]
+
+
+def _translate_triangles(
+    triangles: list[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ]
+    ],
+    dx: float,
+    dy: float,
+    dz: float,
+) -> list[
+    tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]
+]:
+    return [
+        tuple((x + dx, y + dy, z + dz) for x, y, z in triangle)
+        for triangle in triangles
     ]
 
 
@@ -570,6 +594,35 @@ def _tab_specs(
     tab_y = image_height_mm - overlap
     tab_height = config.tab_height_mm + overlap if mount_mode == "front-tab" else overlap
 
+    if config.base_mode == "square-grid":
+        tab_width = config.tab_width_mm
+        valid = [
+            (start, end)
+            for start, end in support_intervals
+            if end - start >= max(0.5, tab_width * 0.2)
+        ]
+        if valid:
+            widest = max(valid, key=lambda item: item[1] - item[0])
+            center = (widest[0] + widest[1]) / 2
+        else:
+            center = width_mm / 2
+        starts = [center - tab_width / 2]
+        return [
+            {
+                "tabId": "tab-1",
+                "xMm": round(start, 3),
+                "yMm": round(tab_y, 3),
+                "widthMm": round(tab_width, 3),
+                "heightMm": round(tab_height, 3),
+                "depthMm": round(config.tab_height_mm, 3),
+                "insertDepthMm": round(config.tab_height_mm, 3),
+                "frontExtensionMm": round(config.tab_height_mm if mount_mode == "front-tab" else 0.0, 3),
+                "mountDirection": "front-down" if mount_mode == "front-tab" else "rear",
+                "overlapMm": round(overlap, 3),
+            }
+            for start in starts
+        ]
+
     if support_intervals:
         valid = [
             (start, end)
@@ -705,6 +758,15 @@ def _part_from_layer(
                 min(tab["yMm"] + tab["heightMm"], height_mm),
                 config.part_thickness_mm + tab["depthMm"],
             )
+    min_part_x = min([0.0] + [tab["xMm"] for tab in tabs])
+    max_part_x = max([width_mm] + [tab["xMm"] + tab["widthMm"] for tab in tabs])
+    shift_x = -min_part_x if min_part_x < 0 else 0.0
+    if shift_x:
+        triangles = _translate_triangles(triangles, shift_x, 0.0, 0.0)
+        for tab in tabs:
+            tab["xMm"] = round(tab["xMm"] + shift_x, 3)
+    part_width_mm = max_part_x - min_part_x
+    image_x_mm = shift_x
     triangle_count = _write_stl(stl_path, name, triangles)
     part_height_mm = height_mm + (config.tab_height_mm if config.mount_mode == "front-tab" else 0.0)
     part_depth_mm = config.part_thickness_mm + (config.tab_height_mm if config.mount_mode == "rear" else 0.0)
@@ -729,14 +791,14 @@ def _part_from_layer(
         "usesHeightmap": False,
         "mountMode": config.mount_mode,
         "dimensionsMm": {
-            "widthMm": round(width_mm, 3),
+            "widthMm": round(part_width_mm, 3),
             "heightMm": round(part_height_mm, 3),
             "thicknessMm": round(part_depth_mm, 3),
             "frontHeightMm": round(height_mm, 3),
             "bodyThicknessMm": round(config.part_thickness_mm, 3),
         },
         "imageAreaMm": {
-            "xMm": 0.0,
+            "xMm": round(image_x_mm, 3),
             "yMm": 0.0,
             "widthMm": round(width_mm, 3),
             "heightMm": round(height_mm, 3),
@@ -1080,6 +1142,8 @@ def _write_print_layout(
         image_height = part["imageAreaMm"]["heightMm"]
         label = html.escape(f"{part['layerId']} / {part['label']}")
         mount_mode = part.get("mountMode", config.mount_mode)
+        image_x = x + part["imageAreaMm"].get("xMm", 0.0)
+        image_width = part["imageAreaMm"]["widthMm"]
         layout_title = "print area + rear mounts" if mount_mode == "rear" else "print area + cut tabs"
         layout_note = "rear mounts extend behind the front view" if mount_mode == "rear" else "tabs go into base slots"
         note_color = "#0369a1" if mount_mode == "rear" else "#9f1239"
@@ -1092,18 +1156,18 @@ def _write_print_layout(
                     'stroke-width="0.35" stroke-dasharray="1.5 1"/>'
                 ),
                 (
-                    f'<image x="{x:.3f}" y="{y:.3f}" width="{width:.3f}" '
+                    f'<image x="{image_x:.3f}" y="{y:.3f}" width="{image_width:.3f}" '
                     f'height="{image_height:.3f}" href="{_image_data_uri(image)}" '
                     'preserveAspectRatio="none"/>'
                 ),
                 (
-                    f'<rect x="{x:.3f}" y="{y:.3f}" width="{width:.3f}" '
+                    f'<rect x="{image_x:.3f}" y="{y:.3f}" width="{image_width:.3f}" '
                     f'height="{image_height:.3f}" fill="none" stroke="#111" '
                     'stroke-width="0.25"/>'
                 ),
                 (
-                    f'<line x1="{x:.3f}" y1="{(y + image_height):.3f}" '
-                    f'x2="{(x + width):.3f}" y2="{(y + image_height):.3f}" '
+                    f'<line x1="{image_x:.3f}" y1="{(y + image_height):.3f}" '
+                    f'x2="{(image_x + image_width):.3f}" y2="{(y + image_height):.3f}" '
                     'stroke="#e11d48" stroke-width="0.25" stroke-dasharray="1 1"/>'
                 ),
                 (
