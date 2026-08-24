@@ -188,3 +188,11 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-
 細かさ比較画像は `tmp/physical-eval-sample/comparison/flower-detail-levels-20260824.png` と `tmp/physical-eval-sample/comparison/flower-detail-levels-ultra-20260824.png` に出した。既定は0.35mm余白 / 0.10mm単純化で、0.20mm余白 / 0.04mm単純化はBambu Studio確認用の比較出力である。
 
 まだ未検証なのは、実プリント後の強度である。輪郭は残るようになったが、細い茎が実物として折れないか、スロットがきつすぎないか、反りが出ないかはBambu Studioのスライスと実印刷で確認する必要がある。
+
+### 平面花パーツの実プリント一次確認
+
+2026-08-24に、評価用の花PNGから作った平面STLを白PLAで実プリントした写真を確認した。Googleドキュメントへ貼る共有画像では、机背景をそのまま使わず、印刷物だけを背景除去して `tmp/physical-eval-sample/comparison/flower-png-to-print-20260824.png` にまとめた。
+
+結果として、花の丸い外形、葉、茎、差し込み足は実物でも読める。一方で、花芯、花びらの色、写真の濃淡、細かい立体感は平面STLルートでは残らない。これは失敗というより、このPoCの役割が「写真の外形を白い差し込みパーツへ変換すること」に寄っているためである。
+
+次に判断することは、写真やシールを後工程で重ねるのか、白PLAのシルエット置物として成立させるのかである。前者なら印刷面や貼り付け方法を別に検証する。後者なら、花芯や葉脈のような情報を別パーツ、浅い線、または色変更で追加する必要がある。
