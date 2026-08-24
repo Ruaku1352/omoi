@@ -33,10 +33,13 @@ EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 class FlatPhotoPartConfig:
     target_width_mm: float = 160.0
     part_thickness_mm: float = 1.6
-    outline_margin_mm: float = 2.0
+    outline_margin_mm: float = 0.6
+    shape_mode: str = "contour"
+    contour_simplify_mm: float = 0.25
     grid_cell_mm: float = 2.0
     tab_width_mm: float = 8.0
     tab_height_mm: float = 7.0
+    tab_overlap_mm: float = 1.0
     tab_edge_margin_mm: float = 4.0
     slot_clearance_mm: float = 0.4
     slot_side_clearance_mm: float = 0.8
@@ -56,9 +59,12 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "targetWidthMm": config.target_width_mm,
         "partThicknessMm": config.part_thickness_mm,
         "outlineMarginMm": config.outline_margin_mm,
+        "shapeMode": config.shape_mode,
+        "contourSimplifyMm": config.contour_simplify_mm,
         "gridCellMm": config.grid_cell_mm,
         "tabWidthMm": config.tab_width_mm,
         "tabHeightMm": config.tab_height_mm,
+        "tabOverlapMm": config.tab_overlap_mm,
         "tabEdgeMarginMm": config.tab_edge_margin_mm,
         "slotClearanceMm": config.slot_clearance_mm,
         "slotSideClearanceMm": config.slot_side_clearance_mm,
@@ -225,6 +231,253 @@ def _grid_triangles(
     return tris
 
 
+def _signed_area(points: list[tuple[float, float]]) -> float:
+    area = 0.0
+    for i, current in enumerate(points):
+        nxt = points[(i + 1) % len(points)]
+        area += current[0] * nxt[1] - nxt[0] * current[1]
+    return area / 2.0
+
+
+def _cross(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+) -> float:
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def _point_in_triangle(
+    point: tuple[float, float],
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+) -> bool:
+    d1 = _cross(point, a, b)
+    d2 = _cross(point, b, c)
+    d3 = _cross(point, c, a)
+    has_neg = d1 < -1e-9 or d2 < -1e-9 or d3 < -1e-9
+    has_pos = d1 > 1e-9 or d2 > 1e-9 or d3 > 1e-9
+    return not (has_neg and has_pos)
+
+
+def _dedupe_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    deduped: list[tuple[float, float]] = []
+    for point in points:
+        if not deduped or math.dist(deduped[-1], point) > 1e-6:
+            deduped.append(point)
+    if len(deduped) > 1 and math.dist(deduped[0], deduped[-1]) <= 1e-6:
+        deduped.pop()
+    return deduped
+
+
+def _triangulate_polygon(
+    points: list[tuple[float, float]],
+) -> list[tuple[tuple[float, float], tuple[float, float], tuple[float, float]]]:
+    polygon = _dedupe_points(points)
+    if len(polygon) < 3:
+        return []
+    if _signed_area(polygon) < 0:
+        polygon.reverse()
+
+    remaining = list(range(len(polygon)))
+    triangles: list[tuple[tuple[float, float], tuple[float, float], tuple[float, float]]] = []
+    guard = len(polygon) * len(polygon)
+
+    while len(remaining) > 3 and guard > 0:
+        guard -= 1
+        clipped = False
+        for pos, index in enumerate(remaining):
+            prev_index = remaining[pos - 1]
+            next_index = remaining[(pos + 1) % len(remaining)]
+            a, b, c = polygon[prev_index], polygon[index], polygon[next_index]
+            if _cross(a, b, c) <= 1e-9:
+                continue
+
+            has_inside = False
+            for other_index in remaining:
+                if other_index in (prev_index, index, next_index):
+                    continue
+                if _point_in_triangle(polygon[other_index], a, b, c):
+                    has_inside = True
+                    break
+            if has_inside:
+                continue
+
+            triangles.append((a, b, c))
+            del remaining[pos]
+            clipped = True
+            break
+
+        if not clipped:
+            return []
+
+    if len(remaining) == 3:
+        a, b, c = (polygon[i] for i in remaining)
+        if abs(_cross(a, b, c)) > 1e-9:
+            triangles.append((a, b, c))
+    return triangles
+
+
+def _polygon_triangles(
+    polygon: list[tuple[float, float]],
+    thickness_mm: float,
+) -> list[
+    tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]
+]:
+    points = _dedupe_points(polygon)
+    if len(points) < 3:
+        return []
+    if _signed_area(points) < 0:
+        points.reverse()
+
+    surface_triangles = _triangulate_polygon(points)
+    if not surface_triangles:
+        return []
+
+    tris = []
+    for a, b, c in surface_triangles:
+        tris.append(((a[0], a[1], thickness_mm), (b[0], b[1], thickness_mm), (c[0], c[1], thickness_mm)))
+        tris.append(((c[0], c[1], 0.0), (b[0], b[1], 0.0), (a[0], a[1], 0.0)))
+
+    for i, current in enumerate(points):
+        nxt = points[(i + 1) % len(points)]
+        tris += _quad(
+            (current[0], current[1], 0.0),
+            (nxt[0], nxt[1], 0.0),
+            (nxt[0], nxt[1], thickness_mm),
+            (current[0], current[1], thickness_mm),
+        )
+    return tris
+
+
+def _contour_shape_triangles(
+    mask: Image.Image,
+    mm_per_px: float,
+    config: FlatPhotoPartConfig,
+) -> tuple[
+    list[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ]
+    ],
+    dict,
+] | None:
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return None
+
+    data = np.array(mask, dtype=np.uint8)
+    contours, _ = cv2.findContours(data, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if not contours:
+        return None
+
+    epsilon_px = max(config.contour_simplify_mm / mm_per_px, 0.5)
+    min_area_px = max(4.0, (0.5 / mm_per_px) ** 2)
+    triangles = []
+    contour_reports = []
+
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True):
+        area_px = float(cv2.contourArea(contour))
+        if area_px < min_area_px:
+            continue
+        approx = cv2.approxPolyDP(contour, epsilon_px, True)
+        points = [
+            (float(point[0][0]) * mm_per_px, float(point[0][1]) * mm_per_px)
+            for point in approx
+        ]
+        polygon_tris = _polygon_triangles(points, config.part_thickness_mm)
+        if not polygon_tris:
+            continue
+        triangles += polygon_tris
+        contour_reports.append(
+            {
+                "areaPx": round(area_px, 3),
+                "vertices": len(_dedupe_points(points)),
+                "triangles": len(polygon_tris),
+            }
+        )
+
+    if not triangles:
+        return None
+
+    return triangles, {
+        "strategy": "contour",
+        "contours": contour_reports,
+        "contourCount": len(contour_reports),
+        "fallbackUsed": False,
+    }
+
+
+def _grid_shape_triangles(
+    mask: Image.Image,
+    width_mm: float,
+    height_mm: float,
+    config: FlatPhotoPartConfig,
+) -> tuple[
+    list[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ]
+    ],
+    dict,
+]:
+    columns = max(1, math.ceil(width_mm / config.grid_cell_mm))
+    rows = max(1, math.ceil(height_mm / config.grid_cell_mm))
+    occupied = _occupancy_from_mask(mask, columns, rows, config)
+    return (
+        _grid_triangles(
+            occupied,
+            columns,
+            rows,
+            width_mm,
+            height_mm,
+            config.part_thickness_mm,
+        ),
+        {
+            "strategy": "grid",
+            "fallbackUsed": config.shape_mode == "contour",
+            "columns": columns,
+            "rows": rows,
+            "occupiedCells": len(occupied),
+            "totalCells": columns * rows,
+        },
+    )
+
+
+def _flat_shape_triangles(
+    mask: Image.Image,
+    width_mm: float,
+    height_mm: float,
+    mm_per_px: float,
+    config: FlatPhotoPartConfig,
+) -> tuple[
+    list[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ]
+    ],
+    dict,
+]:
+    if config.shape_mode == "contour":
+        contour_result = _contour_shape_triangles(mask, mm_per_px, config)
+        if contour_result is not None:
+            return contour_result
+    return _grid_shape_triangles(mask, width_mm, height_mm, config)
+
+
 def _threshold_alpha(image: Image.Image, threshold: int) -> Image.Image:
     return image.getchannel("A").point(lambda value: 255 if value >= threshold else 0)
 
@@ -260,28 +513,92 @@ def _occupancy_from_mask(mask: Image.Image, columns: int, rows: int, config: Fla
     return occupied
 
 
-def _tab_specs(width_mm: float, image_height_mm: float, config: FlatPhotoPartConfig) -> list[dict]:
+def _bottom_support_intervals(mask: Image.Image, mm_per_px: float) -> list[tuple[float, float]]:
+    bbox = mask.getbbox()
+    if bbox is None:
+        return []
+
+    scan_px = max(1, math.ceil(4.0 / mm_per_px))
+    y0 = max(bbox[1], bbox[3] - scan_px)
+    y1 = bbox[3]
+    pixels = mask.load()
+    intervals: list[tuple[float, float]] = []
+    start: int | None = None
+
+    for x in range(bbox[0], bbox[2]):
+        filled = any(pixels[x, y] >= 255 for y in range(y0, y1))
+        if filled and start is None:
+            start = x
+        elif not filled and start is not None:
+            intervals.append((start * mm_per_px, x * mm_per_px))
+            start = None
+    if start is not None:
+        intervals.append((start * mm_per_px, bbox[2] * mm_per_px))
+
+    return intervals
+
+
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return min(max(value, minimum), maximum)
+
+
+def _tab_specs(
+    width_mm: float,
+    image_height_mm: float,
+    config: FlatPhotoPartConfig,
+    support_intervals: list[tuple[float, float]],
+) -> list[dict]:
     edge_margin = min(config.tab_edge_margin_mm, max(width_mm * 0.15, 1.0))
     usable_width = max(width_mm - edge_margin * 2, 1.0)
-    tab_count = 2 if usable_width >= config.tab_width_mm * 2 + edge_margin else 1
+    tab_width = min(config.tab_width_mm, usable_width)
+    overlap = min(config.tab_overlap_mm, max(image_height_mm * 0.25, 0.0))
+    tab_y = image_height_mm - overlap
+    tab_height = config.tab_height_mm + overlap
 
-    if tab_count == 1:
-        tab_width = min(config.tab_width_mm, usable_width)
-        starts = [(width_mm - tab_width) / 2]
-    else:
-        tab_width = min(config.tab_width_mm, usable_width / 3)
-        starts = [
-            edge_margin,
-            width_mm - edge_margin - tab_width,
+    if support_intervals:
+        valid = [
+            (start, end)
+            for start, end in support_intervals
+            if end - start >= max(0.5, tab_width * 0.2)
         ]
+    else:
+        valid = []
+
+    if valid:
+        valid.sort(key=lambda item: item[0])
+        span = valid[-1][1] - valid[0][0]
+        if len(valid) >= 2 and span >= tab_width * 2:
+            centers = [
+                (valid[0][0] + valid[0][1]) / 2,
+                (valid[-1][0] + valid[-1][1]) / 2,
+            ]
+        else:
+            widest = max(valid, key=lambda item: item[1] - item[0])
+            centers = [(widest[0] + widest[1]) / 2]
+        starts = [
+            _clamp(center - tab_width / 2, 0.0, max(width_mm - tab_width, 0.0))
+            for center in centers
+        ]
+    else:
+        tab_count = 2 if usable_width >= config.tab_width_mm * 2 + edge_margin else 1
+        if tab_count == 1:
+            starts = [(width_mm - tab_width) / 2]
+        else:
+            tab_width = min(config.tab_width_mm, usable_width / 3)
+            starts = [
+                edge_margin,
+                width_mm - edge_margin - tab_width,
+            ]
 
     return [
         {
             "tabId": f"tab-{index + 1}",
             "xMm": round(start, 3),
-            "yMm": round(image_height_mm, 3),
+            "yMm": round(tab_y, 3),
             "widthMm": round(tab_width, 3),
-            "heightMm": round(config.tab_height_mm, 3),
+            "heightMm": round(tab_height, 3),
+            "insertDepthMm": round(config.tab_height_mm, 3),
+            "overlapMm": round(overlap, 3),
         }
         for index, start in enumerate(starts)
     ]
@@ -337,30 +654,27 @@ def _part_from_layer(
     crop_w_px, crop_h_px = cropped_mask.size
     width_mm = crop_w_px * mm_per_px
     height_mm = crop_h_px * mm_per_px
-    columns = max(1, math.ceil(width_mm / config.grid_cell_mm))
-    rows = max(1, math.ceil(height_mm / config.grid_cell_mm))
-    occupied = _occupancy_from_mask(cropped_mask, columns, rows, config)
-    if not occupied:
-        return None, None
-
-    tabs = _tab_specs(width_mm, height_mm, config)
-    name = f"flat-part-{layer['layerIndex']}-{_slug(layer['layerId'])}"
-    stl_path = out_dir / f"{name}.stl"
-    triangles = _grid_triangles(
-        occupied,
-        columns,
-        rows,
+    triangles, geometry = _flat_shape_triangles(
+        cropped_mask,
         width_mm,
         height_mm,
-        config.part_thickness_mm,
+        mm_per_px,
+        config,
     )
+    if not triangles:
+        return None, None
+
+    support_intervals = _bottom_support_intervals(cropped_mask, mm_per_px)
+    tabs = _tab_specs(width_mm, height_mm, config, support_intervals)
+    name = f"flat-part-{layer['layerIndex']}-{_slug(layer['layerId'])}"
+    stl_path = out_dir / f"{name}.stl"
     for tab in tabs:
         triangles += _box_triangles(
             tab["xMm"],
-            height_mm,
+            tab["yMm"],
             0.0,
             tab["xMm"] + tab["widthMm"],
-            height_mm + config.tab_height_mm,
+            tab["yMm"] + tab["heightMm"],
             config.part_thickness_mm,
         )
     triangle_count = _write_stl(stl_path, name, triangles)
@@ -395,6 +709,11 @@ def _part_from_layer(
             "heightMm": round(height_mm, 3),
         },
         "tabs": tabs,
+        "bottomSupportIntervalsMm": [
+            {"xStartMm": round(start, 3), "xEndMm": round(end, 3)}
+            for start, end in support_intervals
+        ],
+        "geometry": geometry,
         "artworkPlacementMm": {
             "centerXMm": round(center_x_mm, 3),
             "centerYMm": round(center_y_mm, 3),
@@ -415,13 +734,19 @@ def _part_from_layer(
                 "bottom": backing_bbox[3],
             },
         },
-        "grid": {
-            "columns": columns,
-            "rows": rows,
-            "occupiedCells": len(occupied),
-            "totalCells": columns * rows,
-        },
     }
+    if geometry["strategy"] == "grid":
+        part["grid"] = {
+            "columns": geometry["columns"],
+            "rows": geometry["rows"],
+            "occupiedCells": geometry["occupiedCells"],
+            "totalCells": geometry["totalCells"],
+        }
+    if geometry["strategy"] == "contour":
+        part["contour"] = {
+            "contourCount": geometry["contourCount"],
+            "contours": geometry["contours"],
+        }
     return part, cropped_image
 
 
@@ -690,6 +1015,8 @@ def build_poc(
         if part is None or cropped_image is None:
             warnings.append(f"{layer['layerId']}: flat part was not generated")
             continue
+        if part["geometry"].get("fallbackUsed"):
+            warnings.append(f"{layer['layerId']}: 輪郭生成に失敗したためグリッド方式へフォールバック")
         parts.append(part)
         cropped_images.append(cropped_image)
 
@@ -742,9 +1069,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-width-mm", type=float, default=FlatPhotoPartConfig.target_width_mm)
     parser.add_argument("--part-thickness-mm", type=float, default=FlatPhotoPartConfig.part_thickness_mm)
     parser.add_argument("--outline-margin-mm", type=float, default=FlatPhotoPartConfig.outline_margin_mm)
+    parser.add_argument("--shape-mode", choices=("contour", "grid"), default=FlatPhotoPartConfig.shape_mode)
+    parser.add_argument("--contour-simplify-mm", type=float, default=FlatPhotoPartConfig.contour_simplify_mm)
     parser.add_argument("--grid-cell-mm", type=float, default=FlatPhotoPartConfig.grid_cell_mm)
     parser.add_argument("--tab-width-mm", type=float, default=FlatPhotoPartConfig.tab_width_mm)
     parser.add_argument("--tab-height-mm", type=float, default=FlatPhotoPartConfig.tab_height_mm)
+    parser.add_argument("--tab-overlap-mm", type=float, default=FlatPhotoPartConfig.tab_overlap_mm)
     parser.add_argument("--slot-clearance-mm", type=float, default=FlatPhotoPartConfig.slot_clearance_mm)
     parser.add_argument("--base-layer-gap-mm", type=float, default=FlatPhotoPartConfig.base_layer_gap_mm)
     parser.add_argument("--include-background", action="store_true")
@@ -758,9 +1088,12 @@ def main() -> int:
         target_width_mm=args.target_width_mm,
         part_thickness_mm=args.part_thickness_mm,
         outline_margin_mm=args.outline_margin_mm,
+        shape_mode=args.shape_mode,
+        contour_simplify_mm=args.contour_simplify_mm,
         grid_cell_mm=args.grid_cell_mm,
         tab_width_mm=args.tab_width_mm,
         tab_height_mm=args.tab_height_mm,
+        tab_overlap_mm=args.tab_overlap_mm,
         slot_clearance_mm=args.slot_clearance_mm,
         base_layer_gap_mm=args.base_layer_gap_mm,
     )
