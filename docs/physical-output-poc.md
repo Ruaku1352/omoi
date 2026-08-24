@@ -129,3 +129,20 @@ python scripts/flat_photo_parts_poc.py
 確認では、3つの平面パーツSTLに加えて `flat-photo-parts-slot-base.stl` が生成された。STLは合計4ファイル。SVGは凹凸印刷用ではなく、画像やシールを平らに出して切るための1:1レイアウトとして扱う。
 
 この追加でもArtwork Schemaの変更は不要。足の幅、足の高さ、土台の余白、スロットのクリアランス、奥行き間隔はすべて `FlatPhotoPartConfig` 側のPoC値であり、Artwork Dataへは混ぜていない。
+
+### 実物寄り生成画像でのローカル評価
+
+共通MockのAssetは見た目評価用ではないため、花、犬、人物の実物寄り透過PNGを別途生成し、`tmp/physical-eval-sample/` に評価用Artworkとして置いた。共通Fixtureではないので、`contracts/mock/` と `contracts/assets/` は変更していない。
+
+生成方法はRepository内ではまだFIXされていない。今回の評価では、透明背景の単体切り抜き画像を作り、余白を整えたうえで、Artwork Dataの `assetId`、`x / y / scale / layerIndex` から既存の平面パーツPoCへ入力した。
+
+2026-08-24に次を確認した。
+
+```bash
+python scripts/validate_contracts.py tmp/physical-eval-sample/artwork.json --assets tmp/physical-eval-sample/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out>
+```
+
+結果はどちらも成功。花、犬、人物の3つの実物寄りLayerから、差し込み足つき平面パーツSTL、スロット土台STL、1:1印刷用SVGを生成できた。警告は出ていない。
+
+ただし、ここで確認できたのは「実物寄り透過PNGを取り込んで平面パーツ化できること」までである。実プリント時のスロットのきつさ、足の強度、反り、細部の欠け、飾り物としての見た目は未検証。
