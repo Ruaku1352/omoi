@@ -79,14 +79,20 @@ python scripts/flat_photo_parts_poc.py
 - `partThicknessMm`: 1.6
 - `outlineMarginMm`: 2
 - `gridCellMm`: 2
+- `tabWidthMm`: 8
+- `tabHeightMm`: 7
+- `slotClearanceMm`: 0.4
+- `baseLayerGapMm`: 7
+- `baseHeightMm`: 8
 - `material`: PLA
 
 ### 出力
 
 生成物は `tmp/flat-photo-parts-poc/` に出る。
 
-- 花、犬、人物の平面パーツSTL
-- `flat-photo-print-layout.svg`
+- 花、犬、人物の差し込み足つき平面パーツSTL
+- パーツの差し込み足に対応したスロット土台STL
+- カット線、差し込み足、貼り込み範囲を入れた1:1印刷用 `flat-photo-print-layout.svg`
 - `flat-photo-parts-report.json`
 
 背景Layerは、通常の写真台紙側で扱う想定なのでデフォルトでは除外する。必要な場合は `--include-background` で含められる。特定Layerだけを試す場合は `--layer-id layer-3` のように指定する。
@@ -104,3 +110,16 @@ python scripts/flat_photo_parts_poc.py
 結果は成功。`flat_photo_parts_poc.py` は、花、犬、人物の3つの平面パーツSTLと1:1印刷用SVGを生成した。警告は出ていない。
 
 この方式でもArtwork Schemaの追加は不要。既存の `x / y / scale / layerIndex`、Asset寸法、RGBA alphaでPoCできる。製造条件は `FlatPhotoPartConfig` に分離しておけば足りる。
+
+### 差し込み構造の追加
+
+同日に、平らな印刷用パーツを「置ける物」に近づけるため、差し込み足と土台のPoCを追加した。
+
+- 各平面パーツの下部に1個または2個の差し込み足を付ける
+- `partThicknessMm + slotClearanceMm` で土台側のスロット幅を決める
+- `layerIndex` の奥行き順に、土台上へスロット列を並べる
+- SVGには画像を貼る範囲、外形カット線、差し込み足、差し込み位置の目印を入れる
+
+確認では、3つの平面パーツSTLに加えて `flat-photo-parts-slot-base.stl` が生成された。STLは合計4ファイル。SVGは凹凸印刷用ではなく、画像やシールを平らに出して切るための1:1レイアウトとして扱う。
+
+この追加でもArtwork Schemaの変更は不要。足の幅、足の高さ、土台の余白、スロットのクリアランス、奥行き間隔はすべて `FlatPhotoPartConfig` 側のPoC値であり、Artwork Dataへは混ぜていない。
