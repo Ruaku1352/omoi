@@ -176,14 +176,15 @@ python scripts/validate_contracts.py tmp/physical-eval-sample/artwork.json --ass
 python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-contour>
 python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-contour-fine> --outline-margin-mm 0.35 --contour-simplify-mm 0.10
 python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-contour-extra-fine> --outline-margin-mm 0.25 --contour-simplify-mm 0.06
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-contour-ultra-fine> --outline-margin-mm 0.20 --contour-simplify-mm 0.04
 python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-grid-fallback> --shape-mode grid
 python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-grid-2mm-margin> --shape-mode grid --outline-margin-mm 2
 ```
 
-結果は成功。評価用の花、犬、人物は既定で `geometry.strategy: contour` になった。花は旧条件では15 x 21の2mmグリッドに潰れていたが、修正後は1つの外部輪郭、181頂点、732三角形の平面STLになり、葉と茎のまとまりが残る。さらに細かい0.25mm余白 / 0.06mm単純化では259頂点、1044三角形まで増えたが、細い茎や葉の切れ込みが強度リスクになりやすいため既定にはしない。
+結果は成功。評価用の花、犬、人物は既定で `geometry.strategy: contour` になった。花は旧条件では15 x 21の2mmグリッドに潰れていたが、修正後は1つの外部輪郭、181頂点、732三角形の平面STLになり、葉と茎のまとまりが残る。さらに細かい0.25mm余白 / 0.06mm単純化では259頂点、1044三角形まで増えた。追加確認した0.20mm余白 / 0.04mm単純化では352頂点、1416三角形まで増え、元画像の細部に近づく。ただし、0.4mmノズルでは細い茎や葉の切れ込みがスライス後に消えるか、実物で折れるリスクがあるため、既定は0.35mm余白 / 0.10mm単純化のままにする。
 
 比較画像は `tmp/physical-eval-sample/comparison/flower-contour-fix-20260824.png` に出した。これは共有Fixtureではなく、今回の原因確認用のローカル評価物である。
 
-細かさ比較画像は `tmp/physical-eval-sample/comparison/flower-detail-levels-20260824.png` に出した。既定は中央の0.35mm余白 / 0.10mm単純化である。
+細かさ比較画像は `tmp/physical-eval-sample/comparison/flower-detail-levels-20260824.png` と `tmp/physical-eval-sample/comparison/flower-detail-levels-ultra-20260824.png` に出した。既定は0.35mm余白 / 0.10mm単純化で、0.20mm余白 / 0.04mm単純化はBambu Studio確認用の比較出力である。
 
 まだ未検証なのは、実プリント後の強度である。輪郭は残るようになったが、細い茎が実物として折れないか、スロットがきつすぎないか、反りが出ないかはBambu Studioのスライスと実印刷で確認する必要がある。
