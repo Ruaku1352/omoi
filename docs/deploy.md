@@ -25,20 +25,56 @@ Runtime / Deploy構成は【仮決定】（AGENTS.md §2.1）。実Deploy検証�
 | `LOG_LEVEL` | 任意 | 既定 `INFO`。起動時のCORS診断ログはINFO以上で出る |
 | `CONTRACTS_DIR` | 任意 | `MOCK_AI=true` で共通Mockを読む場所。Imageへの同梱先が変わる場合のみ |
 | `MAX_PHOTOS` / `MAX_PHOTO_BYTES` / `MAX_TOTAL_UPLOAD_BYTES` | 任意 | Upload制限【PoC後FIX】 |
-| `ASSET_DIR` / `ASSET_MOUNT_PATH` / `ASSET_PUBLIC_BASE_URL` | 任意 | Asset公開の暫定設定。Storage方式は【未決定】 |
+| `ASSET_PUBLIC_BASE_URL` | **Cloud Runでは実質必須** | Asset URLのPrefix。未設定だと `http://` が返り Mixed Content になる（下記） |
+| `ASSET_DIR` / `ASSET_MOUNT_PATH` | 任意 | Asset公開の暫定設定。Storage方式は【未決定】 |
 
 Key名の共有は Repository Root の `.env.example`。**`.env` はCommitしない**（AGENTS.md §10）。
 
 ### Deployコマンド
 
 ```bash
+# Build Sourceは Repository Root。backend/ だけを指すと MOCK_AI が壊れる（下記）
 gcloud run deploy <SERVICE_NAME> \
   --project <PROJECT_ID> \
   --region <REGION> \
-  --source backend \
+  --source . \
   --allow-unauthenticated \
   --update-env-vars "^|^CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app|MOCK_AI=true"
 ```
+
+### Build Source に `contracts/` を含める【重要】
+
+`MOCK_AI=true` は `CONTRACTS_DIR`（既定は Repository Root の `contracts/`）から
+共通Mockを読む。**`--source backend` にすると `contracts/` がImageへ入らず**、
+生成Requestが `AI_FAILED` で落ちる。
+
+```
+ERROR app.errors AI_FAILED: 共通Mockが見つからない: .../contracts/mock/artwork.json（CONTRACTS_DIR を確認する）
+```
+
+`/health` は `ok` を返し続けるので、**生成を1回叩くまで気づけない**。
+Repository Root から Build するか、`contracts/` をImageへコピーしたうえで
+`CONTRACTS_DIR` をそのPathへ向ける。
+
+> **【要記入】** 本ファイル作成時点で Repository Root にも `backend/` にも
+> `Dockerfile` / `Procfile` / `requirements.txt` が無く、Build方法をRepositoryから
+> 再現できない。実際にDeployできている構成をCommitして、ここへ追記すること。
+
+### Asset URL を HTTPS にする【重要】
+
+Asset Manifest の `url` は、既定では**Requestのschemeから組み立てる**。
+Cloud Run はTLSを終端して**コンテナへは平文HTTPで転送する**ため、
+そのままだと `http://...` のURLが返り、HTTPSのFrontendページからは
+**Mixed Content としてブラウザに破棄される**。
+
+`ASSET_PUBLIC_BASE_URL` へ https のURLを明示して回避する。
+
+```
+ASSET_PUBLIC_BASE_URL=https://<SERVICE_URL>/dev/assets
+```
+
+この値が消えると Mixed Content が再発する。**環境変数を触るときは
+`--set-env-vars`（全消し）ではなく `--update-env-vars` を使うこと。**
 
 Gemini API Key は環境変数へ直接書かず Secret Manager 経由にする。
 
@@ -118,6 +154,13 @@ curl -s https://<SERVICE_URL>/health
 - `corsOrigins` が **空** → `CORS_ORIGINS` が渡っていない
 - `corsOrigins` に**想定より少ない数**しか無い → `^|^` を付け忘れてカンマで分断された
 - `corsOriginsInvalid` に値がある → クォート混入・scheme欠落・Pathつき
+
+`/health` は CORS 以外の設定ミスまでは見ない。**生成を1回叩くまで気づけない**ものがある。
+
+| 症状 | 原因 |
+|---|---|
+| `AI_FAILED` で落ちる（MOCK_AI=true なのに） | Imageに `contracts/` が入っていない |
+| 画像が表示されず Console に Mixed Content | `ASSET_PUBLIC_BASE_URL` 未設定で `http://` が返っている |
 
 起動ログにも同じ内容が出る。
 
