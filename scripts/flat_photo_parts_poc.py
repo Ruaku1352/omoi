@@ -44,8 +44,13 @@ class FlatPhotoPartConfig:
     tab_edge_margin_mm: float = 4.0
     slot_clearance_mm: float = 0.4
     slot_side_clearance_mm: float = 0.8
+    base_mode: str = "square-grid"
+    base_side_mm: float = 90.0
+    base_layer_capacity: int = 4
+    base_slots_per_layer: int = 3
+    base_slot_length_mm: float = 16.0
     base_margin_x_mm: float = 12.0
-    base_margin_y_mm: float = 3.0
+    base_margin_y_mm: float = 8.0
     base_back_margin_y_mm: float = 24.0
     base_layer_gap_mm: float = 7.0
     base_height_mm: float = 8.0
@@ -71,6 +76,11 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "tabEdgeMarginMm": config.tab_edge_margin_mm,
         "slotClearanceMm": config.slot_clearance_mm,
         "slotSideClearanceMm": config.slot_side_clearance_mm,
+        "baseMode": config.base_mode,
+        "baseSideMm": config.base_side_mm,
+        "baseLayerCapacity": config.base_layer_capacity,
+        "baseSlotsPerLayer": config.base_slots_per_layer,
+        "baseSlotLengthMm": config.base_slot_length_mm,
         "baseMarginXMm": config.base_margin_x_mm,
         "baseFrontMarginYMm": config.base_margin_y_mm,
         "baseBackMarginYMm": config.base_back_margin_y_mm,
@@ -806,7 +816,124 @@ def _complement_intervals(intervals: list[tuple[float, float]], min_value: float
     return solid
 
 
+def _grid_slot_x_spans(config: FlatPhotoPartConfig, base_width: float) -> list[tuple[float, float]]:
+    slot_count = max(1, config.base_slots_per_layer)
+    slot_length = min(config.base_slot_length_mm, base_width / (slot_count * 1.5))
+    usable = base_width - config.base_margin_x_mm * 2 - slot_length * slot_count
+    if slot_count == 1:
+        starts = [(base_width - slot_length) / 2]
+    else:
+        gap = max(usable / (slot_count - 1), 2.0)
+        total_width = slot_length * slot_count + gap * (slot_count - 1)
+        start_x = (base_width - total_width) / 2
+        starts = [start_x + index * (slot_length + gap) for index in range(slot_count)]
+    return [(start, start + slot_length) for start in starts]
+
+
+def _square_grid_base_triangles_for_parts(parts: list[dict], config: FlatPhotoPartConfig) -> tuple[list, dict]:
+    front_to_back_parts = sorted(parts, key=lambda part: part["layerIndex"], reverse=True)
+    layer_capacity = max(config.base_layer_capacity, len(front_to_back_parts), 1)
+    slot_width = config.part_thickness_mm + config.slot_clearance_mm
+    base_width = config.base_side_mm
+    base_depth = config.base_side_mm
+    usable_depth = base_depth - config.base_margin_y_mm - config.base_back_margin_y_mm - slot_width * layer_capacity
+    layer_gap = max(usable_depth / max(layer_capacity - 1, 1), 2.0) if layer_capacity > 1 else 0.0
+    if usable_depth < 0:
+        base_depth = config.base_margin_y_mm + config.base_back_margin_y_mm + slot_width * layer_capacity
+        layer_gap = 0.0
+
+    tris = []
+    slots = []
+    y_spans: list[tuple[float, float, list[tuple[float, float]]]] = []
+    cursor = 0.0
+    x_spans = _grid_slot_x_spans(config, base_width)
+
+    for slot_index in range(layer_capacity):
+        part = front_to_back_parts[slot_index] if slot_index < len(front_to_back_parts) else None
+        slot_front = config.base_margin_y_mm + slot_index * (slot_width + layer_gap)
+        slot_back = slot_front + slot_width
+        if cursor < slot_front:
+            y_spans.append((cursor, slot_front, []))
+
+        tab_slots = []
+        openings = [
+            (
+                x_start - config.slot_side_clearance_mm / 2,
+                x_end + config.slot_side_clearance_mm / 2,
+            )
+            for x_start, x_end in x_spans
+        ]
+        for column_index, (opening, span) in enumerate(zip(openings, x_spans)):
+            x_start, x_end = opening
+            tab_slot = {
+                "slotId": f"slot-{slot_index + 1}-{column_index + 1}",
+                "columnIndex": column_index,
+                "xStartMm": round(x_start, 3),
+                "xEndMm": round(x_end, 3),
+                "frontMm": round(slot_front, 3),
+                "backMm": round(slot_back, 3),
+                "nominalSlotLengthMm": round(span[1] - span[0], 3),
+            }
+            tab_slots.append(tab_slot)
+
+        slot = {
+            "slotIndex": slot_index,
+            "layerId": part["layerId"] if part else None,
+            "layerIndex": part["layerIndex"] if part else None,
+            "frontMm": round(slot_front, 3),
+            "backMm": round(slot_back, 3),
+            "slotWidthMm": round(slot_width, 3),
+            "tabSlots": tab_slots,
+        }
+        if part:
+            part["baseSlot"] = {
+                "slotIndex": slot_index,
+                "frontMm": round(slot_front, 3),
+                "backMm": round(slot_back, 3),
+                "slotWidthMm": round(slot_width, 3),
+                "availableSlotCount": len(tab_slots),
+                "compatibleSlotIds": [tab_slot["slotId"] for tab_slot in tab_slots],
+            }
+            for tab in part["tabs"]:
+                tab["baseSlotOptions"] = tab_slots
+        slots.append(slot)
+        y_spans.append((slot_front, slot_back, openings))
+        cursor = slot_back
+
+    if cursor < base_depth:
+        y_spans.append((cursor, base_depth, []))
+
+    for y0, y1, openings in y_spans:
+        merged = _merge_intervals(openings, 0.0, base_width)
+        for x0, x1 in _complement_intervals(merged, 0.0, base_width):
+            tris += _box_triangles(x0, y0, 0.0, x1, y1, config.base_height_mm)
+
+    base = {
+        "baseMode": config.base_mode,
+        "mountMode": config.mount_mode,
+        "assemblyDirection": "square base with four front-to-back layer rows",
+        "frontEdgeMm": 0.0,
+        "backEdgeMm": round(base_depth, 3),
+        "frontMarginMm": round(config.base_margin_y_mm, 3),
+        "backMarginMm": round(config.base_back_margin_y_mm, 3),
+        "layerCapacity": layer_capacity,
+        "slotsPerLayer": len(x_spans),
+        "frontToBackLayerOrder": [part["layerId"] for part in front_to_back_parts],
+        "emptyLayerSlots": max(layer_capacity - len(front_to_back_parts), 0),
+        "dimensionsMm": {
+            "widthMm": round(base_width, 3),
+            "depthMm": round(base_depth, 3),
+            "heightMm": round(config.base_height_mm, 3),
+        },
+        "slots": slots,
+    }
+    return tris, base
+
+
 def _base_triangles_for_parts(parts: list[dict], config: FlatPhotoPartConfig) -> tuple[list, dict]:
+    if config.base_mode == "square-grid":
+        return _square_grid_base_triangles_for_parts(parts, config)
+
     front_to_back_parts = sorted(parts, key=lambda part: part["layerIndex"], reverse=True)
     slot_width = config.part_thickness_mm + config.slot_clearance_mm
     pitch = slot_width + config.base_layer_gap_mm
@@ -1122,6 +1249,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tab-height-mm", type=float, default=FlatPhotoPartConfig.tab_height_mm)
     parser.add_argument("--tab-overlap-mm", type=float, default=FlatPhotoPartConfig.tab_overlap_mm)
     parser.add_argument("--slot-clearance-mm", type=float, default=FlatPhotoPartConfig.slot_clearance_mm)
+    parser.add_argument("--base-mode", choices=("square-grid", "part-tabs"), default=FlatPhotoPartConfig.base_mode)
+    parser.add_argument("--base-side-mm", type=float, default=FlatPhotoPartConfig.base_side_mm)
+    parser.add_argument("--base-layer-capacity", type=int, default=FlatPhotoPartConfig.base_layer_capacity)
+    parser.add_argument("--base-slots-per-layer", type=int, default=FlatPhotoPartConfig.base_slots_per_layer)
+    parser.add_argument("--base-slot-length-mm", type=float, default=FlatPhotoPartConfig.base_slot_length_mm)
     parser.add_argument("--base-front-margin-y-mm", type=float, default=FlatPhotoPartConfig.base_margin_y_mm)
     parser.add_argument("--base-back-margin-y-mm", type=float, default=FlatPhotoPartConfig.base_back_margin_y_mm)
     parser.add_argument("--base-layer-gap-mm", type=float, default=FlatPhotoPartConfig.base_layer_gap_mm)
@@ -1144,6 +1276,11 @@ def main() -> int:
         tab_height_mm=args.tab_height_mm,
         tab_overlap_mm=args.tab_overlap_mm,
         slot_clearance_mm=args.slot_clearance_mm,
+        base_mode=args.base_mode,
+        base_side_mm=args.base_side_mm,
+        base_layer_capacity=args.base_layer_capacity,
+        base_slots_per_layer=args.base_slots_per_layer,
+        base_slot_length_mm=args.base_slot_length_mm,
         base_margin_y_mm=args.base_front_margin_y_mm,
         base_back_margin_y_mm=args.base_back_margin_y_mm,
         base_layer_gap_mm=args.base_layer_gap_mm,
