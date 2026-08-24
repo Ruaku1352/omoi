@@ -87,10 +87,13 @@ python scripts/flat_photo_parts_poc.py
 - `shapeMode`: contour
 - `contourSimplifyMm`: 0.10
 - `gridCellMm`: 2
+- `mountMode`: rear
 - `tabWidthMm`: 8
 - `tabHeightMm`: 7
 - `tabOverlapMm`: 1
 - `slotClearanceMm`: 0.4
+- `baseFrontMarginYMm`: 3
+- `baseBackMarginYMm`: 24
 - `baseLayerGapMm`: 7
 - `baseHeightMm`: 8
 - `material`: PLA
@@ -101,9 +104,9 @@ python scripts/flat_photo_parts_poc.py
 
 生成物は `tmp/flat-photo-parts-poc/` に出る。
 
-- `label` が花、犬、人物になっているダミーLayerの差し込み足つき平面パーツSTL
-- パーツの差し込み足に対応したスロット土台STL
-- カット線、差し込み足、貼り込み範囲を入れた1:1印刷用 `flat-photo-print-layout.svg`
+- `label` が花、犬、人物になっているダミーLayerの背面マウントつき平面パーツSTL
+- パーツの背面マウント位置に対応したスロット土台STL
+- カット線、背面マウント位置、貼り込み範囲を入れた1:1印刷用 `flat-photo-print-layout.svg`
 - `flat-photo-parts-report.json`
 
 背景Layerは、通常の写真台紙側で扱う想定なのでデフォルトでは除外する。必要な場合は `--include-background` で含められる。特定Layerだけを試す場合は `--layer-id layer-3` のように指定する。
@@ -196,3 +199,31 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-
 結果として、花の丸い外形、葉、茎、差し込み足は実物でも読める。一方で、花芯、花びらの色、写真の濃淡、細かい立体感は平面STLルートでは残らない。これは失敗というより、このPoCの役割が「写真の外形を白い差し込みパーツへ変換すること」に寄っているためである。
 
 次に判断することは、写真やシールを後工程で重ねるのか、白PLAのシルエット置物として成立させるのかである。前者なら印刷面や貼り付け方法を別に検証する。後者なら、花芯や葉脈のような情報を別パーツ、浅い線、または色変更で追加する必要がある。
+
+### 背面マウントと背面土台への変更
+
+2026-08-24に、平面パーツの置き方を見直した。旧方式では本体の下に四角い差し込み足を足し、土台も前後8mmずつの均等余白にしていた。そのため、犬や花を正面から見たときに固定の都合が前側へ出やすかった。
+
+既定を `mountMode: rear` に変更した。正面シルエットの高さは画像由来の外形のままにし、支えは本体下部の1mm重なり位置から背面方向へ伸ばす。さらに `flat-photo-parts-slot-base.stl` は、前余白を3mm、後ろ余白を24mmにして、正面から見たときに土台が後ろへ伸びる設計へ寄せた。比較用として、旧方式は `--mount-mode front-tab` と前後8mm余白指定で再現できる。
+
+- `frontExtensionMm` は背面マウント時に0になる
+- `tabHeightMm` は正面下方向の足ではなく、背面方向の支え深さとして扱う
+- 土台は正面側へ出すのではなく、組み立て時に背面方向へ伸びる前提にした
+- スロット順は `layerIndex` の大きいものを手前、小さいものを奥として並べる
+- SVGでは、正面に出る赤い足ではなく、背面マウント位置を青い目印として表示する
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py
+python scripts/validate_contracts.py
+python scripts/physical_output_mock_poc.py
+python scripts/flat_photo_parts_poc.py
+python scripts/validate_contracts.py tmp/physical-eval-sample/artwork.json --assets tmp/physical-eval-sample/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-rear-base>
+python scripts/flat_photo_parts_poc.py --mount-mode front-tab --base-front-margin-y-mm 8 --base-back-margin-y-mm 8 --artwork <absolute path to tmp/physical-eval-sample/artwork.json> --assets <absolute path to tmp/physical-eval-sample/assets> --out <absolute path to tmp/physical-eval-sample/out-front-base-compare>
+```
+
+結果は成功。背面土台版のSTLは `tmp/physical-eval-sample/out-rear-base/` に出した。旧方式との説明画像は `tmp/physical-eval-sample/comparison/rear-base-direction-20260824.png` に作成した。土台寸法は旧方式が幅184mm / 奥行き36mm / 前後余白8mmずつ、新方式が幅184mm / 奥行き47mm / 前余白3mm / 後ろ余白24mmである。
+
+まだ未検証なのは、背面方向に伸ばした支えと後ろへ長い土台が、実物の重心に対して十分に安定するかである。Bambu Studioで配置を確認し、必要なら支えを別パーツ化するか、土台側に背面リブを追加する。

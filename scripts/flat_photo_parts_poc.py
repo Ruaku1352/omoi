@@ -37,6 +37,7 @@ class FlatPhotoPartConfig:
     shape_mode: str = "contour"
     contour_simplify_mm: float = 0.10
     grid_cell_mm: float = 2.0
+    mount_mode: str = "rear"
     tab_width_mm: float = 8.0
     tab_height_mm: float = 7.0
     tab_overlap_mm: float = 1.0
@@ -44,7 +45,8 @@ class FlatPhotoPartConfig:
     slot_clearance_mm: float = 0.4
     slot_side_clearance_mm: float = 0.8
     base_margin_x_mm: float = 12.0
-    base_margin_y_mm: float = 8.0
+    base_margin_y_mm: float = 3.0
+    base_back_margin_y_mm: float = 24.0
     base_layer_gap_mm: float = 7.0
     base_height_mm: float = 8.0
     alpha_threshold: int = 16
@@ -62,6 +64,7 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "shapeMode": config.shape_mode,
         "contourSimplifyMm": config.contour_simplify_mm,
         "gridCellMm": config.grid_cell_mm,
+        "mountMode": config.mount_mode,
         "tabWidthMm": config.tab_width_mm,
         "tabHeightMm": config.tab_height_mm,
         "tabOverlapMm": config.tab_overlap_mm,
@@ -69,7 +72,8 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "slotClearanceMm": config.slot_clearance_mm,
         "slotSideClearanceMm": config.slot_side_clearance_mm,
         "baseMarginXMm": config.base_margin_x_mm,
-        "baseMarginYMm": config.base_margin_y_mm,
+        "baseFrontMarginYMm": config.base_margin_y_mm,
+        "baseBackMarginYMm": config.base_back_margin_y_mm,
         "baseLayerGapMm": config.base_layer_gap_mm,
         "baseHeightMm": config.base_height_mm,
         "alphaThreshold": config.alpha_threshold,
@@ -552,8 +556,9 @@ def _tab_specs(
     usable_width = max(width_mm - edge_margin * 2, 1.0)
     tab_width = min(config.tab_width_mm, usable_width)
     overlap = min(config.tab_overlap_mm, max(image_height_mm * 0.25, 0.0))
+    mount_mode = config.mount_mode
     tab_y = image_height_mm - overlap
-    tab_height = config.tab_height_mm + overlap
+    tab_height = config.tab_height_mm + overlap if mount_mode == "front-tab" else overlap
 
     if support_intervals:
         valid = [
@@ -597,7 +602,10 @@ def _tab_specs(
             "yMm": round(tab_y, 3),
             "widthMm": round(tab_width, 3),
             "heightMm": round(tab_height, 3),
+            "depthMm": round(config.tab_height_mm, 3),
             "insertDepthMm": round(config.tab_height_mm, 3),
+            "frontExtensionMm": round(config.tab_height_mm if mount_mode == "front-tab" else 0.0, 3),
+            "mountDirection": "front-down" if mount_mode == "front-tab" else "rear",
             "overlapMm": round(overlap, 3),
         }
         for index, start in enumerate(starts)
@@ -669,15 +677,27 @@ def _part_from_layer(
     name = f"flat-part-{layer['layerIndex']}-{_slug(layer['layerId'])}"
     stl_path = out_dir / f"{name}.stl"
     for tab in tabs:
-        triangles += _box_triangles(
-            tab["xMm"],
-            tab["yMm"],
-            0.0,
-            tab["xMm"] + tab["widthMm"],
-            tab["yMm"] + tab["heightMm"],
-            config.part_thickness_mm,
-        )
+        if config.mount_mode == "front-tab":
+            triangles += _box_triangles(
+                tab["xMm"],
+                tab["yMm"],
+                0.0,
+                tab["xMm"] + tab["widthMm"],
+                tab["yMm"] + tab["heightMm"],
+                config.part_thickness_mm,
+            )
+        else:
+            triangles += _box_triangles(
+                tab["xMm"],
+                tab["yMm"],
+                config.part_thickness_mm,
+                tab["xMm"] + tab["widthMm"],
+                min(tab["yMm"] + tab["heightMm"], height_mm),
+                config.part_thickness_mm + tab["depthMm"],
+            )
     triangle_count = _write_stl(stl_path, name, triangles)
+    part_height_mm = height_mm + (config.tab_height_mm if config.mount_mode == "front-tab" else 0.0)
+    part_depth_mm = config.part_thickness_mm + (config.tab_height_mm if config.mount_mode == "rear" else 0.0)
 
     crop_center_x_px = (backing_bbox[0] + backing_bbox[2]) / 2
     crop_center_y_px = (backing_bbox[1] + backing_bbox[3]) / 2
@@ -697,10 +717,13 @@ def _part_from_layer(
         "flatSurface": True,
         "usesRelief": False,
         "usesHeightmap": False,
+        "mountMode": config.mount_mode,
         "dimensionsMm": {
             "widthMm": round(width_mm, 3),
-            "heightMm": round(height_mm + config.tab_height_mm, 3),
-            "thicknessMm": round(config.part_thickness_mm, 3),
+            "heightMm": round(part_height_mm, 3),
+            "thicknessMm": round(part_depth_mm, 3),
+            "frontHeightMm": round(height_mm, 3),
+            "bodyThicknessMm": round(config.part_thickness_mm, 3),
         },
         "imageAreaMm": {
             "xMm": 0.0,
@@ -784,16 +807,22 @@ def _complement_intervals(intervals: list[tuple[float, float]], min_value: float
 
 
 def _base_triangles_for_parts(parts: list[dict], config: FlatPhotoPartConfig) -> tuple[list, dict]:
+    front_to_back_parts = sorted(parts, key=lambda part: part["layerIndex"], reverse=True)
     slot_width = config.part_thickness_mm + config.slot_clearance_mm
     pitch = slot_width + config.base_layer_gap_mm
     base_width = config.target_width_mm + config.base_margin_x_mm * 2
-    base_depth = config.base_margin_y_mm * 2 + slot_width * len(parts) + config.base_layer_gap_mm * max(len(parts) - 1, 0)
+    base_depth = (
+        config.base_margin_y_mm
+        + config.base_back_margin_y_mm
+        + slot_width * len(parts)
+        + config.base_layer_gap_mm * max(len(parts) - 1, 0)
+    )
     tris = []
     slots = []
 
     y_spans: list[tuple[float, float, list[tuple[float, float]]]] = []
     cursor = 0.0
-    for slot_index, part in enumerate(parts):
+    for slot_index, part in enumerate(front_to_back_parts):
         slot_front = config.base_margin_y_mm + slot_index * pitch
         slot_back = slot_front + slot_width
         if cursor < slot_front:
@@ -850,6 +879,13 @@ def _base_triangles_for_parts(parts: list[dict], config: FlatPhotoPartConfig) ->
             tris += _box_triangles(x0, y0, 0.0, x1, y1, config.base_height_mm)
 
     base = {
+        "mountMode": config.mount_mode,
+        "assemblyDirection": "base extends behind the front view" if config.mount_mode == "rear" else "front tabs insert into base slots",
+        "frontEdgeMm": 0.0,
+        "backEdgeMm": round(base_depth, 3),
+        "frontMarginMm": round(config.base_margin_y_mm, 3),
+        "backMarginMm": round(config.base_back_margin_y_mm, 3),
+        "frontToBackLayerOrder": [part["layerId"] for part in front_to_back_parts],
         "dimensionsMm": {
             "widthMm": round(base_width, 3),
             "depthMm": round(base_depth, 3),
@@ -916,6 +952,10 @@ def _write_print_layout(
         height = part["dimensionsMm"]["heightMm"]
         image_height = part["imageAreaMm"]["heightMm"]
         label = html.escape(f"{part['layerId']} / {part['label']}")
+        mount_mode = part.get("mountMode", config.mount_mode)
+        layout_title = "print area + rear mounts" if mount_mode == "rear" else "print area + cut tabs"
+        layout_note = "rear mounts extend behind the front view" if mount_mode == "rear" else "tabs go into base slots"
+        note_color = "#0369a1" if mount_mode == "rear" else "#9f1239"
         lines.extend(
             [
                 "<g>",
@@ -949,19 +989,24 @@ def _write_print_layout(
         for tab in part["tabs"]:
             tab_x = x + tab["xMm"]
             tab_y = y + tab["yMm"]
-            tab_label = html.escape(tab["tabId"])
+            tab_is_rear = tab.get("mountDirection") == "rear"
+            tab_label = html.escape(tab["tabId"].replace("tab", "rear") if tab_is_rear else tab["tabId"])
+            tab_fill = "#e0f2fe" if tab_is_rear else "#fce7f3"
+            tab_stroke = "#0284c7" if tab_is_rear else "#e11d48"
+            tab_text = "#075985" if tab_is_rear else "#9f1239"
+            tab_dash = ' stroke-dasharray="0.8 0.8"' if tab_is_rear else ""
             lines.extend(
                 [
                     (
                         f'<rect x="{tab_x:.3f}" y="{tab_y:.3f}" width="{tab["widthMm"]:.3f}" '
-                        f'height="{tab["heightMm"]:.3f}" fill="#fce7f3" stroke="#e11d48" '
-                        'stroke-width="0.35"/>'
+                        f'height="{tab["heightMm"]:.3f}" fill="{tab_fill}" stroke="{tab_stroke}" '
+                        f'stroke-width="0.35"{tab_dash}/>'
                     ),
                     (
                         f'<text x="{(tab_x + tab["widthMm"] / 2):.3f}" '
                         f'y="{(tab_y + tab["heightMm"] / 2 + 1.1):.3f}" '
                         'font-family="Arial, sans-serif" font-size="2.5" '
-                        f'text-anchor="middle" fill="#9f1239">{tab_label}</text>'
+                        f'text-anchor="middle" fill="{tab_text}">{tab_label}</text>'
                     ),
                 ]
             )
@@ -970,12 +1015,12 @@ def _write_print_layout(
                 (
                     f'<text x="{x:.3f}" y="{(y - 2.0):.3f}" '
                     'font-family="Arial, sans-serif" font-size="3" '
-                    'fill="#111">print area + cut tabs</text>'
+                    f'fill="#111">{layout_title}</text>'
                 ),
                 (
                     f'<text x="{x:.3f}" y="{(y + image_height + 4.0):.3f}" '
                     'font-family="Arial, sans-serif" font-size="2.8" '
-                    'fill="#9f1239">tabs go into base slots</text>'
+                    f'fill="{note_color}">{layout_note}</text>'
                 ),
                 "</g>",
             ]
@@ -1072,10 +1117,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shape-mode", choices=("contour", "grid"), default=FlatPhotoPartConfig.shape_mode)
     parser.add_argument("--contour-simplify-mm", type=float, default=FlatPhotoPartConfig.contour_simplify_mm)
     parser.add_argument("--grid-cell-mm", type=float, default=FlatPhotoPartConfig.grid_cell_mm)
+    parser.add_argument("--mount-mode", choices=("rear", "front-tab"), default=FlatPhotoPartConfig.mount_mode)
     parser.add_argument("--tab-width-mm", type=float, default=FlatPhotoPartConfig.tab_width_mm)
     parser.add_argument("--tab-height-mm", type=float, default=FlatPhotoPartConfig.tab_height_mm)
     parser.add_argument("--tab-overlap-mm", type=float, default=FlatPhotoPartConfig.tab_overlap_mm)
     parser.add_argument("--slot-clearance-mm", type=float, default=FlatPhotoPartConfig.slot_clearance_mm)
+    parser.add_argument("--base-front-margin-y-mm", type=float, default=FlatPhotoPartConfig.base_margin_y_mm)
+    parser.add_argument("--base-back-margin-y-mm", type=float, default=FlatPhotoPartConfig.base_back_margin_y_mm)
     parser.add_argument("--base-layer-gap-mm", type=float, default=FlatPhotoPartConfig.base_layer_gap_mm)
     parser.add_argument("--include-background", action="store_true")
     parser.add_argument("--layer-id", action="append", default=[])
@@ -1091,10 +1139,13 @@ def main() -> int:
         shape_mode=args.shape_mode,
         contour_simplify_mm=args.contour_simplify_mm,
         grid_cell_mm=args.grid_cell_mm,
+        mount_mode=args.mount_mode,
         tab_width_mm=args.tab_width_mm,
         tab_height_mm=args.tab_height_mm,
         tab_overlap_mm=args.tab_overlap_mm,
         slot_clearance_mm=args.slot_clearance_mm,
+        base_margin_y_mm=args.base_front_margin_y_mm,
+        base_back_margin_y_mm=args.base_back_margin_y_mm,
         base_layer_gap_mm=args.base_layer_gap_mm,
     )
     report = build_poc(
