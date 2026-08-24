@@ -35,6 +35,15 @@ class FlatPhotoPartConfig:
     part_thickness_mm: float = 1.6
     outline_margin_mm: float = 2.0
     grid_cell_mm: float = 2.0
+    tab_width_mm: float = 8.0
+    tab_height_mm: float = 7.0
+    tab_edge_margin_mm: float = 4.0
+    slot_clearance_mm: float = 0.4
+    slot_side_clearance_mm: float = 0.8
+    base_margin_x_mm: float = 12.0
+    base_margin_y_mm: float = 8.0
+    base_layer_gap_mm: float = 7.0
+    base_height_mm: float = 8.0
     alpha_threshold: int = 16
     min_cell_coverage: float = 0.10
     print_layout_margin_mm: float = 10.0
@@ -48,6 +57,15 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "partThicknessMm": config.part_thickness_mm,
         "outlineMarginMm": config.outline_margin_mm,
         "gridCellMm": config.grid_cell_mm,
+        "tabWidthMm": config.tab_width_mm,
+        "tabHeightMm": config.tab_height_mm,
+        "tabEdgeMarginMm": config.tab_edge_margin_mm,
+        "slotClearanceMm": config.slot_clearance_mm,
+        "slotSideClearanceMm": config.slot_side_clearance_mm,
+        "baseMarginXMm": config.base_margin_x_mm,
+        "baseMarginYMm": config.base_margin_y_mm,
+        "baseLayerGapMm": config.base_layer_gap_mm,
+        "baseHeightMm": config.base_height_mm,
         "alphaThreshold": config.alpha_threshold,
         "minCellCoverage": config.min_cell_coverage,
         "printLayoutMarginMm": config.print_layout_margin_mm,
@@ -129,6 +147,42 @@ def _quad(
     return [(a, b, c), (a, c, d)]
 
 
+def _box_triangles(
+    min_x: float,
+    min_y: float,
+    min_z: float,
+    max_x: float,
+    max_y: float,
+    max_z: float,
+) -> list[
+    tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]
+]:
+    if min_x >= max_x or min_y >= max_y or min_z >= max_z:
+        return []
+
+    v000 = (min_x, min_y, min_z)
+    v100 = (max_x, min_y, min_z)
+    v110 = (max_x, max_y, min_z)
+    v010 = (min_x, max_y, min_z)
+    v001 = (min_x, min_y, max_z)
+    v101 = (max_x, min_y, max_z)
+    v111 = (max_x, max_y, max_z)
+    v011 = (min_x, max_y, max_z)
+
+    return [
+        (v000, v010, v110), (v000, v110, v100),
+        (v001, v101, v111), (v001, v111, v011),
+        (v000, v100, v101), (v000, v101, v001),
+        (v010, v011, v111), (v010, v111, v110),
+        (v000, v001, v011), (v000, v011, v010),
+        (v100, v110, v111), (v100, v111, v101),
+    ]
+
+
 def _grid_triangles(
     occupied: set[tuple[int, int]],
     columns: int,
@@ -206,6 +260,33 @@ def _occupancy_from_mask(mask: Image.Image, columns: int, rows: int, config: Fla
     return occupied
 
 
+def _tab_specs(width_mm: float, image_height_mm: float, config: FlatPhotoPartConfig) -> list[dict]:
+    edge_margin = min(config.tab_edge_margin_mm, max(width_mm * 0.15, 1.0))
+    usable_width = max(width_mm - edge_margin * 2, 1.0)
+    tab_count = 2 if usable_width >= config.tab_width_mm * 2 + edge_margin else 1
+
+    if tab_count == 1:
+        tab_width = min(config.tab_width_mm, usable_width)
+        starts = [(width_mm - tab_width) / 2]
+    else:
+        tab_width = min(config.tab_width_mm, usable_width / 3)
+        starts = [
+            edge_margin,
+            width_mm - edge_margin - tab_width,
+        ]
+
+    return [
+        {
+            "tabId": f"tab-{index + 1}",
+            "xMm": round(start, 3),
+            "yMm": round(image_height_mm, 3),
+            "widthMm": round(tab_width, 3),
+            "heightMm": round(config.tab_height_mm, 3),
+        }
+        for index, start in enumerate(starts)
+    ]
+
+
 def _layer_conversion(layer: dict, target_width_mm: float, target_height_mm: float) -> dict:
     asset = layer["asset"]
     layer_width_mm = layer["scale"] * target_width_mm
@@ -262,6 +343,7 @@ def _part_from_layer(
     if not occupied:
         return None, None
 
+    tabs = _tab_specs(width_mm, height_mm, config)
     name = f"flat-part-{layer['layerIndex']}-{_slug(layer['layerId'])}"
     stl_path = out_dir / f"{name}.stl"
     triangles = _grid_triangles(
@@ -272,6 +354,15 @@ def _part_from_layer(
         height_mm,
         config.part_thickness_mm,
     )
+    for tab in tabs:
+        triangles += _box_triangles(
+            tab["xMm"],
+            height_mm,
+            0.0,
+            tab["xMm"] + tab["widthMm"],
+            height_mm + config.tab_height_mm,
+            config.part_thickness_mm,
+        )
     triangle_count = _write_stl(stl_path, name, triangles)
 
     crop_center_x_px = (backing_bbox[0] + backing_bbox[2]) / 2
@@ -294,9 +385,16 @@ def _part_from_layer(
         "usesHeightmap": False,
         "dimensionsMm": {
             "widthMm": round(width_mm, 3),
-            "heightMm": round(height_mm, 3),
+            "heightMm": round(height_mm + config.tab_height_mm, 3),
             "thicknessMm": round(config.part_thickness_mm, 3),
         },
+        "imageAreaMm": {
+            "xMm": 0.0,
+            "yMm": 0.0,
+            "widthMm": round(width_mm, 3),
+            "heightMm": round(height_mm, 3),
+        },
+        "tabs": tabs,
         "artworkPlacementMm": {
             "centerXMm": round(center_x_mm, 3),
             "centerYMm": round(center_y_mm, 3),
@@ -325,6 +423,116 @@ def _part_from_layer(
         },
     }
     return part, cropped_image
+
+
+def _merge_intervals(intervals: list[tuple[float, float]], min_value: float, max_value: float) -> list[tuple[float, float]]:
+    clipped = [
+        (max(min_value, start), min(max_value, end))
+        for start, end in intervals
+        if start < max_value and end > min_value
+    ]
+    clipped = [(start, end) for start, end in clipped if start < end]
+    if not clipped:
+        return []
+
+    clipped.sort()
+    merged = [clipped[0]]
+    for start, end in clipped[1:]:
+        prev_start, prev_end = merged[-1]
+        if start <= prev_end:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _complement_intervals(intervals: list[tuple[float, float]], min_value: float, max_value: float) -> list[tuple[float, float]]:
+    solid: list[tuple[float, float]] = []
+    cursor = min_value
+    for start, end in intervals:
+        if cursor < start:
+            solid.append((cursor, start))
+        cursor = max(cursor, end)
+    if cursor < max_value:
+        solid.append((cursor, max_value))
+    return solid
+
+
+def _base_triangles_for_parts(parts: list[dict], config: FlatPhotoPartConfig) -> tuple[list, dict]:
+    slot_width = config.part_thickness_mm + config.slot_clearance_mm
+    pitch = slot_width + config.base_layer_gap_mm
+    base_width = config.target_width_mm + config.base_margin_x_mm * 2
+    base_depth = config.base_margin_y_mm * 2 + slot_width * len(parts) + config.base_layer_gap_mm * max(len(parts) - 1, 0)
+    tris = []
+    slots = []
+
+    y_spans: list[tuple[float, float, list[tuple[float, float]]]] = []
+    cursor = 0.0
+    for slot_index, part in enumerate(parts):
+        slot_front = config.base_margin_y_mm + slot_index * pitch
+        slot_back = slot_front + slot_width
+        if cursor < slot_front:
+            y_spans.append((cursor, slot_front, []))
+
+        image_width = part["imageAreaMm"]["widthMm"]
+        part_left_artwork = part["artworkPlacementMm"]["centerXMm"] - image_width / 2
+        openings = []
+        tab_slots = []
+        for tab_index, tab in enumerate(part["tabs"]):
+            tab_left = config.base_margin_x_mm + part_left_artwork + tab["xMm"]
+            tab_right = tab_left + tab["widthMm"]
+            opening = (
+                tab_left - config.slot_side_clearance_mm / 2,
+                tab_right + config.slot_side_clearance_mm / 2,
+            )
+            openings.append(opening)
+            tab_slot = {
+                "tabId": tab["tabId"],
+                "slotId": f"slot-{slot_index + 1}-{tab_index + 1}",
+                "xStartMm": round(opening[0], 3),
+                "xEndMm": round(opening[1], 3),
+                "frontMm": round(slot_front, 3),
+                "backMm": round(slot_back, 3),
+            }
+            tab["baseSlot"] = tab_slot
+            tab_slots.append(tab_slot)
+
+        slot = {
+            "slotIndex": slot_index,
+            "layerId": part["layerId"],
+            "layerIndex": part["layerIndex"],
+            "frontMm": round(slot_front, 3),
+            "backMm": round(slot_back, 3),
+            "slotWidthMm": round(slot_width, 3),
+            "tabSlots": tab_slots,
+        }
+        part["baseSlot"] = {
+            "slotIndex": slot_index,
+            "frontMm": round(slot_front, 3),
+            "backMm": round(slot_back, 3),
+            "slotWidthMm": round(slot_width, 3),
+        }
+        slots.append(slot)
+        y_spans.append((slot_front, slot_back, openings))
+        cursor = slot_back
+
+    if cursor < base_depth:
+        y_spans.append((cursor, base_depth, []))
+
+    for y0, y1, openings in y_spans:
+        merged = _merge_intervals(openings, 0.0, base_width)
+        for x0, x1 in _complement_intervals(merged, 0.0, base_width):
+            tris += _box_triangles(x0, y0, 0.0, x1, y1, config.base_height_mm)
+
+    base = {
+        "dimensionsMm": {
+            "widthMm": round(base_width, 3),
+            "depthMm": round(base_depth, 3),
+            "heightMm": round(config.base_height_mm, 3),
+        },
+        "slots": slots,
+    }
+    return tris, base
 
 
 def _image_data_uri(image: Image.Image) -> str:
@@ -381,24 +589,68 @@ def _write_print_layout(
     for (x, y), part, image in zip(placements, parts, cropped_images):
         width = part["dimensionsMm"]["widthMm"]
         height = part["dimensionsMm"]["heightMm"]
+        image_height = part["imageAreaMm"]["heightMm"]
         label = html.escape(f"{part['layerId']} / {part['label']}")
         lines.extend(
             [
                 "<g>",
                 (
+                    f'<rect x="{x:.3f}" y="{y:.3f}" width="{width:.3f}" '
+                    f'height="{height:.3f}" fill="#f8f8f8" stroke="#e11d48" '
+                    'stroke-width="0.35" stroke-dasharray="1.5 1"/>'
+                ),
+                (
                     f'<image x="{x:.3f}" y="{y:.3f}" width="{width:.3f}" '
-                    f'height="{height:.3f}" href="{_image_data_uri(image)}" '
+                    f'height="{image_height:.3f}" href="{_image_data_uri(image)}" '
                     'preserveAspectRatio="none"/>'
                 ),
                 (
                     f'<rect x="{x:.3f}" y="{y:.3f}" width="{width:.3f}" '
-                    f'height="{height:.3f}" fill="none" stroke="#111" '
-                    'stroke-width="0.25" stroke-dasharray="1 1"/>'
+                    f'height="{image_height:.3f}" fill="none" stroke="#111" '
+                    'stroke-width="0.25"/>'
+                ),
+                (
+                    f'<line x1="{x:.3f}" y1="{(y + image_height):.3f}" '
+                    f'x2="{(x + width):.3f}" y2="{(y + image_height):.3f}" '
+                    'stroke="#e11d48" stroke-width="0.25" stroke-dasharray="1 1"/>'
                 ),
                 (
                     f'<text x="{x:.3f}" y="{(y + height + label_gap + 3.5):.3f}" '
                     'font-family="Arial, sans-serif" font-size="3.5" '
                     f'fill="#111">{label}</text>'
+                ),
+            ]
+        )
+        for tab in part["tabs"]:
+            tab_x = x + tab["xMm"]
+            tab_y = y + tab["yMm"]
+            tab_label = html.escape(tab["tabId"])
+            lines.extend(
+                [
+                    (
+                        f'<rect x="{tab_x:.3f}" y="{tab_y:.3f}" width="{tab["widthMm"]:.3f}" '
+                        f'height="{tab["heightMm"]:.3f}" fill="#fce7f3" stroke="#e11d48" '
+                        'stroke-width="0.35"/>'
+                    ),
+                    (
+                        f'<text x="{(tab_x + tab["widthMm"] / 2):.3f}" '
+                        f'y="{(tab_y + tab["heightMm"] / 2 + 1.1):.3f}" '
+                        'font-family="Arial, sans-serif" font-size="2.5" '
+                        f'text-anchor="middle" fill="#9f1239">{tab_label}</text>'
+                    ),
+                ]
+            )
+        lines.extend(
+            [
+                (
+                    f'<text x="{x:.3f}" y="{(y - 2.0):.3f}" '
+                    'font-family="Arial, sans-serif" font-size="3" '
+                    'fill="#111">print area + cut tabs</text>'
+                ),
+                (
+                    f'<text x="{x:.3f}" y="{(y + image_height + 4.0):.3f}" '
+                    'font-family="Arial, sans-serif" font-size="2.8" '
+                    'fill="#9f1239">tabs go into base slots</text>'
                 ),
                 "</g>",
             ]
@@ -441,6 +693,13 @@ def build_poc(
         parts.append(part)
         cropped_images.append(cropped_image)
 
+    base = None
+    base_path = out_dir / "flat-photo-parts-slot-base.stl"
+    if parts:
+        base_triangles, base = _base_triangles_for_parts(parts, config)
+        base["outputStl"] = str(base_path.relative_to(ROOT)).replace("\\", "/")
+        base["triangles"] = _write_stl(base_path, "flat-photo-parts-slot-base", base_triangles)
+
     print_layout_path = out_dir / "flat-photo-print-layout.svg"
     if parts:
         _write_print_layout(print_layout_path, parts, cropped_images, config)
@@ -455,10 +714,11 @@ def build_poc(
         },
         "flatPhotoPartConfig": _config_to_json(config),
         "parts": parts,
+        "base": base,
         "outputs": {
             "report": str(report_path.relative_to(ROOT)).replace("\\", "/"),
             "printLayoutSvg": str(print_layout_path.relative_to(ROOT)).replace("\\", "/") if parts else None,
-            "stlFiles": [part["outputStl"] for part in parts],
+            "stlFiles": [part["outputStl"] for part in parts] + ([base["outputStl"]] if base else []),
         },
         "warnings": warnings,
         "schemaImpact": {
@@ -483,6 +743,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--part-thickness-mm", type=float, default=FlatPhotoPartConfig.part_thickness_mm)
     parser.add_argument("--outline-margin-mm", type=float, default=FlatPhotoPartConfig.outline_margin_mm)
     parser.add_argument("--grid-cell-mm", type=float, default=FlatPhotoPartConfig.grid_cell_mm)
+    parser.add_argument("--tab-width-mm", type=float, default=FlatPhotoPartConfig.tab_width_mm)
+    parser.add_argument("--tab-height-mm", type=float, default=FlatPhotoPartConfig.tab_height_mm)
+    parser.add_argument("--slot-clearance-mm", type=float, default=FlatPhotoPartConfig.slot_clearance_mm)
+    parser.add_argument("--base-layer-gap-mm", type=float, default=FlatPhotoPartConfig.base_layer_gap_mm)
     parser.add_argument("--include-background", action="store_true")
     parser.add_argument("--layer-id", action="append", default=[])
     return parser.parse_args()
@@ -495,6 +759,10 @@ def main() -> int:
         part_thickness_mm=args.part_thickness_mm,
         outline_margin_mm=args.outline_margin_mm,
         grid_cell_mm=args.grid_cell_mm,
+        tab_width_mm=args.tab_width_mm,
+        tab_height_mm=args.tab_height_mm,
+        slot_clearance_mm=args.slot_clearance_mm,
+        base_layer_gap_mm=args.base_layer_gap_mm,
     )
     report = build_poc(
         args.artwork,
@@ -508,6 +776,7 @@ def main() -> int:
         "ok": report["ok"],
         "artworkId": report["artworkId"],
         "partCount": len(report["parts"]),
+        "baseStl": report["base"]["outputStl"] if report["base"] else None,
         "stlFiles": report["outputs"]["stlFiles"],
         "printLayoutSvg": report["outputs"]["printLayoutSvg"],
         "report": report["outputs"]["report"],
