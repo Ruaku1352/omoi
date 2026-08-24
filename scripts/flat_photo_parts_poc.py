@@ -33,9 +33,9 @@ EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 class FlatPhotoPartConfig:
     target_width_mm: float = 160.0
     part_thickness_mm: float = 1.6
-    outline_margin_mm: float = 0.6
+    outline_margin_mm: float = 0.35
     shape_mode: str = "contour"
-    contour_simplify_mm: float = 0.25
+    contour_simplify_mm: float = 0.10
     grid_cell_mm: float = 2.0
     tab_width_mm: float = 8.0
     tab_height_mm: float = 7.0
