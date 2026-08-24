@@ -62,3 +62,45 @@ python scripts/physical_output_mock_poc.py
 この矩形プレートPoCでは、Artwork Schemaの追加は不要。製造条件は `PhysicalOutputConfig` に置けば足りる。
 
 ただし、実プリント後に「画像の貼り方」「差し込み足」「透明板の素材」「レイヤーごとの厚み」「実物の反り」まで扱う段階では、Asset側かPhysical Output Config側に追加情報が必要になる可能性がある。そこはPoC結果を見て共有する。
+
+## 平ら印刷パーツPoC
+
+凹凸やheightmapではなく、写真・透過Layerを平らな印刷用パーツとして扱うPoCを追加した。
+
+```bash
+python scripts/flat_photo_parts_poc.py
+```
+
+このPoCは、共通MockのRGBA PNG Layerを読み、alphaから外形だけを取り出す。奥行きや明るさを高さに変換しない。生成するSTLは一定厚みの平面パーツで、上面には別途印刷した画像・シール・転写などを載せる前提である。
+
+### FlatPhotoPartConfig
+
+- `targetWidthMm`: 160
+- `partThicknessMm`: 1.6
+- `outlineMarginMm`: 2
+- `gridCellMm`: 2
+- `material`: PLA
+
+### 出力
+
+生成物は `tmp/flat-photo-parts-poc/` に出る。
+
+- 花、犬、人物の平面パーツSTL
+- `flat-photo-print-layout.svg`
+- `flat-photo-parts-report.json`
+
+背景Layerは、通常の写真台紙側で扱う想定なのでデフォルトでは除外する。必要な場合は `--include-background` で含められる。特定Layerだけを試す場合は `--layer-id layer-3` のように指定する。
+
+### 確認結果
+
+2026-08-24に、共通Mockで次を確認した。
+
+```bash
+python scripts/validate_contracts.py
+python scripts/physical_output_mock_poc.py
+python scripts/flat_photo_parts_poc.py
+```
+
+結果は成功。`flat_photo_parts_poc.py` は、花、犬、人物の3つの平面パーツSTLと1:1印刷用SVGを生成した。警告は出ていない。
+
+この方式でもArtwork Schemaの追加は不要。既存の `x / y / scale / layerIndex`、Asset寸法、RGBA alphaでPoCできる。製造条件は `FlatPhotoPartConfig` に分離しておけば足りる。
