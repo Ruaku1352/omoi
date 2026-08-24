@@ -14,6 +14,12 @@
 
 Artwork Dataで読む値は、`canvas.aspectRatio`、各Layerの `x`、`y`、`scale`、`layerIndex`、Assetの `widthPx`、`heightPx`。
 
+### 共通Mock Assetの扱い
+
+`contracts/assets/` の画像は、見た目の品質評価用ではなく、Artwork Dataの参照関係を確認するためのダミーAssetである。`label` に「花」「犬」「人物」と入っていても、その画像が実際に花・犬・人物として見えることまでは保証しない。
+
+このPoCで確認するのは、「ここにこの写真・このLayer Assetがある」という構成情報を読み、`x / y / scale / layerIndex` とRGBA alphaから物理出力用の寸法・STL・印刷レイアウトへ変換できるかである。花らしさ、犬らしさ、人物らしさ、飾り物として欲しい見た目は、別途、物理出力評価用の実画像または実物に近い透過PNGで検証する必要がある。
+
 ## PhysicalOutputConfig
 
 PoC値はArtwork Dataへ混ぜず、スクリプト内の `PhysicalOutputConfig` とCLI引数で扱う。
@@ -90,7 +96,7 @@ python scripts/flat_photo_parts_poc.py
 
 生成物は `tmp/flat-photo-parts-poc/` に出る。
 
-- 花、犬、人物の差し込み足つき平面パーツSTL
+- `label` が花、犬、人物になっているダミーLayerの差し込み足つき平面パーツSTL
 - パーツの差し込み足に対応したスロット土台STL
 - カット線、差し込み足、貼り込み範囲を入れた1:1印刷用 `flat-photo-print-layout.svg`
 - `flat-photo-parts-report.json`
@@ -107,7 +113,7 @@ python scripts/physical_output_mock_poc.py
 python scripts/flat_photo_parts_poc.py
 ```
 
-結果は成功。`flat_photo_parts_poc.py` は、花、犬、人物の3つの平面パーツSTLと1:1印刷用SVGを生成した。警告は出ていない。
+結果は成功。`flat_photo_parts_poc.py` は、`label` が花、犬、人物になっている3つのダミーLayerから、平面パーツSTLと1:1印刷用SVGを生成した。警告は出ていない。
 
 この方式でもArtwork Schemaの追加は不要。既存の `x / y / scale / layerIndex`、Asset寸法、RGBA alphaでPoCできる。製造条件は `FlatPhotoPartConfig` に分離しておけば足りる。
 
