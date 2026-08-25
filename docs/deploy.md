@@ -146,23 +146,23 @@ gcloud artifacts repositories create "$IMAGE_REPOSITORY" \
 すでに存在する場合はこの作成コマンドを省略する。Cloud RunとRepositoryが別Projectの場合は、
 Cloud Run Service Agentにも対象RepositoryのArtifact Registry Reader権限を付与する。
 
-### 3.2 Gemini API Key を Secret Manager へ登録する
+### 3.2 既存のGemini API Key Secretを使う
 
-**Secret値をコマンド履歴やファイルへ直接書かない。** 対話的に入力する。
+P0では、Projectに作成済みのSecret resource **`GEMINI_API_KEY` のVersion 1**を使う。
+新しいSecretを作成せず、Secret値をコマンド履歴・Repository・資料へ書かない。
 
-```bash
-# プロンプトが出たらAPI Keyを貼り付けてEnter → その後Ctrl+D
-gcloud secrets create gemini-api-key --replication-policy="automatic"
-gcloud secrets versions add gemini-api-key --data-file=-
-```
-
-初回のみ、Cloud RunのRuntime Service AccountにSecretへのアクセス権を渡す:
+既存Cloud Run Serviceが実際に使うRuntime Service Accountを確認し、そのPrincipalだけへ
+Secret単体のAccessor権限を付与する。default Compute Service Accountを前提にしない。
 
 ```bash
-export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+export RUNTIME_SERVICE_ACCOUNT=$(gcloud run services describe "$SERVICE" \
+  --region="$REGION" \
+  --format='value(spec.template.spec.serviceAccountName)')
 
-gcloud secrets add-iam-policy-binding gemini-api-key \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+test -n "$RUNTIME_SERVICE_ACCOUNT"
+
+gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+  --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" \
   --role="roles/secretmanager.secretAccessor"
 ```
 
@@ -261,17 +261,27 @@ gcloud builds submit . \
   --substitutions=_IMAGE_URI="$IMAGE_URI"
 
 # --sourceは使わず、直前にBuildしたreal-ai ImageだけをDeployする。
+# 初回Cloud Run実測は1 vCPU / 2 GiB / concurrency 1 / min instance 0で開始する。
+# timeout=600は同期Real AI E2Eの測定用であり、将来の非同期workerのFIX値ではない。
 gcloud run deploy "$SERVICE" \
   --image "$IMAGE_URI" \
   --region "$REGION" \
   --allow-unauthenticated \
-  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
+  --cpu=1 \
+  --memory=2Gi \
+  --concurrency=1 \
+  --min=0 \
+  --timeout=600 \
+  --set-secrets="GEMINI_API_KEY=GEMINI_API_KEY:1" \
   --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=<検証済みのGemini model ID>|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
 ```
 
 `GEMINI_MODEL` はSemantic Planning / Composition用であり、最終採用Model IDは未FIX。
 `GEMINI_SEGMENTATION_MODEL` は設定しない。Segmentationは`real-ai` Image内の
 EfficientSAM-Ti ONNX + ONNX Runtime CPUが担い、PyTorchをRuntime依存へ追加しない。
+`--cpu=1` / `--memory=2Gi` / `--concurrency=1` / `--min=0` は
+`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md` の初回実測条件と一致する。`--timeout=600` は
+同期Real AI E2Eの測定用設定であり、将来の非同期Job/workerの最終timeoutをFIXしない。
 
 ### 3.6 確認
 
