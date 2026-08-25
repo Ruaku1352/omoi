@@ -3,7 +3,7 @@
  *
  * 唯一FIXされている生成Endpoint（AGENTS.md §4）。
  * 成功Resultは Artwork Data + Asset Manifest。Schema正本は
- * `/contracts/generate-success-response.schema.json`。
+ * `/contracts/generate-success-response.schema.json`【FIX】（技術設計 §14.2）。
  * 同期/非同期どちらになっても最終成功Resultの形は変わらないので、
  * 呼び出し側はこの戻り値だけを見る。
  */
