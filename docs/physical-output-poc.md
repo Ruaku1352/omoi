@@ -271,3 +271,20 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-
 2026-08-24に、ユーザー提供の実プリント写真3枚を確認した。写真は、凹凸レリーフ本体、4層 x 3穴土台、レリーフ拡大確認の3種類である。共有用には机や手元が目立たないようにトリミングし、`tmp/physical-eval-sample/comparison/printed-relief-and-base-20260824.png` に1枚の資料画像としてまとめた。
 
 見えたことは二つある。凹凸レリーフは、人物と犬らしい大きな構図は残るが、白PLAでは細い線や背景由来の形がノイズに見えやすい。土台は4層 x 3穴の方向で実物確認できており、次は16mm差し込み足が穴に入るか、きつすぎないか、置いたときに安定するかを確認する。
+
+### 元写真と平面STLの横並び確認
+
+2026-08-26に、評価用の人物、花、犬について、元写真、RGBA切り抜き、STL正面、STL斜めを横並びにした比較画像を作成した。対象はすべて `tmp/physical-eval-sample/assets/` の評価用画像で、生成済みの平面パーツSTLは `tmp/physical-eval-sample/out-square-base/` を使った。
+
+生成した比較画像は次の通り。
+
+- `tmp/physical-eval-sample/comparison/person-source-to-stl-20260826.png`
+- `tmp/physical-eval-sample/comparison/flower-source-to-stl-20260826.png`
+- `tmp/physical-eval-sample/comparison/dog-uniform-source-to-stl-20260826.png`
+- `tmp/physical-eval-sample/comparison/nonhuman-source-to-stl-20260826.png`
+
+人物は、人型の外形は残るが、顔、服、髪色、表情が落ちるため、元写真の本人らしさはほぼ残らない。平面パーツ化の技術検証としては通るが、思い出の置物として成立させるには、表面写真、シール、線画、または色分けを別工程で足す必要がある。
+
+人以外の比較では、花は外形の記号が強く、白い平面STLでも比較的読める。犬は耳、体、しっぽの外形は残るが、かわいさは目、口、毛並み、色に依存するため、花よりも表面表現の必要度が高い。
+
+この検証で確認したのは、写真の意味やかわいさを再現できることではなく、切り抜き済みRGBAから平らな差し込みパーツへ変換できることまでである。次は、土台に差した状態で、正面から見たときに足が邪魔にならないか、花・犬・人物を同時に並べたときに作品として読めるかを確認する。
