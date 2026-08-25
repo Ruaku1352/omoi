@@ -8,6 +8,7 @@ import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
 import PhotoSelect from './screens/PhotoSelect'
 import ArtworkPreview from './preview/ArtworkPreview'
 import ArtworkEditor from './edit/ArtworkEditor'
+type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
 
 /**
  * 共通Mockの `layers[]` を **layerIndex 昇順（0が最背面）** で並べて確認するページ。
@@ -18,6 +19,8 @@ import ArtworkEditor from './edit/ArtworkEditor'
 export default function App() {
 const [artwork, setArtwork] = useState(mockArtwork)
 const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
+const [screen, setScreen] = useState<Screen>('preview')
+const [error, setError] = useState<string | null>(null) 
   // `layers[]` の配列位置は奥行き順ではない。必ず layerIndex で並べ替える。
   const layers = sortByLayerIndex(artwork.layers)
   const assets = buildAssetIndex(manifest)
@@ -28,16 +31,71 @@ const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
         <h1>omoi</h1>
         <p className="tagline">Our Memories, One Image — Frontend Scaffold</p>
       </header>
+      {screen ==='select' &&(
        <PhotoSelect
         onGenerated={(nextArtwork, nextManifest) => {
           setArtwork(nextArtwork)
           setManifest(nextManifest)
+          setScreen('preview') 
         }}
-      />
-
+         onStart={() => {
+    setError(null)
+    setScreen('generating')
+  }}
+  onFailed={(message) => setError(message)}
+      />)}
+      {screen === 'generating' && (
+  <section style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    {error === null ? (
+      <p>作品を作っています…</p>
+    ) : (
+      <>
+        <p style={{ color: 'salmon' }}>{error}</p>
+        <button type="button" onClick={() => setScreen('select')}>
+          写真を選び直す
+        </button>
+      </>
+    )}
+  </section>
+)}
+{screen === 'preview' && (
+  <>
     <ArtworkPreview artwork={artwork} assets={assets} />
-<ArtworkEditor artwork={artwork} onChange={setArtwork} assets={assets} />
-      <section className="meta">
+    <button type="button" onClick={() => setScreen('done')}>
+      この作品で完成
+    </button>
+    <button type="button" onClick={() => setScreen('edit')}>
+      少し調整する
+    </button>
+  </>
+)}
+{screen === 'edit' && (
+  <><ArtworkEditor artwork={artwork} onChange={setArtwork} assets={assets} />
+  <button type="button" onClick={() => setScreen('preview')}>
+      編集を終える
+    </button>
+  </>
+)}
+{screen === 'done' && (
+  <>
+    <ArtworkPreview artwork={artwork} assets={assets} />
+
+    <section style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <h2>作品が完成しました</h2>
+      <p>このデータから、実物のレイヤーアートを作ります。</p>
+
+      <div style={{ display: 'flex', gap: 12 }}>
+        <button type="button" onClick={() => setScreen('edit')}>
+          もう一度調整する
+        </button>
+        <button type="button" onClick={() => setScreen('select')}>
+          最初から作る
+        </button>
+      </div>
+    </section>
+  </>
+)}
+      {/* <section className="meta">
         <dl>
           <dt>Source</dt>
           <dd>
@@ -62,9 +120,9 @@ const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
             <code>{apiBaseUrl === '' ? '(未設定 / 同一Origin相対)' : apiBaseUrl}</code>
           </dd>
         </dl>
-      </section>
+      </section> */}
 
-      <section>
+      {/* <section>
         <h2>
           layers <span className="muted">— layerIndex 昇順（0が最背面）／{layers.length} 層</span>
         </h2>
@@ -116,7 +174,7 @@ const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
             </li>
           ))}
         </ol>
-      </section>
+      </section> */}
 
       <footer className="muted">
         Artwork Data はURLを持たない。画像は Asset Manifest 経由で <code>assetId</code> を解決している。
