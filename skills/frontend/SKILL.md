@@ -18,8 +18,8 @@ Router / 状態管理 / CSS方式 / Component分割は担当裁量。
 3. Konvaで2D Editを作り、編集結果をWorking Copyへ反映する
 4. 3Dへ戻って再描画できることを確認する（**AIは呼ばない**）
 5. 最後に `POST /api/v1/artworks/generate` へ差し替える。
-   成功Responseの形は `contracts/generate-success-response.schema.json`（`{artwork, assetManifest}`）。
-   外側のKey名は【確認待ち：チーム】なので、Response型を1箇所に閉じ込めて差し替え可能にしておく。
+   成功Responseの正本は `contracts/generate-success-response.schema.json`【FIX】
+   （`{artwork, assetManifest}`。P0では `data` 等の追加Envelopeを設けない）。
    `VITE_API_BASE_URL` で接続先を切り替える
 
 ## 守ること

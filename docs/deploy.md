@@ -147,6 +147,22 @@ gcloud secrets add-iam-policy-binding gemini-api-key \
 
 ### 3.3 Deploy する（リポジトリルートで実行）
 
+> ### ⚠ 環境変数は毎回すべてまとめて渡す
+>
+> **`--set-env-vars` は「追加」ではなく「置き換え」。**
+> 指定しなかった環境変数は**消える**。
+> さらに `--set-env-vars` を**1コマンド内に2回以上書くと、後の指定が前を上書きする**
+> （gcloudのフラグは繰り返しても連結されない）。どちらの経路でも結果は同じで、
+> **渡し漏れた変数が黙って消える。**
+>
+> **実際に起きた事故**: Asset URLのscheme修正でDeployした際、`CORS_ORIGINS` を
+> 渡さなかったため設定が消え、Frontendから CORS で弾かれた。
+> Backendは正常に起動し `/health` も `200` を返すので、**ブラウザで叩くまで気づけない。**
+>
+> `MOCK_AI` / `APP_ENV` / `CORS_ORIGINS` / `GEMINI_*` は、
+> **1つの `--set-env-vars` へ必ず全部まとめて渡すこと。**
+> 1つだけ変えたいときも、他を省略せず全部書く。
+
 ```bash
 cd /path/to/omoi   # backend/ ではなくリポジトリルート
 
@@ -154,20 +170,53 @@ gcloud run deploy "$SERVICE" \
   --source . \
   --region "$REGION" \
   --allow-unauthenticated \
-  --set-env-vars="APP_ENV=deployed,MOCK_AI=false,CORS_ORIGINS=https://<frontendのFirebase Hosting Origin>" \
   --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
-  --set-env-vars="GEMINI_MODEL=<検証済みのGemini model ID>"
+  --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=<検証済みのGemini model ID>|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
 ```
+
+`--set-env-vars` は**1回だけ**。分割しない。
 
 - `--source .` が `Dockerfile` をリポジトリルートで検出してBuildする（Buildpacksへは落ちない）
 - `PORT` は**指定しない**。Cloud Runが予約している環境変数で、`--set-env-vars` に含めるとエラーになる
 - `CONTRACTS_DIR` は**指定しない**。Dockerfileがローカル開発と同じ相対配置を保っているので既定値のままで解決する
-- `CORS_ORIGINS` は本番ではFirebase HostingのOriginへ限定する（AGENTS.md §2.1）
-- Mock AIで先にデプロイ疎通だけ確認したい場合は `MOCK_AI=true` にして、
-  `GEMINI_*` 系の `--set-secrets` / `--set-env-vars` は省略してよい
+- `--set-secrets` も同じ「置き換え」。Secret由来の環境変数は別枠だが、
+  指定しなかったSecretは外れるので、こちらも毎回すべて書く
 
-`--set-env-vars` を2回に分けているのは読みやすさのためで、実際は1回の呼び出しへ
-まとめてよい（カンマ区切りで1つの `--set-env-vars` に連結する）。
+#### `^|^` 記法【CORS_ORIGINS では必須】
+
+`gcloud` は `--set-env-vars` の値を**カンマで環境変数の区切りとして解釈する**。
+`CORS_ORIGINS` は許可Originをカンマ区切りで並べるため、素直に書くと壊れる。
+
+```bash
+# ✗ 壊れる。gcloud が CORS_ORIGINS / http://localhost:5174 / https://... の
+#   3つの環境変数だと解釈し、CORS_ORIGINS には最初の1つしか入らない
+--set-env-vars="CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
+```
+
+先頭に `^区切り文字^` を付けると、**環境変数どうしの区切り文字**を変更できる。
+`^|^` なら区切りが `|` になり、値の中のカンマはそのまま渡る。
+
+```bash
+# ✓ 正しい。変数の区切りは | 、CORS_ORIGINS の中の , は値として渡る
+--set-env-vars="^|^APP_ENV=deployed|CORS_ORIGINS=http://localhost:5173,http://localhost:5174"
+```
+
+Originは **scheme + host + port** のみ。末尾スラッシュを付けない。
+Portが違えば別Originなので `localhost:5173` と `localhost:5174` は**両方**書く。
+本番ではFirebase HostingのOriginへ限定する（AGENTS.md §2.1）。
+
+#### Mock AIだけで疎通確認する場合
+
+`MOCK_AI=true` にして `GEMINI_*` と `--set-secrets` を省略してよい。
+**その場合も `CORS_ORIGINS` は省略しない。**
+
+```bash
+gcloud run deploy "$SERVICE" \
+  --source . \
+  --region "$REGION" \
+  --allow-unauthenticated \
+  --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=true|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
+```
 
 `GEMINI_MODEL` はSemantic Planning / Composition用であり、最終採用Model IDは未FIX。
 SegmentationはDockerの`real-ai` targetへ事前配置したEfficientSAM-Ti ONNX artifactを使い、
@@ -191,10 +240,27 @@ Real AI経路を使う。設定またはProvider処理が失敗した場合はMo
 API Errorを返す。
 （黙ってMockへ落ちない設計どおり。AGENTS.md §9）。
 
+**上の2つはCORSを検証しない。** `CORS_ORIGINS` の渡し漏れは `curl` では絶対に見つからない
+（Server側は `200` を返し、足りないのはResponse Headerだけ）。**必ず別途確認する。**
+
+```bash
+curl -s -D - -o /dev/null -X OPTIONS "$SERVICE_URL/api/v1/artworks/generate" \
+  -H "Origin: http://localhost:5174" \
+  -H "Access-Control-Request-Method: POST" | grep -i access-control
+```
+
+`access-control-allow-origin: http://localhost:5174` が返れば通っている。
+**何も出なければ `CORS_ORIGINS` が渡っていない**ので、3.3のコマンドを
+（全変数をまとめたまま）再実行する。確認したいOriginごとに `-H "Origin: ..."` を替えて叩く。
+
 ### 3.5 再Deploy
 
-コード変更後は3.3のコマンドを再実行するだけでよい（Dockerイメージが再Buildされ、
+コード変更後は3.3のコマンドを**そのまま**再実行する（Dockerイメージが再Buildされ、
 新Revisionへ切り替わる）。
+
+**環境変数を1つだけ変えたいときも、3.3のコマンドから変数を削らないこと。**
+必要な変数だけを書いた短縮版を作ると、書かなかった変数が消える（3.3の警告）。
+変えたい値だけ書き換えて、コマンド全体を実行する。
 
 ---
 
