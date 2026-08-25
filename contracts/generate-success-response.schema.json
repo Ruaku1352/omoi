@@ -2,9 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omoi.example/contracts/generate-success-response.schema.json",
   "title": "omoi Generate Success Response",
-  "description": "POST /api/v1/artworks/generate の最終成功Result（Frontend ↔ Backend の生成成功境界）。同期 / 非同期のどちらを採っても最終成功Resultはこの形（技術設計 §14.2）。失敗時は AGENTS.md §4 の Error形式であり本Schemaではない。【確認待ち：チーム】この層の外側Key名（artwork / assetManifest）は技術設計にまだ定義が無く、Backendが既に返している形へ合わせたRepository側の暫定案。公開チャンネルで確認中であり、FIXではない。内側の artwork / assetManifest はそれぞれの正本Schemaを $ref するだけで、ここでは再定義しない。$ref 先（artwork.schema.json / asset-manifest.schema.json）は【FIX】された正本。",
+  "description": "POST /api/v1/artworks/generate の最終成功Result（Frontend ↔ Backend の生成成功境界）。外側のKeyは artwork / assetManifest とする【FIX】（技術設計 §14.2）。P0では data 等の追加Envelopeを設けない【FIX】。本Schemaが成功Response全体のMachine Readable正本であり、内側の artwork / assetManifest は artwork.schema.json / asset-manifest.schema.json を $ref するだけで、ここでは再定義しない。同期 / 非同期のどちらを採っても最終成功Resultはこの形。失敗時は AGENTS.md §4 の Error形式であり本Schemaではない。",
   "type": "object",
-  "required": ["artwork", "assetManifest"],
+  "required": [
+    "artwork",
+    "assetManifest"
+  ],
   "additionalProperties": false,
   "properties": {
     "artwork": {
