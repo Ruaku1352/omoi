@@ -6,8 +6,12 @@ import type { AssetManifest } from '../types/assetManifest'
 
 export default function PhotoSelect({
   onGenerated,
+  onStart,
+  onFailed,
 }: {
   onGenerated: (artwork: Artwork, assetManifest: AssetManifest) => void
+  onStart: () => void
+  onFailed: (message: string) => void
 }) {
   const [photos, setPhotos] = useState<File[]>([])
   const [memoryText, setMemoryText] = useState('')
@@ -15,17 +19,14 @@ export default function PhotoSelect({
   const [error, setError] = useState<string | null>(null)
 
   const handleGenerate = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await generateArtwork({ photos, memoryText })
-      onGenerated(result.artwork, result.assetManifest)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : '通信に失敗しました。')
-    } finally {
-      setLoading(false)
-    }
+  onStart()
+  try {
+    const result = await generateArtwork({ photos, memoryText })
+    onGenerated(result.artwork, result.assetManifest)
+  } catch (e) {
+    onFailed(e instanceof ApiError ? e.message : '通信に失敗しました。')
   }
+}
 
   return (
     <section style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
