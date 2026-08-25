@@ -10,8 +10,11 @@
 # ビルド（リポジトリルートで実行すること。backend/へcdしない）:
 #   docker build -t omoi-backend .
 #
-# ローカル起動確認:
+# Mockのローカル起動確認:
 #   docker run --rm -p 8080:8080 -e MOCK_AI=true -e CORS_ORIGINS=http://localhost:5173 omoi-backend
+# Real AI Imageは、事前に `uv --directory backend run python ../scripts/fetch_efficientsam_onnx.py`
+# で取得・checksum検証した backend/.models/efficientsam_ti.onnx を含め、
+# `docker build --target real-ai -t omoi-backend-real .` としてbuildする。Runtime downloadはしない。
 #
 # 詳細・Cloud Runへのdeploy手順は docs/deploy.md 参照。
 
@@ -32,8 +35,6 @@ WORKDIR /srv
 # アプリコードだけの変更ではこのレイヤーは再実行されない。
 COPY backend/pyproject.toml backend/uv.lock backend/.python-version /srv/backend/
 RUN cd /srv/backend && uv sync --locked --no-install-project --no-dev
-# Real AI実装（ai/gemini.pyがgoogle-genaiを使い始めるタイミング）以降は
-# 上の行を `uv sync --locked --no-install-project --no-dev --extra gemini` に変える。
 
 # アプリ本体 + 共通Contract。backend/ と contracts/ の兄弟関係を保ったまま積む。
 COPY backend /srv/backend
@@ -55,3 +56,11 @@ EXPOSE 8080
 
 # Shell形式のCMDにして起動時に $PORT を展開させる（execで余計なshellを残さない）。
 CMD exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+
+# Real Cloud Run用target。Model ArtifactはGit管理せず、Build Contextへ明示的に供給する。
+FROM base AS real-ai
+COPY --chown=appuser:appuser backend/.models/efficientsam_ti.onnx /srv/models/efficientsam_ti.onnx
+ENV EFFICIENTSAM_MODEL_PATH=/srv/models/efficientsam_ti.onnx
+
+# `docker build .` の既存Mock開発経路をModel Artifact必須にしない。
+FROM base AS default
