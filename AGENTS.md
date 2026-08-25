@@ -137,9 +137,9 @@ Top Levelは担当者別ではなく、**「一緒にBuild / Deploy / 実行さ�
   `assetId` / `url` / `mimeType` / `widthPx` / `heightPx` を持つ
 - **Asset Manifest のSchema正本は `contracts/asset-manifest.schema.json`**【FIX】
   （技術設計 §9.5 / §24.1）。Fieldの意味を変える場合は Artwork Contract と同じ扱いで共有する
-- 両者を束ねた生成成功Responseは `contracts/generate-success-response.schema.json`。
-  Artwork / Manifest の定義を再定義せず `$ref` するだけの層。
-  **外側のKey名は【確認待ち：チーム】**（下記 §4）
+- 両者を束ねた生成成功Responseの正本は
+  **`contracts/generate-success-response.schema.json`**【FIX】（技術設計 §14.2）。
+  Artwork / Manifest の定義を再定義せず `$ref` するだけの層（下記 §4）
 - 透過Layer Assetは **RGBA PNG**
 - Artwork Bundleでは同じ `assetId` のBinaryを `assets/` 配下へ置く
 
@@ -166,12 +166,10 @@ Prefix: `/api/v1`
 { "artwork": { ... }, "assetManifest": { "assets": [ ... ] } }
 ```
 
-- **外側のKey名（`artwork` / `assetManifest`）は【確認待ち：チーム】。**
-  技術設計にまだ定義が無く、Backendが既に返している形へ合わせたRepository側の暫定案。
-  公開チャンネルで確認中であり **FIXではない**。変わる場合は Schema / Mock / 両実装を同時に直す
-- Schema: `contracts/generate-success-response.schema.json`。
-  既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない。
-  **`$ref` 先の2つは【FIX】された正本**であり、確認待ちなのは束ね方だけ
+- **外側のKeyは `artwork` / `assetManifest`**【FIX】（技術設計 §14.2）。
+  **P0では `data` 等の追加Envelopeを設けない**【FIX】
+- Schema正本: `contracts/generate-success-response.schema.json`【FIX】。
+  既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない
 - 共通Mock: `contracts/mock/generate-success-response.json`
 - JSONのKeyはArtwork Schemaと同じ **camelCase** を維持する【FIX】
 - 同期 / 非同期どちらで返すかは【PoC後FIX】。**どちらでも最終成功Resultの形は同じ**

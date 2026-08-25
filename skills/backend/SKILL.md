@@ -23,9 +23,9 @@ Job管理・Asset Binary Storageは必要性が確定した場合のみ追加す
 2. `MOCK_AI=true` で `contracts/mock/generate-success-response.json` 相当を返すMode
 3. Artwork Schema Validation と Asset参照整合性チェック
 4. Asset Manifest の組み立て。Manifest Schemaの正本は
-   `contracts/asset-manifest.schema.json`【FIX】。返す形は
-   `contracts/generate-success-response.schema.json`（`{artwork, assetManifest}`）だが、
-   **外側のKey名は【確認待ち：チーム】**でFIXではない
+   `contracts/asset-manifest.schema.json`【FIX】。返す形の正本は
+   `contracts/generate-success-response.schema.json`【FIX】（`{artwork, assetManifest}`）。
+   **P0では `data` 等の追加Envelopeを設けない**【FIX】
 5. AI Module を **Python Function / Module 境界**で呼ぶ（内部HTTP Microserviceにしない）
 6. CORS を `CORS_ORIGINS` から設定して Cloud Run へDeploy
 
