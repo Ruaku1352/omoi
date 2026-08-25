@@ -82,22 +82,31 @@ Build時に `contracts/` の中身をPythonパッケージのリソースとし�
 リポジトリルートに配置（上記の方針決定に基づく）。
 
 - `Dockerfile` — `python:3.13-slim` ベース、`uv` で `uv.lock` から再現Install。
-  `PORT` は環境変数から受け取り、`8000` に固定していない
+  `PORT` は環境変数から受け取り、`8000` に固定していない。最終`default` targetは
+  Model Artifactを含まないMock用、`real-ai` targetだけがEfficientSAM ONNXを含む
 - `.dockerignore` — `frontend/`、ローカル生成物、Secret類を除外
+- `.gcloudignore.real-ai` — 通常のGit管理外ファイルは除外したまま、Real AI Buildに必要な
+  `backend/.models/efficientsam_ti.onnx` だけをCloud Build入力へ含める
+- `cloudbuild.real-ai.yaml` — `real-ai` targetを明示的にBuildし、Artifact Registryへpushする
 
 ビルド確認（ローカルDockerがあれば）:
 
 ```bash
-# リポジトリルートで実行すること。backend/へcdしない。
-docker build -t omoi-backend .
+# Mock: Model Artifactを含まないdefault target。リポジトリルートで実行すること。
+docker build --target default -t omoi-backend-mock .
 
 docker run --rm -p 8080:8080 \
   -e MOCK_AI=true \
   -e CORS_ORIGINS=http://localhost:5173 \
-  omoi-backend
+  omoi-backend-mock
 
 curl -F photos=@contracts/assets/source-p1.jpg -F memoryText=海に行った日 \
   http://127.0.0.1:8080/api/v1/artworks/generate
+
+# Real AI: 事前取得・checksum検証済みのONNX artifactを含むreal-ai target。
+uv --directory backend run python ../scripts/fetch_efficientsam_onnx.py \
+  --sha256 143c3198a7b2a15f23c21cdb723432fb3fbcdbabbdad3483cf3babd8b95c1397
+docker build --target real-ai -t omoi-backend-real .
 ```
 
 ---
@@ -115,6 +124,7 @@ curl -F photos=@contracts/assets/source-p1.jpg -F memoryText=海に行った日 
 export PROJECT_ID=<your-gcp-project-id>
 export REGION=asia-northeast1
 export SERVICE=omoi-backend
+export IMAGE_REPOSITORY=omoi-backend-images
 
 gcloud config set project "$PROJECT_ID"
 
@@ -124,6 +134,17 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com
 ```
+
+Real AI Image用に、初回のみDocker形式のArtifact Registry repositoryを作る:
+
+```bash
+gcloud artifacts repositories create "$IMAGE_REPOSITORY" \
+  --repository-format=docker \
+  --location="$REGION"
+```
+
+すでに存在する場合はこの作成コマンドを省略する。Cloud RunとRepositoryが別Projectの場合は、
+Cloud Run Service Agentにも対象RepositoryのArtifact Registry Reader権限を付与する。
 
 ### 3.2 Gemini API Key を Secret Manager へ登録する
 
@@ -145,7 +166,7 @@ gcloud secrets add-iam-policy-binding gemini-api-key \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-### 3.3 Deploy する（リポジトリルートで実行）
+### 3.3 共通の環境変数ルール
 
 > ### ⚠ 環境変数は毎回すべてまとめて渡す
 >
@@ -159,24 +180,13 @@ gcloud secrets add-iam-policy-binding gemini-api-key \
 > 渡さなかったため設定が消え、Frontendから CORS で弾かれた。
 > Backendは正常に起動し `/health` も `200` を返すので、**ブラウザで叩くまで気づけない。**
 >
-> `MOCK_AI` / `APP_ENV` / `CORS_ORIGINS` / `GEMINI_*` は、
-> **1つの `--set-env-vars` へ必ず全部まとめて渡すこと。**
-> 1つだけ変えたいときも、他を省略せず全部書く。
-
-```bash
-cd /path/to/omoi   # backend/ ではなくリポジトリルート
-
-gcloud run deploy "$SERVICE" \
-  --source . \
-  --region "$REGION" \
-  --allow-unauthenticated \
-  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
-  --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=<検証済みのGemini model ID>|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
-```
+> **各Deploy経路で必要な変数は、1つの `--set-env-vars` へ全部まとめて渡すこと。**
+> Real AIでは `MOCK_AI` / `APP_ENV` / `CORS_ORIGINS` / `GEMINI_MODEL`、Mockでは
+> `MOCK_AI` / `APP_ENV` / `CORS_ORIGINS` を1回の指定にする。1つだけ変えたいときも、
+> その経路で必要な他の変数を省略しない。
 
 `--set-env-vars` は**1回だけ**。分割しない。
 
-- `--source .` が `Dockerfile` をリポジトリルートで検出してBuildする（Buildpacksへは落ちない）
 - `PORT` は**指定しない**。Cloud Runが予約している環境変数で、`--set-env-vars` に含めるとエラーになる
 - `CONTRACTS_DIR` は**指定しない**。Dockerfileがローカル開発と同じ相対配置を保っているので既定値のままで解決する
 - `--set-secrets` も同じ「置き換え」。Secret由来の環境変数は別枠だが、
@@ -205,12 +215,15 @@ Originは **scheme + host + port** のみ。末尾スラッシュを付けない
 Portが違えば別Originなので `localhost:5173` と `localhost:5174` は**両方**書く。
 本番ではFirebase HostingのOriginへ限定する（AGENTS.md §2.1）。
 
-#### Mock AIだけで疎通確認する場合
+### 3.4 Mock Deploy（Model Artifactなし）
 
-`MOCK_AI=true` にして `GEMINI_*` と `--set-secrets` を省略してよい。
-**その場合も `CORS_ORIGINS` は省略しない。**
+`--source .` はDockerfileがある場合にDockerfileの**最終stage**をBuildする。最終stageは
+Model ArtifactをCOPYしない`default` targetなので、Mock専用の軽量Imageとして使う。
+`MOCK_AI=true` ではGemini KeyもONNX artifactも不要である。
 
 ```bash
+cd /path/to/omoi   # backend/ ではなくリポジトリルート
+
 gcloud run deploy "$SERVICE" \
   --source . \
   --region "$REGION" \
@@ -218,11 +231,49 @@ gcloud run deploy "$SERVICE" \
   --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=true|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
 ```
 
-`GEMINI_MODEL` はSemantic Planning / Composition用であり、最終採用Model IDは未FIX。
-SegmentationはDockerの`real-ai` targetへ事前配置したEfficientSAM-Ti ONNX artifactを使い、
-`GEMINI_SEGMENTATION_MODEL` は設定しない。
+**その場合も `CORS_ORIGINS` は省略しない。**
 
-### 3.4 確認
+### 3.5 Real AI Deploy（real-ai targetをArtifact Registry経由でDeploy）
+
+`gcloud run deploy --source .` だけでは`real-ai` targetを選べず、標準の`.gcloudignore`では
+Git管理外のModel Artifactも送られない。Real AIは必ず次の2段階で実行する。
+
+1. `cloudbuild.real-ai.yaml` が`real-ai` targetをBuildし、`images`でArtifact Registryへpushする
+2. `gcloud run deploy --image` で、そのImageをCloud RunへDeployする
+
+Runtime中のDownloadは行わない。`EFFICIENTSAM_MODEL_PATH` は`real-ai` targetが
+`/srv/models/efficientsam_ti.onnx` に設定するため、Deploy時に上書きしない。
+
+```bash
+cd /path/to/omoi   # backend/ ではなくリポジトリルート
+
+# Git管理外のartifactを、RuntimeではなくBuild前に取得・checksum検証する。
+uv --directory backend run python ../scripts/fetch_efficientsam_onnx.py \
+  --sha256 143c3198a7b2a15f23c21cdb723432fb3fbcdbabbdad3483cf3babd8b95c1397
+
+test -f backend/.models/efficientsam_ti.onnx
+export IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_REPOSITORY/omoi-backend-real:$(git rev-parse --short HEAD)"
+
+# --ignore-fileはartifactだけを明示的にCloud Build入力へ戻す。Cloud BuildがBuild・pushする。
+gcloud builds submit . \
+  --config=cloudbuild.real-ai.yaml \
+  --ignore-file=.gcloudignore.real-ai \
+  --substitutions=_IMAGE_URI="$IMAGE_URI"
+
+# --sourceは使わず、直前にBuildしたreal-ai ImageだけをDeployする。
+gcloud run deploy "$SERVICE" \
+  --image "$IMAGE_URI" \
+  --region "$REGION" \
+  --allow-unauthenticated \
+  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
+  --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=<検証済みのGemini model ID>|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
+```
+
+`GEMINI_MODEL` はSemantic Planning / Composition用であり、最終採用Model IDは未FIX。
+`GEMINI_SEGMENTATION_MODEL` は設定しない。Segmentationは`real-ai` Image内の
+EfficientSAM-Ti ONNX + ONNX Runtime CPUが担い、PyTorchをRuntime依存へ追加しない。
+
+### 3.6 確認
 
 ```bash
 export SERVICE_URL=$(gcloud run services describe "$SERVICE" \
@@ -250,15 +301,16 @@ curl -s -D - -o /dev/null -X OPTIONS "$SERVICE_URL/api/v1/artworks/generate" \
 ```
 
 `access-control-allow-origin: http://localhost:5174` が返れば通っている。
-**何も出なければ `CORS_ORIGINS` が渡っていない**ので、3.3のコマンドを
+**何も出なければ `CORS_ORIGINS` が渡っていない**ので、実行したDeployのコマンドを
 （全変数をまとめたまま）再実行する。確認したいOriginごとに `-H "Origin: ..."` を替えて叩く。
 
-### 3.5 再Deploy
+### 3.7 再Deploy
 
-コード変更後は3.3のコマンドを**そのまま**再実行する（Dockerイメージが再Buildされ、
-新Revisionへ切り替わる）。
+Mockは3.4、Real AIはBuildからDeployまでを含む3.5を**そのまま**再実行する。
+Real AIでは`--image`にBuild済み`real-ai` Imageを渡すため、Model Artifactのない
+`default` Imageを誤ってDeployしない。
 
-**環境変数を1つだけ変えたいときも、3.3のコマンドから変数を削らないこと。**
+**環境変数を1つだけ変えたいときも、各Deployコマンドから変数を削らないこと。**
 必要な変数だけを書いた短縮版を作ると、書かなかった変数が消える（3.3の警告）。
 変えたい値だけ書き換えて、コマンド全体を実行する。
 

@@ -1,0 +1,16 @@
+# `gcloud builds submit --config cloudbuild.real-ai.yaml` 専用。
+# Dockerfileの最終stageではなく`real-ai` targetを明示的にBuildし、
+# `images`でArtifact Registryへpushする。
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target
+      - real-ai
+      - --tag
+      - ${_IMAGE_URI}
+      - .
+images:
+  - ${_IMAGE_URI}
+substitutions:
+  _IMAGE_URI: REPLACE_WITH_ARTIFACT_REGISTRY_IMAGE_URI
