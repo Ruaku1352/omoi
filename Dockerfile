@@ -63,4 +63,6 @@ COPY --chown=appuser:appuser backend/.models/efficientsam_ti.onnx /srv/models/ef
 ENV EFFICIENTSAM_MODEL_PATH=/srv/models/efficientsam_ti.onnx
 
 # `docker build .` の既存Mock開発経路をModel Artifact必須にしない。
+# `gcloud run deploy --source .` もDockerfileの最終stageをBuildするため、
+# このtargetはMock専用。Real AIはdocs/deploy.mdのCloud Build手順で`real-ai`を明示する。
 FROM base AS default
