@@ -50,8 +50,9 @@ Real AI の完成を待たず、
 
 ## 環境変数
 Frontend（公開可・`VITE_` Prefix）: `VITE_API_BASE_URL`
-Backend（Secret含む）: `GEMINI_API_KEY` / `GEMINI_MODEL` / `GEMINI_SEGMENTATION_MODEL` /
-`CORS_ORIGINS` / `APP_ENV` / `MOCK_AI`
+Backend（Secret含む）: `GEMINI_API_KEY` / `GEMINI_MODEL` /
+`EFFICIENTSAM_MODEL_PATH` / `SEGMENTATION_BACKEND` / `CORS_ORIGINS` / `APP_ENV` /
+`MOCK_AI`
 
 `.env` はCommitしない。`.env.example` はKey名だけ。
 Frontend と Backend は別Originなので、Productionでは `CORS_ORIGINS` を

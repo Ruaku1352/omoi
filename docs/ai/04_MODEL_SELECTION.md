@@ -1,15 +1,15 @@
 # Model Selection
 
-## 初回PoCで使うモデル
+## P0主経路【FIX】
 
 ### Semantic Understanding
-Gemini。Model IDは環境変数。
-初回PoC値は `gemini-3.7-flash`。
+Gemini Developer API。Semantic PlanningとCompositionのModel IDは `GEMINI_MODEL` で
+環境変数化し、最終採用値はまだFIXしない。
 
 ### Segmentation
-**EfficientSAM-Ti + ONNX Runtime CPU**。
+**EfficientSAM-Ti + ONNX Runtime CPU**。Geminiが返すbboxをBox PromptとしてMaskを得る。
 
-## EfficientSAM-Tiを最初にする理由
+## EfficientSAM-TiをP0主経路にする理由
 
 omoiではGeminiが既に:
 - 何を残すか

@@ -237,11 +237,15 @@ Prefix: `/api/v1`
 
 ### AI【FIX / PoC後FIX】
 - VLM第一候補: **Gemini Developer API**【FIX】
-- 意味理解・象徴要素選定・bbox・構成: Gemini（初回PoCは `gemini-3.7-flash`）【PoC後FIX】
-- Segmentation初回PoC: **EfficientSAM-Ti + ONNX Runtime CPU**【PoC後FIX】。
+- 意味理解・象徴要素選定・bbox・構成: Gemini。具体的なSemantic / Composition Model IDは
+  `GEMINI_MODEL` で差し替え可能とし、最終FIXしない【PoC後FIX】
+- SegmentationのP0主経路: **EfficientSAM-Ti + ONNX Runtime CPU**【FIX】。
   Geminiは最終Mask境界を決めず、Geminiが返すbboxをPromptとして渡す
-- モデルID・Segmentation Backend・Model Path・候補数・Layer数・品質閾値は環境変数化し、
-  他担当のInterfaceを変更せず差し替えられるようにする【FIX / PoC後FIX】
+- 境界品質不足時はSAM 2.1、対象識別不足時はYOLOE、髪・半透明境界不足時はMattingを
+  比較・Escalation候補とする。P0主経路の自動Fallbackにはしない【FIX】
+- Model Path・候補数・Layer数・品質閾値は環境変数化し、他担当のInterfaceを変更せず
+  調整可能にする【FIX / PoC後FIX】。`SEGMENTATION_BACKEND` のP0値は
+  `efficient_sam_onnx` とする
 - Gemini の Structured Output / JSON Schema を利用し、自由文ではなく型検証可能な結果を受け取る【FIX】
 - Layer Assetの基本形式は RGBA PNG【FIX】
 - Runtime起動時にModel WeightをDownloadしない。Cloud Run RuntimeへPyTorchを必須依存として
