@@ -20,10 +20,10 @@ Cloud Run RuntimeへPyTorchを必須追加しない。
 
 ## 2. Configuration
 
-追加候補:
+P0設定:
 
 ```text
-SEGMENTATION_BACKEND
+SEGMENTATION_BACKEND=efficient_sam_onnx
 EFFICIENTSAM_MODEL_PATH
 SEGMENTATION_MAX_RETRIES
 CANDIDATE_COUNT
@@ -33,8 +33,9 @@ TARGET_LAYER_MAX
 
 ※先頭の `a` は実装時に除去し、正しいenv名 `EFFICIENTSAM_MODEL_PATH` とする。
 
-既存 `GEMINI_SEGMENTATION_MODEL` はEfficientSAM経路では必須にしない。
-互換のため残す場合もReal Generator起動条件にしない。
+`GEMINI_MODEL` はSemantic Planning / Composition用であり、最終採用Model IDは
+環境変数で差し替える。Segmentationには `EFFICIENTSAM_MODEL_PATH` を使い、
+`GEMINI_SEGMENTATION_MODEL` は設けない。
 
 ## 3. Segmenter Protocol
 

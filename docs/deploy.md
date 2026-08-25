@@ -156,7 +156,7 @@ gcloud run deploy "$SERVICE" \
   --allow-unauthenticated \
   --set-env-vars="APP_ENV=deployed,MOCK_AI=false,CORS_ORIGINS=https://<frontendのFirebase Hosting Origin>" \
   --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
-  --set-env-vars="GEMINI_MODEL=gemini-3.7-flash,GEMINI_SEGMENTATION_MODEL=gemini-2.5-flash"
+  --set-env-vars="GEMINI_MODEL=<検証済みのGemini model ID>"
 ```
 
 - `--source .` が `Dockerfile` をリポジトリルートで検出してBuildする（Buildpacksへは落ちない）
@@ -168,6 +168,10 @@ gcloud run deploy "$SERVICE" \
 
 `--set-env-vars` を2回に分けているのは読みやすさのためで、実際は1回の呼び出しへ
 まとめてよい（カンマ区切りで1つの `--set-env-vars` に連結する）。
+
+`GEMINI_MODEL` はSemantic Planning / Composition用であり、最終採用Model IDは未FIX。
+SegmentationはDockerの`real-ai` targetへ事前配置したEfficientSAM-Ti ONNX artifactを使い、
+`GEMINI_SEGMENTATION_MODEL` は設定しない。
 
 ### 3.4 確認
 
@@ -182,7 +186,9 @@ curl -F photos=@contracts/assets/source-p1.jpg -F memoryText=海に行った日 
 ```
 
 `MOCK_AI=true` でDeployした場合は生成成功Responseが返るはず。
-`MOCK_AI=false` かつ `ai/gemini.py` が未実装のままの場合は `AI_FAILED` が返るのが正しい
+`MOCK_AI=false` では、Geminiの認証・`GEMINI_MODEL`・EfficientSAM ONNX artifactが揃った
+Real AI経路を使う。設定またはProvider処理が失敗した場合はMockへ切り替えず、対応する
+API Errorを返す。
 （黙ってMockへ落ちない設計どおり。AGENTS.md §9）。
 
 ### 3.5 再Deploy
