@@ -10,12 +10,12 @@ description: Gemini による意味理解、象徴要素選定、Segmentation、
 
 ## モデル【PoC後FIX】
 - 意味理解・選定・構成: `gemini-3.7-flash` から検証開始
-- Segmentation: **FIXしない**。初期候補 `gemini-2.5-flash`。
-  Gemini 3.x のImage Segmentation対応は公式資料間で記述が割れているため、
-  安全側で 2.5 を起点に実APIでPolygon Mask取得を確認する
-- 意味理解用とSegmentation用が同一モデルである必要はない
-- **モデルIDは `GEMINI_MODEL` / `GEMINI_SEGMENTATION_MODEL` で環境変数化**する。
-  ハードコードしない
+- Segmentation初回PoC: **EfficientSAM-Ti + ONNX Runtime CPU**。Geminiが返すbboxを
+  PromptとしてMaskを得る。EfficientSAMの公式出典は `yformer/EfficientSAM`
+- Geminiは意味理解・象徴要素選定・sourcePhoto/bbox・採用LayerのCompositionを担当し、
+  最終Mask境界は担当しない
+- **モデルID、`SEGMENTATION_BACKEND`、`EFFICIENTSAM_MODEL_PATH` は環境変数化**する。
+  モデルWeightはRuntimeでDownloadしない。Cloud Run RuntimeへPyTorchを必須追加しない
 
 ## 守ること
 - Structured Output / JSON Schema を使う。自由文をパースしない
@@ -26,10 +26,12 @@ description: Gemini による意味理解、象徴要素選定、Segmentation、
 - Backendからは Python Function / Module として呼べる境界にする
 - 外部API失敗時の自動Retryは少回数・上限付き。無限Retryしない（P0は1回程度）
 - 失敗時に黙ってMockへFallbackしない
+- Segment EverythingをP0主経路にしない。Depth Modelを先回り追加しない
 
 ## PoCで出すべき材料
-Gemini単体のSegmentation品質、Latency、Rate Limit を代表写真5枚ケースで計測し、
-SAM系の追加が必要かを判断できる状態にする。GPU必須構成をP0のDeploy必須条件にしない。
+GeminiによるSemantic Planningと、EfficientSAMによるbbox→Maskの品質・Latencyを
+代表写真ケースで計測し、次モデル比較が必要かを判断できる状態にする。GPU必須構成をP0の
+Deploy必須条件にしない。
 
 ## 担当裁量
 Prompt分割、Gemini呼び出し回数、中間型、Score計算、Pillow / OpenCV等の内部処理。
