@@ -1,7 +1,0 @@
-# Real AI Cloud Buildの入力用。通常のGit管理外ファイルは除外したまま、
-# Build前に取得したEfficientSAM artifactだけを明示的に含める。
-.git/
-.gitignore
-#!include:.gitignore
-!backend/.models/
-!backend/.models/efficientsam_ti.onnx
