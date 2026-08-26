@@ -288,3 +288,40 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/physical-
 人以外の比較では、花は外形の記号が強く、白い平面STLでも比較的読める。犬は耳、体、しっぽの外形は残るが、かわいさは目、口、毛並み、色に依存するため、花よりも表面表現の必要度が高い。
 
 この検証で確認したのは、写真の意味やかわいさを再現できることではなく、切り抜き済みRGBAから平らな差し込みパーツへ変換できることまでである。次は、土台に差した状態で、正面から見たときに足が邪魔にならないか、花・犬・人物を同時に並べたときに作品として読めるかを確認する。
+
+### 特徴が弱い思い出写真の生成テスト
+
+2026-08-26に、花・犬・人物のように外形が強い対象だけでなく、思い出としては強いが単体シルエットが弱い写真を生成して試した。対象は、誕生日テーブル、入学・卒業の場面、旅行先の風景の3種類。生成画像と評価用Artworkは `tmp/weak-memory-eval-sample/` に置いた。
+
+今回の検証は、Segmentation精度そのものの検証ではない。VLMが選ぶべきモチーフを仮決めし、その部品をRGBAレイヤーにしたとき、既存の平面STL工程へ流せるかを見る検証である。
+
+- 誕生日: 主役の子ども、ケーキとろうそく、プレゼント
+- 入学・卒業: 式看板、子どもとランドセル、式典の花
+- 旅行: 山の稜線、橋、家族と荷物
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py scripts/validate_contracts.py
+python scripts/validate_contracts.py tmp/weak-memory-eval-sample/birthday/artwork.json --assets tmp/weak-memory-eval-sample/birthday/assets
+python scripts/validate_contracts.py tmp/weak-memory-eval-sample/school/artwork.json --assets tmp/weak-memory-eval-sample/school/assets
+python scripts/validate_contracts.py tmp/weak-memory-eval-sample/travel/artwork.json --assets tmp/weak-memory-eval-sample/travel/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memory-eval-sample/birthday/artwork.json> --assets <absolute path to tmp/weak-memory-eval-sample/birthday/assets> --out <absolute path to tmp/weak-memory-eval-sample/birthday/out-symbol-parts> --layer-id birthday-layer-child --layer-id birthday-layer-cake --layer-id birthday-layer-gift
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memory-eval-sample/school/artwork.json> --assets <absolute path to tmp/weak-memory-eval-sample/school/assets> --out <absolute path to tmp/weak-memory-eval-sample/school/out-symbol-parts> --layer-id school-layer-sign --layer-id school-layer-child --layer-id school-layer-flowers
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memory-eval-sample/travel/artwork.json> --assets <absolute path to tmp/weak-memory-eval-sample/travel/assets> --out <absolute path to tmp/weak-memory-eval-sample/travel/out-symbol-parts> --layer-id travel-layer-mountains --layer-id travel-layer-bridge --layer-id travel-layer-family
+```
+
+結果は成功。3ケースともSchema検証と平面STL生成が通り、各ケース3パーツと90mm四方の4層3スロット土台を生成できた。
+
+生成した比較画像は次の通り。
+
+- `tmp/weak-memory-eval-sample/comparison/weak-memory-summary-20260826.png`
+- `tmp/weak-memory-eval-sample/comparison/weak-memory-birthday-source-to-stl-20260826.png`
+- `tmp/weak-memory-eval-sample/comparison/weak-memory-school-source-to-stl-20260826.png`
+- `tmp/weak-memory-eval-sample/comparison/weak-memory-travel-source-to-stl-20260826.png`
+
+見えたことは明確である。特徴が弱い思い出写真では、人だけ、犬だけ、花だけを切る発想では足りない。誕生日はケーキとろうそく、入学はランドセルと看板、旅行は橋や山のように、写真の意味を読ませる記号へ翻訳する必要がある。
+
+旅行写真は特に厳しい。人物が小さいため、家族だけを平面STL化するとただの小さい人型になりやすい。橋と山を同時に残すことで、ようやく旅行先の風景として読める。つまり、次の実装では「どこを切るか」だけでなく、「何を残せば思い出として伝わるか」をVLMに選ばせる必要がある。
+
+残課題は、仮決めしたマスクをVLM + Segmentationで自動化できるか、複数モチーフを1レイヤーにしたときに分離パーツが出ないか、表面写真や線画なしで思い出として読めるかである。
