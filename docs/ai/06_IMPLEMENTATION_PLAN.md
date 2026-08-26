@@ -29,7 +29,12 @@ SEGMENTATION_MAX_RETRIES
 CANDIDATE_COUNT
 TARGET_LAYER_MIN
 TARGET_LAYER_MAX
+ARTWORK_CANVAS_ASPECT_RATIO
 ```
+
+初回MVPの既定値は `TARGET_LAYER_MIN=4` / `TARGET_LAYER_MAX=4` /
+`ARTWORK_CANVAS_ASPECT_RATIO=178/127`。これらはMVP生成Profileであり、Shared Contractの
+可変長性を変更しない。
 
 ※先頭の `a` は実装時に除去し、正しいenv名 `EFFICIENTSAM_MODEL_PATH` とする。
 
@@ -126,6 +131,8 @@ Soft MetricはlogしてPoCで閾値決定。
 - order
 
 PythonでContract constraintsへ変換。
+`scale * canvasAspectRatio * assetHeight / assetWidth` で表示高さを求め、x/y/scaleの
+単純clampではなくLayer矩形全体をCanvas内へ収める。
 
 ## 10. Artwork Assembly
 

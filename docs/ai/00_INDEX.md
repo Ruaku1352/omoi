@@ -35,5 +35,7 @@ Pillow/Pythonが「作品として使えるLayer」にする。
 - Segmentation: 【FIX for P0】EfficientSAM-Ti + ONNX Runtime CPU
 - Depth: 【FIX for P0】使わない
 - Runtime GPU: 【FIX for P0】必須にしない
-- Layer数: 【PoC後FIX】代表3〜5、可変長
+- 初回MVP入力: 写真5枚 + memoryText
+- 初回MVP出力: 4層（Contract自体は可変長）
+- 初回MVP Canvas: 2L判Landscape（`178 / 127`）
 - Candidate数: 【PoC後FIX】代表6〜8

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -30,10 +31,11 @@ def normalize_composition(
     accepted_layers: list[AcceptedLayer],
     plan: CompositionPlan,
     *,
+    canvas_aspect_ratio: float,
     min_scale: float,
     max_scale: float,
 ) -> dict[str, dict[str, float | int]]:
-    """Geminiの構図を検証し、Contractの座標と連番layerIndexへ正規化する。"""
+    """Geminiの構図を検証し、全LayerをCanvas内へ収めて正規化する。"""
 
     accepted_by_id = {layer.candidate_id: layer for layer in accepted_layers}
     if len(accepted_by_id) != len(accepted_layers):
@@ -41,16 +43,49 @@ def normalize_composition(
     placements = {placement.candidate_id: placement for placement in plan.layers}
     if len(placements) != len(plan.layers) or set(placements) != set(accepted_by_id):
         raise AiError("Compositionが採用Layerと一致しません")
+    if not math.isfinite(canvas_aspect_ratio) or canvas_aspect_ratio <= 0:
+        raise AiError("Canvas aspect ratioが不正です")
     if min_scale <= 0 or max_scale < min_scale:
         raise AiError("Layout scale設定が不正です")
 
     ordered = sorted(plan.layers, key=lambda placement: (placement.order, placement.candidate_id))
     result: dict[str, dict[str, float | int]] = {}
     for layer_index, placement in enumerate(ordered):
+        layer = accepted_by_id[placement.candidate_id]
+        asset = layer.asset
+        # scaleはCanvas幅基準。表示高さのCanvas比は
+        # scale * canvasAspectRatio * assetHeight / assetWidth になる。
+        fit_scale = min(
+            1.0,
+            asset.width_px / (canvas_aspect_ratio * asset.height_px),
+        )
+        upper_scale = min(max_scale, fit_scale)
+        # 極端な縦長AssetではCanvas内収容をminScaleより優先する。
+        lower_scale = min(min_scale, upper_scale)
+        scale = _clamp_finite(
+            placement.scale,
+            lower_scale,
+            upper_scale,
+            default=lower_scale,
+        )
+        half_width = scale / 2
+        half_height = (
+            scale * canvas_aspect_ratio * asset.height_px / asset.width_px / 2
+        )
         result[placement.candidate_id] = {
-            "x": _clamp(placement.x, 0.0, 1.0),
-            "y": _clamp(placement.y, 0.0, 1.0),
-            "scale": _clamp(placement.scale, min_scale, max_scale),
+            "x": _clamp_finite(
+                placement.x,
+                half_width,
+                1 - half_width,
+                default=0.5,
+            ),
+            "y": _clamp_finite(
+                placement.y,
+                half_height,
+                1 - half_height,
+                default=0.5,
+            ),
+            "scale": scale,
             "layerIndex": layer_index,
         }
     return result
@@ -60,18 +95,19 @@ def assemble_artwork(
     source_photos: list[SourcePhotoAsset],
     accepted_layers: list[AcceptedLayer],
     composition: dict[str, dict[str, float | int]],
+    *,
+    canvas_aspect_ratio: float,
 ) -> dict:
     if not source_photos or not accepted_layers:
         raise AiError("Artworkに必要なAssetが不足しています")
     if set(composition) != {layer.candidate_id for layer in accepted_layers}:
         raise AiError("Artwork構図とLayerが一致しません")
 
-    primary = source_photos[0].asset
     artwork_id = _id("artwork")
     return {
         "schemaVersion": "1.0",
         "artworkId": artwork_id,
-        "canvas": {"aspectRatio": primary.width_px / primary.height_px},
+        "canvas": {"aspectRatio": canvas_aspect_ratio},
         "sourcePhotos": [
             {
                 "sourcePhotoId": source.source_photo_id,
@@ -107,7 +143,7 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex}"
 
 
-def _clamp(value: float, lower: float, upper: float) -> float:
-    if value != value:  # NaN
-        return (lower + upper) / 2
+def _clamp_finite(value: float, lower: float, upper: float, *, default: float) -> float:
+    if not math.isfinite(value):
+        return default
     return max(lower, min(upper, value))

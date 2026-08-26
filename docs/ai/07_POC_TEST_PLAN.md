@@ -7,6 +7,9 @@
 
 ## Dataset
 
+代表E2Eは、利用同意済みの写真5枚とmemoryTextを1組として、4層・2L判Landscapeの
+Frontend handoff bundleまで生成する。可変長入力の探索ケースとは結果を分けて記録する。
+
 最低10〜20対象。
 
 含める:
@@ -76,6 +79,12 @@ result_grade
 - process RSS / Peak memory
 - ONNX session load time
 - cold vs warm inference
+
+## Frontend handoff確認
+
+Real生成結果を1フォルダにまとめ、成功Response、Artwork、Manifest、全Asset、memoryText、
+metrics、README、composition / bbox / mask / layer previewを確認する。READMEだけでBackend
+Responseとフォルダ内ファイルの対応が分かることを受入条件にする。
 
 ## Cloud Run Test
 

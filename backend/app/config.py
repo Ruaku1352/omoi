@@ -43,8 +43,11 @@ class Settings(BaseSettings):
     efficientsam_model_path: Path | None = None
     segmentation_max_retries: int = Field(default=1, ge=0, le=3)
     candidate_count: int = Field(default=8, ge=1, le=20)
-    target_layer_min: int = Field(default=3, ge=1, le=20)
-    target_layer_max: int = Field(default=5, ge=1, le=20)
+    # MVP production profileは4層を成功条件にする。Schema自体の可変長性は維持する。
+    target_layer_min: int = Field(default=4, ge=1, le=20)
+    target_layer_max: int = Field(default=4, ge=1, le=20)
+    # 2L判 Landscape (178 mm x 127 mm)。Contract Schemaの固定値ではなく生成Policy。
+    artwork_canvas_aspect_ratio: float = Field(default=178 / 127, gt=0)
     gemini_analysis_max_side: int = Field(default=1536, ge=256, le=4096)
     gemini_request_timeout_ms: int = Field(default=120_000, ge=1_000, le=600_000)
     segmentation_max_side: int = Field(default=1024, ge=256, le=4096)

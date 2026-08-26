@@ -34,5 +34,6 @@ def build_generator(settings: Settings) -> ArtworkGenerator:
         layer_padding_px=settings.layer_padding_px,
         layout_min_scale=settings.layout_min_scale,
         layout_max_scale=settings.layout_max_scale,
+        canvas_aspect_ratio=settings.artwork_canvas_aspect_ratio,
         gemini_request_timeout_ms=settings.gemini_request_timeout_ms,
     )

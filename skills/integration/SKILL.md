@@ -48,6 +48,19 @@ Real AI の完成を待たず、
 目標は Firebase Hosting の Frontend → Cloud Run の Backend の Real Runtime 接続、
 および Real AI で実写真から3D Previewまで1回通すこと。
 
+### 初回MVPのFrontend handoff
+
+代表ケースは **5 photos + memoryText → 4 layers + 2L Landscape (`178 / 127`)**。
+Real生成結果はGit管理外の1フォルダへ、少なくとも次をまとめる。
+
+- `generate-success-response.json` / `artwork.json` / `asset-manifest.json`
+- `assets/` / `memory-text.txt` / `metrics.json` / `README.md`
+- `debug/composition-preview.png` とbbox / mask / layerの確認素材
+
+BundleはローカルPoC用の開発成果物であり、追加Product EndpointやCloud Runの保存機能を意味しない。
+READMEにはBackend Response `{ "artwork": ..., "assetManifest": ... }` と各ファイルの対応、
+実API互換版と相対URL版の違いを明記する。
+
 ## 環境変数
 Frontend（公開可・`VITE_` Prefix）: `VITE_API_BASE_URL`
 Backend（Secret含む）: `GEMINI_API_KEY` / `GEMINI_MODEL` /

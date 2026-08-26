@@ -53,6 +53,17 @@ Driveの「技術設計」§2 とはラベル名が一部違う。意味は同�
   → 2.5D物理出力（3Dプリンター）
 ```
 
+### 初回MVP生成Profile【仮決定】
+
+今回のMVP実装・代表PoC・実測・Frontend handoffは、次の成功経路を基準にする。
+
+- 入力: **写真5枚 + memoryText**
+- 出力: **4層のLayer Artwork**
+- Canvas: **2L判 Landscape（178 mm × 127 mm、`aspectRatio = 178 / 127`）**
+
+これはMVP生成Profileであり、`sourcePhotos[]` / `layers[]` の可変長Contractを固定長Schemaへ
+変更するものではない。一般APIの可変長境界も維持する。
+
 ---
 
 ## 2. Architecture

@@ -16,6 +16,7 @@ from ai.internal_models import CompositionPlan, SemanticPlan
 from ai.quality import assess_mask
 from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult
 from ai.types import AssetBlob, InputPhoto
+from app.config import Settings
 from app.models.artwork import Artwork
 from app.services.validation import check_artwork_rules, check_assets_present
 
@@ -28,8 +29,13 @@ def _photo(color: tuple[int, int, int]) -> InputPhoto:
 
 
 class FakePlanner:
+    def __init__(self, candidate_count: int = 4) -> None:
+        self.candidate_count = candidate_count
+        self.last_memory_text = None
+
     async def plan(self, images, memory_text) -> SemanticPlan:
-        del images, memory_text
+        del images
+        self.last_memory_text = memory_text
         return SemanticPlan.model_validate(
             {
                 "memory_summary": "test memory",
@@ -53,7 +59,7 @@ class FakePlanner:
                             }
                         ],
                     }
-                    for index in range(3)
+                    for index in range(self.candidate_count)
                 ],
             }
         )
@@ -149,35 +155,83 @@ def test_layout_normalization_uses_contiguous_layer_indexes() -> None:
             ]
         }
     )
-    normalized = normalize_composition(accepted, plan, min_scale=0.1, max_scale=1.0)
-    assert normalized["a"] == {"x": 0.0, "y": 1.0, "scale": 1.0, "layerIndex": 1}
+    normalized = normalize_composition(
+        accepted,
+        plan,
+        canvas_aspect_ratio=4 / 3,
+        min_scale=0.1,
+        max_scale=1.0,
+    )
+    assert normalized["a"] == {"x": 0.375, "y": 0.5, "scale": 0.75, "layerIndex": 1}
     assert normalized["b"]["layerIndex"] == 0
+
+
+@pytest.mark.parametrize("size", [(10, 1000), (1000, 10), (100, 100)])
+def test_layout_normalization_keeps_any_asset_aspect_inside_canvas(
+    size: tuple[int, int],
+) -> None:
+    width, height = size
+    asset = AssetBlob("layer-x", "image/png", width, height, b"x")
+    accepted = [AcceptedLayer("a", "A", 0, "source-a", asset, 1)]
+    plan = CompositionPlan.model_validate(
+        {"layers": [{"candidate_id": "a", "x": -10, "y": 10, "scale": 10, "order": 0}]}
+    )
+
+    normalized = normalize_composition(
+        accepted,
+        plan,
+        canvas_aspect_ratio=178 / 127,
+        min_scale=0.1,
+        max_scale=1.2,
+    )["a"]
+
+    display_width = float(normalized["scale"])
+    display_height = display_width * (178 / 127) * height / width
+    assert display_width <= 1
+    assert display_height <= 1
+    assert display_width / 2 <= normalized["x"] <= 1 - display_width / 2
+    assert display_height / 2 <= normalized["y"] <= 1 - display_height / 2
 
 
 @pytest.mark.anyio
 async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers() -> None:
+    planner = FakePlanner()
     generator = GeminiArtworkGenerator(
         api_key="test-key",
         model="test-model",
         segmenter=FakeSegmenter(),
         candidate_count=8,
-        target_layer_min=3,
-        target_layer_max=5,
+        target_layer_min=4,
+        target_layer_max=4,
         segmentation_max_retries=1,
         analysis_max_side=512,
         layer_padding_px=2,
         layout_min_scale=0.1,
         layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
-        semantic_planner=FakePlanner(),
+        semantic_planner=planner,
         composer=FakeComposer(),
     )
-    result = await generator.generate([_photo((255, 0, 0)), _photo((0, 255, 0))], "memory")
+    result = await generator.generate(
+        [
+            _photo((255, 0, 0)),
+            _photo((0, 255, 0)),
+            _photo((0, 0, 255)),
+            _photo((255, 255, 0)),
+            _photo((0, 255, 255)),
+        ],
+        "memory",
+    )
 
     artwork = Artwork.model_validate(result.artwork)
     assert not check_artwork_rules(artwork)
     assert not check_assets_present(artwork, result.assets)
-    assert sorted(layer.layer_index for layer in artwork.layers) == [0, 1, 2]
+    assert len(artwork.source_photos) == 5
+    assert len(artwork.layers) == 4
+    assert artwork.canvas.aspect_ratio == 178 / 127
+    assert sorted(layer.layer_index for layer in artwork.layers) == [0, 1, 2, 3]
+    assert planner.last_memory_text == "memory"
     for asset in result.assets:
         if asset.asset_id.startswith("layer-"):
             with Image.open(BytesIO(asset.data)) as image:
@@ -190,3 +244,10 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
 def test_efficient_sam_missing_model_fails_without_download(tmp_path) -> None:
     with pytest.raises(AiNotConfiguredError):
         EfficientSamOnnxSegmenter(tmp_path / "missing.onnx", 1024)
+
+
+def test_mvp_settings_default_to_four_layers_and_2l_landscape() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.target_layer_min == settings.target_layer_max == 4
+    assert settings.artwork_canvas_aspect_ratio == 178 / 127
