@@ -370,3 +370,31 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memo
 ただし、白い平面STLだけで読めるケースと、読みにくいケースの差は大きい。鳥居、アーチ、ピアノ、テント、玄関のように形が強い小道具がある写真は残りやすい。集合写真や祖父母祝いのように、人のまとまりが主役の写真は塊になりやすく、本人らしさはほぼ残らない。
 
 次に作るべき工程は、単純な切り抜き精度の改善ではない。VLMで「何を1つにまとめれば思い出として読めるか」を選び、平面STLでは外形だけを作る。本人らしさ、かわいさ、学校名、表情、衣装、写真の空気は、表面写真、シール、線画、色分けのどれかで補う必要がある。
+
+### 6〜10の記念アイコン方式テスト
+
+2026-08-26に、追加10ケースのうち6〜10を別方式で試した。前回の1写真1パーツでは、キャンプ、海遊び、引っ越し、ペットお迎え、祖父母祝いを、人物や家族を含む1つのシルエットにまとめていた。しかし、集合写真や家族写真は白い平面STLへ落とすと塊になりやすく、本人らしさも残りにくい。
+
+今回の方針は、写真を主役として残し、STLは「記念アイコン」に寄せることにした。人物全員を切るのではなく、外形だけで読める小道具や場面記号を1つのパーツにする。
+
+- キャンプ: 親子とテント → テントとランタン
+- 海遊び: 家族と砂の城 → 砂の城と波
+- 引っ越し: 家族と玄関と箱 → 玄関と段ボール
+- ペットお迎え: 家族と犬とキャリー → 犬とキャリー
+- 祖父母祝い: 祖父母と家族の祝い → ケーキと花束
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py scripts/validate_contracts.py
+python scripts/validate_contracts.py tmp/weak-memory-icon-eval-sample/<case>/artwork.json --assets tmp/weak-memory-icon-eval-sample/<case>/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memory-icon-eval-sample/<case>/artwork.json> --assets <absolute path to tmp/weak-memory-icon-eval-sample/<case>/assets> --out <absolute path to tmp/weak-memory-icon-eval-sample/<case>/out-memory-icon> --layer-id <case>-memory-icon
+```
+
+5件すべてでContract検証と平面STL生成が通った。警告は出ていない。キャンプも含め、全ケースが `contourCount: 1` になっており、少なくとも外部輪郭としては1つの印刷物にまとまった。
+
+生成した比較画像は `tmp/weak-memory-icon-eval-sample/comparison/memory-icon-method-6-10-clean-20260826.png` に置いた。旧案の人物込みシルエット、新案の記念アイコン、新STLを横並びで比較している。
+
+結果として、キャンプ、海遊び、引っ越し、ペットお迎えは改善した。人を丸ごと残すより、テント、砂の城、玄関、犬キャリーの方が白い板でも場面として読みやすい。
+
+祖父母祝いだけは扱いを変える必要がある。ケーキと花束にすれば「祝い」の記号にはなるが、祖父母本人の記憶は残らない。このケースは、写真カードを主役にし、STLは周辺の祝い記号として添える方がよい。人物の顔や関係性をSTLへ無理に入れないことを、次の設計ルールにする。
