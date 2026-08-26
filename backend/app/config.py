@@ -39,7 +39,20 @@ class Settings(BaseSettings):
     # ---- AI ----
     gemini_api_key: str | None = None
     gemini_model: str | None = None
+    # 旧Gemini Segmentation PoCとの.env互換用。EfficientSAM主経路では使わない。
     gemini_segmentation_model: str | None = None
+    segmentation_backend: str = "efficient_sam_onnx"
+    efficientsam_model_path: Path | None = None
+    segmentation_max_retries: int = Field(default=1, ge=0, le=3)
+    candidate_count: int = Field(default=8, ge=1, le=20)
+    target_layer_min: int = Field(default=3, ge=1, le=20)
+    target_layer_max: int = Field(default=5, ge=1, le=20)
+    gemini_analysis_max_side: int = Field(default=1536, ge=256, le=4096)
+    gemini_request_timeout_ms: int = Field(default=120_000, ge=1_000, le=600_000)
+    segmentation_max_side: int = Field(default=1024, ge=256, le=4096)
+    layer_padding_px: int = Field(default=8, ge=0, le=256)
+    layout_min_scale: float = Field(default=0.05, gt=0)
+    layout_max_scale: float = Field(default=1.2, gt=0)
 
     # ---- Upload制限【PoC後FIX】----
     # 代表ケースは写真5枚だが、固定5枚の契約ではない。実測後に見直す。
