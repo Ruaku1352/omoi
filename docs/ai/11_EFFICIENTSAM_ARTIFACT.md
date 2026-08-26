@@ -1,6 +1,6 @@
 # EfficientSAM-Ti ONNX Artifact
 
-P0のSegmentationは、[yformer/EfficientSAM](https://github.com/yformer/EfficientSAM) が案内する
+P0のSegmentation主経路【FIX】は、[yformer/EfficientSAM](https://github.com/yformer/EfficientSAM) が案内する
 公式ONNX版 `efficientsam_ti.onnx` を使う。公式のONNX入力例は
 `EfficientSAM_onnx_example.py` に従い、`batched_images` とBoxの二隅（labels `2`, `3`）を渡す。
 

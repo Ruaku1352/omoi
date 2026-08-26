@@ -39,8 +39,6 @@ class Settings(BaseSettings):
     # ---- AI ----
     gemini_api_key: str | None = None
     gemini_model: str | None = None
-    # 旧Gemini Segmentation PoCとの.env互換用。EfficientSAM主経路では使わない。
-    gemini_segmentation_model: str | None = None
     segmentation_backend: str = "efficient_sam_onnx"
     efficientsam_model_path: Path | None = None
     segmentation_max_retries: int = Field(default=1, ge=0, le=3)

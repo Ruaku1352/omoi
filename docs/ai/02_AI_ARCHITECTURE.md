@@ -1,6 +1,6 @@
 # AI・画像処理 Architecture
 
-## P0 Architecture
+## P0 Architecture【FIX】
 
 ```mermaid
 flowchart TD

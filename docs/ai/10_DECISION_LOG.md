@@ -35,8 +35,8 @@ Gemini bbox → Prompted Segmentation
 - Mask Pool Matchingの複雑性回避
 - 計算量抑制
 
-## D-AI-004: 初回Segmentation PoCはEfficientSAM-Ti ONNX
-Status: 暫定 / PoC後FIX
+## D-AI-004: P0 SegmentationはEfficientSAM-Ti ONNX Runtime CPU
+Status: FIX for P0
 
 理由:
 - Geminiが意味理解済み
@@ -45,8 +45,8 @@ Status: 暫定 / PoC後FIX
 - ONNX Runtimeを使える
 - Cloud Run P0と相性が良い
 
-## D-AI-005: SAM 2.1 / YOLOEはFallback比較
-Status: 暫定
+## D-AI-005: SAM 2.1 / YOLOE / Mattingは比較・Escalation候補
+Status: FIX for P0
 
 SAM 2.1:
 - 境界品質不足時
@@ -56,6 +56,8 @@ YOLOE:
 
 Matting:
 - 対象は正しいが髪/soft edge不足時
+
+いずれもP0主経路の自動Fallbackにはしない。品質不足の原因を確認してから比較する。
 
 ## D-AI-006: Candidateは最終Layerより多めに生成
 Status: 暫定 / PoC後FIX

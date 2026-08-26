@@ -47,6 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--photos-dir", type=Path, default=REPO_ROOT / "poc-images")
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "poc-output")
+    # Real AI PoC専用の暫定モデル。Semantic Planning / Compositionの最終採用Model IDではない。
     parser.add_argument("--model", default="gemini-3.5-flash-lite")
     parser.add_argument("--efficientsam-model-path", type=Path, required=True)
     parser.add_argument("--preview-width-px", type=int, default=1600)

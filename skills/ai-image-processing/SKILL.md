@@ -8,14 +8,17 @@ description: Gemini による意味理解、象徴要素選定、Segmentation、
 前提は `/AGENTS.md` §6。実装場所は `backend/ai/`。
 **Top Levelに `ai/` Directoryを作らないこと。**本Skillが存在することは理由にならない。
 
-## モデル【PoC後FIX】
-- 意味理解・選定・構成: `gemini-3.7-flash` から検証開始
-- Segmentation初回PoC: **EfficientSAM-Ti + ONNX Runtime CPU**。Geminiが返すbboxを
+## モデル【FIX / PoC後FIX】
+- 意味理解・選定・構成: Gemini Developer API。具体的な `GEMINI_MODEL` は環境変数で
+  差し替え、最終Model IDはFIXしない【PoC後FIX】
+- SegmentationのP0主経路: **EfficientSAM-Ti + ONNX Runtime CPU**【FIX】。Geminiが返すbboxを
   PromptとしてMaskを得る。EfficientSAMの公式出典は `yformer/EfficientSAM`
 - Geminiは意味理解・象徴要素選定・sourcePhoto/bbox・採用LayerのCompositionを担当し、
   最終Mask境界は担当しない
 - **モデルID、`SEGMENTATION_BACKEND`、`EFFICIENTSAM_MODEL_PATH` は環境変数化**する。
   モデルWeightはRuntimeでDownloadしない。Cloud Run RuntimeへPyTorchを必須追加しない
+- SAM 2.1 / YOLOE / Mattingは品質不足時の比較・Escalation候補であり、P0主経路の
+  自動Fallbackにはしない
 
 ## 守ること
 - Structured Output / JSON Schema を使う。自由文をパースしない
