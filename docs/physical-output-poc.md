@@ -398,3 +398,27 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memo
 結果として、キャンプ、海遊び、引っ越し、ペットお迎えは改善した。人を丸ごと残すより、テント、砂の城、玄関、犬キャリーの方が白い板でも場面として読みやすい。
 
 祖父母祝いだけは扱いを変える必要がある。ケーキと花束にすれば「祝い」の記号にはなるが、祖父母本人の記憶は残らない。このケースは、写真カードを主役にし、STLは周辺の祝い記号として添える方がよい。人物の顔や関係性をSTLへ無理に入れないことを、次の設計ルールにする。
+
+### 8〜10の記念アイコン再修正
+
+2026-08-26に、前回の記念アイコン方式のうち、読みにくかった8〜10だけを再修正した。キャンプと海遊びは、テント、ランタン、砂の城、波の外形が残っており、今回は据え置きにした。
+
+問題は、引っ越し、ペットお迎え、祖父母祝いだった。玄関は棒のように見え、犬とキャリーはペット記号として弱く、ケーキ横の花束は謎の突起に見えた。そこで、白い平面STLでも外形だけでカテゴリが読める案へ寄せた。
+
+- 引っ越し: 玄関と段ボール → 引っ越しトラックと箱
+- ペットお迎え: 犬とキャリー → 大きい肉球
+- 祖父母祝い: ケーキと花束 → 祝いケーキ
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py scripts/validate_contracts.py
+python scripts/validate_contracts.py tmp/weak-memory-icon-v2-eval-sample/<case>/artwork.json --assets tmp/weak-memory-icon-v2-eval-sample/<case>/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memory-icon-v2-eval-sample/<case>/artwork.json> --assets <absolute path to tmp/weak-memory-icon-v2-eval-sample/<case>/assets> --out <absolute path to tmp/weak-memory-icon-v2-eval-sample/<case>/out-memory-icon-v2> --layer-id <case>-memory-icon-v2
+```
+
+3件すべてでContract検証と平面STL生成が通った。警告は出ていない。全ケースが `contourCount: 1` で、引っ越しは300三角形、ペットお迎えは612三角形、祖父母祝いは576三角形になった。
+
+生成した比較画像は `tmp/weak-memory-icon-v2-eval-sample/comparison/memory-icon-method-8-10-v2-20260826.png` に置いた。前回案、改善案、改善STL正面を横並びで確認できる。
+
+判断として、引っ越しはかなり改善した。玄関よりトラックの方が、白い板でも意味が立つ。ペットお迎えは犬本人をSTLで残すより、大きい肉球にした方が「ペット」の記号として安定する。祖父母祝いは祝いケーキにすると読みやすくなるが、祖父母本人の記憶は残らない。ここは引き続き、写真カードを主役にし、STLは補助記号として扱う。
