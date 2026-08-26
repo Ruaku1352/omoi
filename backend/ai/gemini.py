@@ -66,19 +66,29 @@ class Composer(Protocol):
 
 class GeminiSemanticPlanner:
     def __init__(
-        self, client: genai.Client, model: str, analysis_max_side: int, request_timeout_ms: int
+        self,
+        client: genai.Client,
+        model: str,
+        analysis_max_side: int,
+        request_timeout_ms: int,
+        candidate_count: int = 8,
+        target_layer_count: int = 4,
     ) -> None:
         self._client = client
         self._model = model
         self._analysis_max_side = analysis_max_side
         self._request_timeout_ms = request_timeout_ms
+        self._candidate_count = candidate_count
+        self._target_layer_count = target_layer_count
 
     async def plan(self, images: Sequence[Image.Image], memory_text: str | None) -> SemanticPlan:
         photo_parts = [_image_part(thumbnail(image, self._analysis_max_side)) for image in images]
         prompt = (
             "You are planning a layered physical-memory artwork from a group of photos. "
-            "Study every photo together and the optional memory text. "
-            "Return 6-8 distinct candidates. "
+            "Study every photo together and treat the memory text as a primary signal "
+            "when present. "
+            f"Return {self._candidate_count} distinct candidates so the pipeline can produce "
+            f"exactly {self._target_layer_count} strong final layers. "
             "Each candidate must identify source_photo_index (zero based), have components, "
             "and give every "
             "component a tight complete bbox in 0..1000 coordinates as y_min, x_min, y_max, x_max. "
@@ -101,14 +111,22 @@ class GeminiSemanticPlanner:
 
 
 class GeminiComposer:
-    def __init__(self, client: genai.Client, model: str, request_timeout_ms: int) -> None:
+    def __init__(
+        self,
+        client: genai.Client,
+        model: str,
+        request_timeout_ms: int,
+        canvas_aspect_ratio: float,
+    ) -> None:
         self._client = client
         self._model = model
         self._request_timeout_ms = request_timeout_ms
+        self._canvas_aspect_ratio = canvas_aspect_ratio
 
     async def compose(self, layers: Sequence[AcceptedLayer]) -> CompositionPlan:
         parts: list[object] = [
             "Create an initial composition for supplied transparent artwork layers. "
+            f"The landscape canvas width/height ratio is {self._canvas_aspect_ratio:.9f}. "
             "Return exactly one placement for every candidate_id. x and y are centers in 0..1; "
             "scale is layer width divided by canvas width; order is back-to-front. "
             "Compose a balanced keepsake, not literal scene depth. "
@@ -117,7 +135,8 @@ class GeminiComposer:
         for layer in layers:
             parts.append(
                 f"candidate_id={layer.candidate_id}; label={layer.label}; "
-                f"importance={layer.importance:.3f}"
+                f"importance={layer.importance:.3f}; width_px={layer.asset.width_px}; "
+                f"height_px={layer.asset.height_px}"
             )
             parts.append(_image_part(_asset_thumbnail(layer.asset)))
         response = await _generate_structured(
@@ -148,12 +167,15 @@ class GeminiArtworkGenerator:
         layer_padding_px: int,
         layout_min_scale: float,
         layout_max_scale: float,
+        canvas_aspect_ratio: float,
         gemini_request_timeout_ms: int,
         semantic_planner: SemanticPlanner | None = None,
         composer: Composer | None = None,
     ) -> None:
         if target_layer_min < 1 or target_layer_max < target_layer_min:
             raise AiNotConfiguredError("Target Layer数の設定が不正です")
+        if candidate_count < target_layer_min:
+            raise AiNotConfiguredError("Candidate数がTarget Layer数より少ない設定です")
         self._segmenter = segmenter
         self._candidate_count = candidate_count
         self._target_layer_min = target_layer_min
@@ -162,6 +184,7 @@ class GeminiArtworkGenerator:
         self._layer_padding_px = layer_padding_px
         self._layout_min_scale = layout_min_scale
         self._layout_max_scale = layout_max_scale
+        self._canvas_aspect_ratio = canvas_aspect_ratio
         self._api_key = api_key
         self._model = model
         if semantic_planner is None or composer is None:
@@ -172,10 +195,18 @@ class GeminiArtworkGenerator:
             else:
                 client = genai.Client(api_key=api_key)
                 self._planner = semantic_planner or GeminiSemanticPlanner(
-                    client, model, analysis_max_side, gemini_request_timeout_ms
+                    client,
+                    model,
+                    analysis_max_side,
+                    gemini_request_timeout_ms,
+                    candidate_count,
+                    target_layer_max,
                 )
                 self._composer = composer or GeminiComposer(
-                    client, model, gemini_request_timeout_ms
+                    client,
+                    model,
+                    gemini_request_timeout_ms,
+                    canvas_aspect_ratio,
                 )
         else:
             self._planner = semantic_planner
@@ -222,9 +253,25 @@ class GeminiArtworkGenerator:
         candidates = sorted(
             semantic_plan.candidates, key=lambda item: item.importance, reverse=True
         )
+        seen_candidate_ids: set[str] = set()
         for candidate in candidates[: self._candidate_count]:
             if len(accepted) >= self._target_layer_max:
                 break
+            if candidate.candidate_id in seen_candidate_ids:
+                candidate_metrics.append(
+                    CandidateMetric(
+                        candidate.candidate_id,
+                        candidate.label,
+                        0,
+                        0,
+                        None,
+                        None,
+                        False,
+                        "duplicate_candidate_id",
+                    )
+                )
+                continue
+            seen_candidate_ids.add(candidate.candidate_id)
             if candidate.source_photo_index >= len(decoded):
                 candidate_metrics.append(
                     CandidateMetric(
@@ -260,10 +307,16 @@ class GeminiArtworkGenerator:
         layout = normalize_composition(
             accepted,
             composition_plan,
+            canvas_aspect_ratio=self._canvas_aspect_ratio,
             min_scale=self._layout_min_scale,
             max_scale=self._layout_max_scale,
         )
-        artwork = assemble_artwork(source_assets, accepted, layout)
+        artwork = assemble_artwork(
+            source_assets,
+            accepted,
+            layout,
+            canvas_aspect_ratio=self._canvas_aspect_ratio,
+        )
         self.last_metrics = GenerationMetrics(
             semantic_planning_elapsed_ms=semantic_elapsed_ms,
             composition_elapsed_ms=composition_elapsed_ms,

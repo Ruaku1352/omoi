@@ -128,6 +128,14 @@ python scripts/validate_contracts.py path/to/real-artwork.json
 python scripts/validate_contracts.py path/to/generate-response.json
 ```
 
+## 初回MVPのReal AI検証
+
+初回MVPの代表経路は **写真5枚 + memoryText → 4層**、Canvasは2L判Landscape
+（178 mm × 127 mm、`178 / 127`）で検証する。Real生成のFrontend handoffは
+`scripts/run_real_ai_poc.py` でGit管理外の `poc-output/` に作成し、成功Response、Artwork、
+Asset Manifest、全Asset、入力memoryText、metrics、README、目視用debug画像を1フォルダにまとめる。
+Shared Contractの配列は将来拡張のため可変長のまま維持する。
+
 ---
 
 ## 共通Contractを変えたいとき

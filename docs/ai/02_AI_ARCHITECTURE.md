@@ -20,9 +20,9 @@ flowchart TD
     H -->|OK| J[Component Mask統合]
     J --> K[Pillow<br/>RGBA PNG Layer]
 
-    K --> L{良質Layer数}
+    K --> L{良質Layerが4層?}
     L -->|不足| D
-    L -->|目標到達| M[Gemini Composition]
+    L -->|4層到達| M[Gemini Composition]
 
     M --> N[x / y / scale / 前後順]
     N --> O[Python Constraint Resolver]
@@ -33,6 +33,9 @@ flowchart TD
 ```
 
 ## 責務
+
+初回MVPの代表経路は **写真5枚 + memoryText → 4層**。CompositionとConstraint Resolverは
+2L判Landscape（`178 / 127`）を使い、Assetの縦横比を考慮して全Layer矩形をCanvas内へ収める。
 
 ### Gemini
 

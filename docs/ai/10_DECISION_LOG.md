@@ -81,3 +81,11 @@ Call 2:
 理由:
 Segmentation failureによって最終採用要素が変わるため。
 Latency問題時は1 Call化を再検討。
+
+## D-AI-008: 初回MVP生成Profileは5枚 + memoryText → 4層 + 2L Landscape
+Status: 初回MVP固定前提
+
+- Production既定は4層を成功条件とし、4層未満をMockや低品質Maskで補完しない
+- Canvasは入力写真比率ではなく `178 / 127`
+- 代表PoCとFrontend handoff bundleも同じ条件で検証する
+- Shared Contractの `sourcePhotos[]` / `layers[]` は可変長のまま維持する

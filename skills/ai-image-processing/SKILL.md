@@ -8,6 +8,12 @@ description: Gemini による意味理解、象徴要素選定、Segmentation、
 前提は `/AGENTS.md` §6。実装場所は `backend/ai/`。
 **Top Levelに `ai/` Directoryを作らないこと。**本Skillが存在することは理由にならない。
 
+## 初回MVP生成Profile
+
+代表PoC・実測・Frontend handoffでは **5 photos + memoryText → exactly 4 layers**、
+Canvasは **2L判Landscape (`178 / 127`)** を成功条件にする。Shared Contractの配列は可変長のまま
+維持し、4層を作れないReal生成をMockやreject済みMaskで埋め合わせない。
+
 ## モデル【FIX / PoC後FIX】
 - 意味理解・選定・構成: Gemini Developer API。具体的な `GEMINI_MODEL` は環境変数で
   差し替え、最終Model IDはFIXしない【PoC後FIX】

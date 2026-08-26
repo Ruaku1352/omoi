@@ -4,6 +4,7 @@
 - [ ] JPEG / PNG / WebP
 - [ ] photos[]可変長
 - [ ] memoryText無しでも動作
+- [ ] 初回MVP代表ケースは写真5枚 + memoryTextあり
 
 ## Semantic Planning
 - [ ] 複数写真を同一Contextで理解
@@ -31,6 +32,8 @@
 - [ ] scale > 0
 - [ ] layerIndex 0..N-1 unique contiguous
 - [ ] array positionをdepth意味にしない
+- [ ] 初回MVPは4層、2L判Landscape (`178 / 127`)
+- [ ] tall / wide / square Layerの矩形全体がCanvas内
 
 ## Contract
 - [ ] Artwork Schema通過
@@ -58,6 +61,12 @@
 - [ ] Fake Gemini/Fake Segmenterあり
 - [ ] Real PoCは別script/test marker
 - [ ] `MOCK_AI=true` regression無し
+
+## Frontend handoff
+- [ ] Real生成の成功Response / Artwork / Manifest / 全Assetが1フォルダに揃う
+- [ ] memoryText / metrics / READMEが揃う
+- [ ] composition / bbox / mask / layer previewが揃う
+- [ ] READMEにBackend Responseと各ファイルの対応、ローカル版との差がある
 
 ## Product Quality
 - [ ] 作品として使えるLayerが複数生成
