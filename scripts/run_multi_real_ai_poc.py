@@ -1,4 +1,7 @@
-"""同一Production Promptで3写真パターンをE2E検証する、Git管理外のReal AI PoC runner。"""
+"""同一Production Promptで3写真パターンを比較する、Git管理外の補助PoC runner。
+
+Frontend handoffの正規経路ではない。共有用Bundleはrun_real_ai_poc.pyで生成する。
+"""
 
 from __future__ import annotations
 
@@ -35,11 +38,20 @@ class Pattern:
     photos: tuple[str, ...]
 
 
-# HEIC/HEIFを含めず、過去の5枚PoCとは異なる写真を優先する可変長の代表セット。
+# HEIC/HEIFを含めない、初回MVPの5枚代表セット。
 PATTERNS = (
-    Pattern("garden_night_kimono", ("IMG_2663.png", "IMG_2712.jpg", "IMG_5319.png")),
-    Pattern("craft_architecture", ("IMG_2708.jpg", "IMG_2718.png", "IMG_2844.png")),
-    Pattern("sweets_and_gold_craft", ("IMG_2853.jpg", "IMG_2900.png", "IMG_2708.jpg")),
+    Pattern(
+        "garden_night_kimono",
+        ("IMG_2612.jpg", "IMG_2663.png", "IMG_2712.jpg", "IMG_5041.jpg", "IMG_5319.png"),
+    ),
+    Pattern(
+        "craft_architecture",
+        ("IMG_2612.jpg", "IMG_2708.jpg", "IMG_2718.png", "IMG_2844.png", "IMG_5041.jpg"),
+    ),
+    Pattern(
+        "sweets_and_gold_craft",
+        ("IMG_2708.jpg", "IMG_2718.png", "IMG_2844.png", "IMG_2853.jpg", "IMG_2900.png"),
+    ),
 )
 
 

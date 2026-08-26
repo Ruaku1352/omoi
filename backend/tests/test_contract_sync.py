@@ -7,7 +7,9 @@ Backendが返すArtworkを正本JSON Schemaへ直接掛ける。
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 
 import jsonschema
 import pytest
@@ -68,6 +70,23 @@ def test_model_roundtrip_preserves_mock(mock_artwork: dict) -> None:
 
     dumped = Artwork.model_validate(mock_artwork).model_dump(by_alias=True, exclude_none=True)
     assert dumped == mock_artwork
+
+
+def test_real_artwork_does_not_require_replacement_candidates(mock_artwork: dict) -> None:
+    """差し替え候補はMock UI検証には有用だが、Artwork Schema上は空配列を許す。"""
+
+    path = CONTRACTS_DIR.parent / "scripts" / "validate_contracts.py"
+    spec = importlib.util.spec_from_file_location("validate_contracts", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    artwork = json.loads(json.dumps(mock_artwork))
+    for layer in artwork["layers"]:
+        layer["replacementCandidates"] = []
+
+    assert not module.check_rules(artwork)
+    assert module.check_mock_fixture_rules(artwork)
 
 
 @pytest.mark.parametrize(

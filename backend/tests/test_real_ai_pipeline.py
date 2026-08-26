@@ -9,7 +9,7 @@ import pytest
 from PIL import Image
 
 from ai.assembly import AcceptedLayer, normalize_composition
-from ai.errors import AiNotConfiguredError
+from ai.errors import AiError, AiNotConfiguredError
 from ai.gemini import GeminiArtworkGenerator
 from ai.image_ops import gemini_box_to_px, mask_to_rgba_png, union_masks
 from ai.internal_models import CompositionPlan, SemanticPlan
@@ -66,7 +66,11 @@ class FakePlanner:
 
 
 class FakeComposer:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def compose(self, layers) -> CompositionPlan:
+        self.calls += 1
         return CompositionPlan.model_validate(
             {
                 "layers": [
@@ -89,6 +93,21 @@ class FakeSegmenter:
         mask = np.zeros((image.height, image.width), dtype=bool)
         mask[y0:y1, x0:x1] = True
         return SegmentationResult(mask=mask, score=0.9, prompt_box_px=box_px)
+
+
+class RejectFirstSegmenter(FakeSegmenter):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def segment(self, image: Image.Image, box_px) -> SegmentationResult:
+        self.calls += 1
+        if self.calls == 1:
+            return SegmentationResult(
+                mask=np.ones((image.height, image.width), dtype=bool),
+                score=0.1,
+                prompt_box_px=box_px,
+            )
+        return super().segment(image, box_px)
 
 
 def test_bbox_mask_union_and_rgba_png() -> None:
@@ -239,6 +258,37 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
                 assert image.getchannel("A").getextrema()[0] == 0
     assert generator.last_metrics.semantic_planning_elapsed_ms >= 0
     assert all(metric.success for metric in generator.last_metrics.candidates)
+
+
+@pytest.mark.anyio
+async def test_mvp_pipeline_fails_without_composition_when_four_layers_are_not_usable() -> None:
+    composer = FakeComposer()
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=RejectFirstSegmenter(),
+        candidate_count=8,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_planner=FakePlanner(),
+        composer=composer,
+    )
+
+    with pytest.raises(AiError, match="十分に生成"):
+        await generator.generate(
+            [_photo((index * 20, 0, 0)) for index in range(5)],
+            "memory",
+        )
+
+    assert composer.calls == 0
+    assert len([metric for metric in generator.last_metrics.candidates if metric.success]) == 3
 
 
 def test_efficient_sam_missing_model_fails_without_download(tmp_path) -> None:

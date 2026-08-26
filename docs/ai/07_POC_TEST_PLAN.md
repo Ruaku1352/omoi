@@ -86,6 +86,17 @@ Real生成結果を1フォルダにまとめ、成功Response、Artwork、Manife
 metrics、README、composition / bbox / mask / layer previewを確認する。READMEだけでBackend
 Responseとフォルダ内ファイルの対応が分かることを受入条件にする。
 
+`.env.example` に沿って `GEMINI_API_KEY` と `EFFICIENTSAM_MODEL_PATH` をローカル環境へ設定し、
+Backendの再現環境から代表ケースを実行する。
+
+```powershell
+cd backend
+uv run python ../scripts/run_real_ai_poc.py --memory-text "思い出の説明文" --max-photos 5 --output-dir ../poc-output/final-mvp
+```
+
+`run_multi_real_ai_poc.py` は複数ケース比較用の補助PoCであり、Frontend handoffの正規Bundleは
+上記 `run_real_ai_poc.py` で生成する。
+
 ## Cloud Run Test
 
 Local成功後:

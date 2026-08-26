@@ -22,7 +22,7 @@ def _module():
 def test_patterns_use_only_p0_supported_photos() -> None:
     module = _module()
     assert len(module.PATTERNS) == 3
-    assert all(len(pattern.photos) >= 1 for pattern in module.PATTERNS)
+    assert all(len(pattern.photos) == 5 for pattern in module.PATTERNS)
     assert all(
         Path(filename).suffix.lower() in module.MIME_TYPES
         for pattern in module.PATTERNS

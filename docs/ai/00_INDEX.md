@@ -19,7 +19,8 @@ omoiのAI処理を「AIを使うこと」ではなく、
 9. `09_CLOUD_RUN_CONSTRAINTS.md`
 10. `10_DECISION_LOG.md`
 11. `11_EFFICIENTSAM_ARTIFACT.md`
-12. `99_SOURCES.md`
+12. `12_MVP_POC_RESULT.md`
+13. `99_SOURCES.md`
 
 ## 現時点の一文
 
