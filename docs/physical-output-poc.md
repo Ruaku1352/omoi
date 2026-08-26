@@ -325,3 +325,48 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memo
 旅行写真は特に厳しい。人物が小さいため、家族だけを平面STL化するとただの小さい人型になりやすい。橋と山を同時に残すことで、ようやく旅行先の風景として読める。つまり、次の実装では「どこを切るか」だけでなく、「何を残せば思い出として伝わるか」をVLMに選ばせる必要がある。
 
 残課題は、仮決めしたマスクをVLM + Segmentationで自動化できるか、複数モチーフを1レイヤーにしたときに分離パーツが出ないか、表面写真や線画なしで思い出として読めるかである。
+
+### 1写真1パーツ方針での再テスト
+
+2026-08-26に、特徴が弱い思い出写真の扱いを見直した。前回は1枚の写真から、誕生日なら主役、ケーキ、プレゼントのように複数パーツへ分解していた。しかし、実際の利用イメージでは、1枚の写真から出す物理パーツは基本1つでよい。入学式なら子どもと看板をまとめる。旅行なら3人で立っているまとまりを1つにする。写真の中の主役と意味を支える小道具を、1つの差し込みパーツへ翻訳する方針へ寄せた。
+
+今回もSegmentation精度そのものの検証ではない。VLMが選ぶべき「1つの記念パーツ案」を人手で仮決めし、そのRGBAレイヤーが既存の平面STL工程へ流せるかを見た。
+
+再テストした3件は次の通り。
+
+- 誕生日テーブル: 誕生日の主役とケーキを1パーツにする
+- 入学・卒業: 子どもと式看板を1パーツにする
+- 旅行の集合写真: 旅行先に立つ家族のまとまりを1パーツにする
+
+追加で、思い出写真としてありそうな10件を生成して試した。
+
+- 七五三: 家族と鳥居
+- 結婚式: 新郎新婦とアーチ
+- 赤ちゃん: ベビーベッドと月飾り
+- 運動会: ゴールする子ども
+- ピアノ発表会: 子どもとピアノ
+- キャンプ: 親子とテント
+- 海遊び: 家族と砂の城
+- 引っ越し: 家族と玄関と箱
+- ペットお迎え: 家族と犬とキャリー
+- 祖父母祝い: 祖父母と家族の祝い
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py scripts/validate_contracts.py
+python scripts/validate_contracts.py tmp/weak-memory-single-part-eval-sample/<case>/artwork.json --assets tmp/weak-memory-single-part-eval-sample/<case>/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memory-single-part-eval-sample/<case>/artwork.json> --assets <absolute path to tmp/weak-memory-single-part-eval-sample/<case>/assets> --out <absolute path to tmp/weak-memory-single-part-eval-sample/<case>/out-single-part> --layer-id <case>-single-part
+```
+
+13件すべてでContract検証、平面STL生成、STL存在確認が通った。警告は出ていない。生成した比較画像は次の通り。
+
+- `tmp/weak-memory-single-part-eval-sample/comparison/single-part-redo-3-cases-20260826.png`
+- `tmp/weak-memory-single-part-eval-sample/comparison/single-part-extra-10-cases-20260826.png`
+- `tmp/weak-memory-single-part-eval-sample/comparison/single-part-all-13-summary-20260826.png`
+
+見えたことは、1写真1パーツの方がプロダクトの説明に合うということだ。複数パーツへ分解すると、写真の記念性よりも部品化の都合が前に出る。1パーツにまとめると、「この写真から作った置物」という理解はしやすい。
+
+ただし、白い平面STLだけで読めるケースと、読みにくいケースの差は大きい。鳥居、アーチ、ピアノ、テント、玄関のように形が強い小道具がある写真は残りやすい。集合写真や祖父母祝いのように、人のまとまりが主役の写真は塊になりやすく、本人らしさはほぼ残らない。
+
+次に作るべき工程は、単純な切り抜き精度の改善ではない。VLMで「何を1つにまとめれば思い出として読めるか」を選び、平面STLでは外形だけを作る。本人らしさ、かわいさ、学校名、表情、衣装、写真の空気は、表面写真、シール、線画、色分けのどれかで補う必要がある。
