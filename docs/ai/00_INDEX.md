@@ -18,6 +18,8 @@ omoiのAI処理を「AIを使うこと」ではなく、
 8. `08_ACCEPTANCE_CRITERIA.md`
 9. `09_CLOUD_RUN_CONSTRAINTS.md`
 10. `10_DECISION_LOG.md`
+11. `11_EFFICIENTSAM_ARTIFACT.md`
+12. `99_SOURCES.md`
 
 ## 現時点の一文
 
@@ -29,8 +31,8 @@ Pillow/Pythonが「作品として使えるLayer」にする。
 
 ## 状態
 
-- 意味理解モデル: 【暫定】Gemini 3.7 Flash
-- Segmentation: 【暫定】EfficientSAM-Ti ONNX
+- 意味理解・構成モデル: Gemini Developer API。具体的な `GEMINI_MODEL` は【PoC後FIX】
+- Segmentation: 【FIX for P0】EfficientSAM-Ti + ONNX Runtime CPU
 - Depth: 【FIX for P0】使わない
 - Runtime GPU: 【FIX for P0】必須にしない
 - Layer数: 【PoC後FIX】代表3〜5、可変長
