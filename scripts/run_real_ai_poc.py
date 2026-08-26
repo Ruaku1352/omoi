@@ -9,10 +9,16 @@ import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = REPO_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
+
+from frontend_handoff_bundle import (  # noqa: E402
+    PocDebugObserver,
+    write_frontend_handoff_bundle,
+)
 
 from ai.gemini import GeminiArtworkGenerator  # noqa: E402
 from ai.types import InputPhoto  # noqa: E402
@@ -32,14 +38,19 @@ MIME_TYPES = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--photos-dir", type=Path, default=REPO_ROOT / "poc-images")
-    parser.add_argument("--memory-text", default=None)
+    parser.add_argument(
+        "--memory-text",
+        required=True,
+        help="MVPの正式入力。生成結果と一緒にmemory-text.txtへ保存する。",
+    )
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "poc-output")
     parser.add_argument(
         "--max-photos",
         type=int,
         default=5,
-        help="代表PoCの上限。0なら対象形式の全画像を使う。",
+        help="代表MVPは5。0なら探索用に全画像を使う。",
     )
+    parser.add_argument("--preview-width-px", type=int, default=1600)
     return parser.parse_args()
 
 
@@ -55,10 +66,22 @@ async def run(args: argparse.Namespace) -> int:
         photos = photos[: args.max_photos]
     if not photos:
         raise SystemExit("PoC画像が見つかりません")
-    output = args.output_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
-    layers_dir = output / "layers"
-    layers_dir.mkdir(parents=True)
-    generator = build_generator(Settings())
+    if len(photos) != 5:
+        raise SystemExit("MVP代表PoCは写真を正確に5枚指定してください")
+    if not args.memory_text.strip():
+        raise SystemExit("MVP代表PoCには空でない--memory-textが必要です")
+    if args.preview_width_px <= 0:
+        raise SystemExit("--preview-width-pxは正の値にしてください")
+
+    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    staging = args.output_dir / f".frontend-debug-bundle-{run_id}-{uuid4().hex}.tmp"
+    settings = Settings()
+    if settings.mock_ai:
+        raise SystemExit("MOCK_AI=falseで実行してください")
+    staging.mkdir()
+    observer = PocDebugObserver(staging / "debug")
+    generator = build_generator(settings, observer=observer)
     if not isinstance(generator, GeminiArtworkGenerator):
         raise SystemExit("MOCK_AI=falseで実行してください")
     try:
@@ -67,13 +90,6 @@ async def run(args: argparse.Namespace) -> int:
         errors = check_artwork_rules(artwork) + check_assets_present(artwork, result.assets)
         if errors:
             raise RuntimeError("; ".join(errors))
-        (output / "artwork.json").write_text(
-            json.dumps(result.artwork, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        layer_ids = {layer.asset.asset_id for layer in artwork.layers}
-        for asset in result.assets:
-            if asset.asset_id in layer_ids:
-                (layers_dir / f"{asset.asset_id}.png").write_bytes(asset.data)
         success = True
         error = None
     except Exception as exc:
@@ -81,23 +97,47 @@ async def run(args: argparse.Namespace) -> int:
         error = {
             "type": type(exc).__name__,
             "causeType": type(exc.__cause__).__name__ if exc.__cause__ else None,
-            "message": str(exc),
+            "category": "generation_failed",
+            "message": "Real AI pipelineの実行に失敗しました",
         }
     record = {
         "success": success,
         "error": error,
-        "model": Settings().gemini_model,
+        "model": settings.gemini_model,
         "photoCount": len(photos),
+        "selectedPhotoFiles": [photo.filename for photo in photos],
+        "memoryTextProvided": bool(args.memory_text.strip()),
         "metrics": asdict(generator.last_metrics),
     }
-    (output / "metrics.json").write_text(
-        json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    expectation = args.photos_dir / "EXPECTATIONS.md"
-    if expectation.is_file():
-        (output / "EXPECTATIONS.md").write_text(
-            expectation.read_text(encoding="utf-8"), encoding="utf-8"
+    if success:
+        record["layerCount"] = len(artwork.layers)
+        record["canvasAspectRatio"] = artwork.canvas.aspect_ratio
+        try:
+            write_frontend_handoff_bundle(
+                output_dir=staging,
+                artwork=artwork,
+                assets=result.assets,
+                memory_text=args.memory_text,
+                metrics=record,
+                selected_photo_files=[photo.filename for photo in photos],
+                preview_width_px=args.preview_width_px,
+            )
+        except Exception as exc:
+            success = False
+            error = {
+                "type": type(exc).__name__,
+                "causeType": type(exc.__cause__).__name__ if exc.__cause__ else None,
+                "message": "Frontend handoff bundleの検証または出力に失敗しました",
+            }
+            record.update({"success": False, "error": error})
+    if success:
+        output = args.output_dir / f"frontend-debug-bundle-{run_id}"
+    else:
+        (staging / "metrics.json").write_text(
+            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        output = args.output_dir / f"real-ai-failed-{run_id}"
+    staging.rename(output)
     print(f"output={output}")
     print(f"success={success}")
     return 0 if success else 1

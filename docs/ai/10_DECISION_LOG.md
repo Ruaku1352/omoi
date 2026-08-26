@@ -64,9 +64,10 @@ Status: 暫定 / PoC後FIX
 
 代表:
 - Candidate 6〜8
-- Adopted Layer 3〜5
+- Adopted Layer 3〜5（一般設計・過去PoCの暫定範囲）
 
-固定Contractにはしない。
+固定Contractにはしない。初回MVPのProduction / 代表PoCでは、後続のD-AI-008がこの暫定範囲を
+上書きし、Adopted Layerを正確に4層とする。
 
 ## D-AI-007: GeminiはSemantic PlanningとCompositionを分ける
 Status: 暫定

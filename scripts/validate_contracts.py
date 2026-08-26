@@ -12,7 +12,6 @@ JSON Schema だけでは表現できない規則もここで検証する:
   - 参照 Asset の実ファイルが存在し、実寸が widthPx / heightPx と一致すること
   - Layer Asset が実際に透過（alpha）を持つ RGBA PNG であること
   - rotation を持ち込んでいないこと（P0では持たせない【FIX】）
-  - 差し替えUIを単独検証できるよう候補が最低1件あること（Mock要件）
   - 生成成功Responseでは、Artworkが参照する全AssetをAsset Manifestが解決できること
   - 共通Mock同士（artwork.json / asset-manifest.json / generate-success-response.json）が
     ずれていないこと
@@ -80,7 +79,7 @@ def check_manifest_covers_artwork(artwork: dict, manifest: dict) -> list[str]:
     errs: list[str] = []
     by_id = {a["assetId"]: a for a in manifest.get("assets", [])}
 
-    for owner, ref in _iter_asset_refs(artwork):
+    for owner, ref, _is_layer_asset in _iter_asset_refs(artwork):
         entry = by_id.get(ref["assetId"])
         if entry is None:
             errs.append(f"{owner}: assetId '{ref['assetId']}' が Asset Manifest に無い")
@@ -102,11 +101,11 @@ def check_manifest_covers_artwork(artwork: dict, manifest: dict) -> list[str]:
 
 def _iter_asset_refs(artwork: dict):
     for photo in artwork.get("sourcePhotos", []):
-        yield photo["sourcePhotoId"], photo["asset"]
+        yield photo["sourcePhotoId"], photo["asset"], False
     for layer in artwork.get("layers", []):
-        yield layer["layerId"], layer["asset"]
+        yield layer["layerId"], layer["asset"], True
         for cand in layer.get("replacementCandidates", []):
-            yield cand["candidateId"], cand["asset"]
+            yield cand["candidateId"], cand["asset"], True
 
 
 def check_rules(artwork: dict) -> list[str]:
@@ -114,7 +113,7 @@ def check_rules(artwork: dict) -> list[str]:
     layers = artwork.get("layers", [])
     photo_ids = {p["sourcePhotoId"] for p in artwork.get("sourcePhotos", [])}
 
-    indexes = sorted(l["layerIndex"] for l in layers)
+    indexes = sorted(layer["layerIndex"] for layer in layers)
     if indexes != list(range(len(layers))):
         errs.append(
             f"layerIndex は 0..{len(layers) - 1} の重複なし連番である必要がある (actual: {indexes})"
@@ -152,18 +151,23 @@ def check_rules(artwork: dict) -> list[str]:
                 errs.append(f"candidateId が重複している: {cid}")
             seen_cand_ids.add(cid)
             if cand["sourcePhotoId"] not in photo_ids:
-                errs.append(f"{cid}: sourcePhotoId '{cand['sourcePhotoId']}' が sourcePhotos[] に無い")
+                errs.append(
+                    f"{cid}: sourcePhotoId '{cand['sourcePhotoId']}' が sourcePhotos[] に無い"
+                )
             caid = cand["asset"]["assetId"]
             if caid in seen_asset_ids:
                 errs.append(f"assetId が重複している: {caid}")
             seen_asset_ids.add(caid)
 
-    if not any(l.get("replacementCandidates") for l in layers):
-        errs.append(
-            "replacementCandidates を持つ Layer が1件も無い（差し替えUIを単独検証できない）"
-        )
-
     return errs
+
+
+def check_mock_fixture_rules(artwork: dict) -> list[str]:
+    """Frontendの差し替えUIを試せる共通Mock固有の条件を検証する。"""
+
+    if any(layer.get("replacementCandidates") for layer in artwork.get("layers", [])):
+        return []
+    return ["mock: 差し替えUI確認用の replacementCandidates が1件も無い"]
 
 
 def check_assets(artwork: dict, assets_dir: pathlib.Path) -> list[str]:
@@ -173,7 +177,7 @@ def check_assets(artwork: dict, assets_dir: pathlib.Path) -> list[str]:
         return ["Pillow 未インストールのため Asset 実体検証をスキップ (pip install pillow)"]
 
     errs: list[str] = []
-    for owner, asset in _iter_asset_refs(artwork):
+    for owner, asset, is_layer_asset in _iter_asset_refs(artwork):
         aid, mime = asset["assetId"], asset["mimeType"]
         path = assets_dir / f"{aid}.{EXT[mime]}"
         if not path.exists():
@@ -185,7 +189,7 @@ def check_assets(artwork: dict, assets_dir: pathlib.Path) -> list[str]:
                     f"{owner}: {path.name} の実寸 {img.width}x{img.height} が "
                     f"Metadata {asset['widthPx']}x{asset['heightPx']} と一致しない"
                 )
-            if mime == "image/png":
+            if is_layer_asset:
                 if img.mode != "RGBA":
                     errs.append(f"{owner}: {path.name} は RGBA ではない (mode={img.mode})")
                 elif img.getchannel("A").getextrema()[0] == 255:
@@ -239,9 +243,11 @@ def check_mock_consistency() -> list[str]:
             "asset-manifest.json と一致しない"
         )
 
+    errs += check_mock_fixture_rules(artwork)
+
     # 共通Mockは全担当のFixtureなので、参照とManifestを過不足なく一致させておく。
     # （Real Responseには課さない。上の check_manifest_covers_artwork のコメント参照）
-    referenced = {ref["assetId"] for _, ref in _iter_asset_refs(artwork)}
+    referenced = {ref["assetId"] for _, ref, _is_layer_asset in _iter_asset_refs(artwork)}
     listed = {a["assetId"] for a in manifest["assets"]}
     unused = sorted(listed - referenced)
     if unused:
@@ -279,11 +285,19 @@ def main() -> int:
         nargs="?",
         help="Artwork または 生成成功Response のJSON。省略時は共通Mock一式を検証する。",
     )
-    ap.add_argument("--assets", default=str(DEFAULT_ASSETS))
+    ap.add_argument(
+        "--assets",
+        default=None,
+        help="Asset置き場。省略時は入力JSONと同階層のassets/、無ければ共通Mock assets/。",
+    )
     ap.add_argument("--skip-assets", action="store_true", help="Asset 実体の検証を省略する")
     args = ap.parse_args()
 
-    assets_dir = pathlib.Path(args.assets)
+    assets_dir = pathlib.Path(args.assets) if args.assets else DEFAULT_ASSETS
+    if args.document and not args.assets:
+        sibling_assets = pathlib.Path(args.document).resolve().parent / "assets"
+        if sibling_assets.is_dir():
+            assets_dir = sibling_assets
 
     if args.document is None:
         # 共通Mock一式。Artwork単体とResponseの両方を正本Schemaへ掛ける。

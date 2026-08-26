@@ -1,9 +1,11 @@
 # Acceptance Criteria
 
-## Input
+## 一般API / Contract Input
 - [ ] JPEG / PNG / WebP
 - [ ] photos[]可変長
 - [ ] memoryText無しでも動作
+
+## 初回MVP代表Input
 - [ ] 初回MVP代表ケースは写真5枚 + memoryTextあり
 
 ## Semantic Planning

@@ -42,6 +42,7 @@ PROVISIONAL_SELECTED_FILES = (
     "IMG_2853.jpg",  # 茶菓子
     "IMG_2844.png",  # 絵付け体験
 )
+MEMORY_TEXT = "金沢観光で、庭園・伝統建築・食・文化体験を楽しんだ大切な一日。"
 
 
 class MinimalCandidate(BaseModel):
@@ -87,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     # 手動REST Smoke Testで確認済みのPoC専用暫定モデル。最終採用モデルではない。
     parser.add_argument("--model", default="gemini-3.5-flash-lite")
     parser.add_argument("--timeout-ms", type=int, default=30_000)
+    parser.add_argument("--memory-text", default=MEMORY_TEXT)
     return parser.parse_args()
 
 
@@ -157,7 +159,7 @@ async def run(args: argparse.Namespace) -> int:
     semantic_plan_holder: list[Any] = []
 
     async def semantic_stage() -> dict[str, Any]:
-        result = await _semantic_plan(client, model, photos, args.timeout_ms)
+        result = await _semantic_plan(client, model, photos, args.memory_text, args.timeout_ms)
         semantic_plan_holder.append(result.pop("_plan"))
         return result
 
@@ -277,10 +279,14 @@ async def _minimal_structured(
 
 
 async def _semantic_plan(
-    client: genai.Client, model: str, photos: list[InputPhoto], timeout_ms: int
+    client: genai.Client,
+    model: str,
+    photos: list[InputPhoto],
+    memory_text: str,
+    timeout_ms: int,
 ) -> dict[str, Any]:
     planner = GeminiSemanticPlanner(client, model, 1536, timeout_ms)
-    plan = await planner.plan([decode_photo(photo).image for photo in photos], None)
+    plan = await planner.plan([decode_photo(photo).image for photo in photos], memory_text)
     return {
         "schema_validation": "passed",
         "candidate_count": len(plan.candidates),
@@ -459,6 +465,7 @@ def _write_report(
 ) -> None:
     payload = {
         "model": model,
+        "mvpMemoryTextRequired": True,
         "representative_selection": {
             "status": "provisional",
             "files": list(PROVISIONAL_SELECTED_FILES),

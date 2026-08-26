@@ -7,14 +7,17 @@ Real処理が失敗したときに黙ってMockへ落ちる経路をここへ作
 from __future__ import annotations
 
 from ai.errors import AiNotConfiguredError
-from ai.gemini import GeminiArtworkGenerator
+from ai.gemini import GeminiArtworkGenerator, GenerationObserver
 from ai.segmentation import LazyEfficientSamOnnxSegmenter
 from ai.types import ArtworkGenerator
 from app.config import Settings
 from app.services.mock_generator import MockArtworkGenerator
 
 
-def build_generator(settings: Settings) -> ArtworkGenerator:
+def build_generator(
+    settings: Settings,
+    observer: GenerationObserver | None = None,
+) -> ArtworkGenerator:
     if settings.mock_ai:
         return MockArtworkGenerator(settings.contracts_dir)
     if settings.segmentation_backend != "efficient_sam_onnx":
@@ -36,4 +39,5 @@ def build_generator(settings: Settings) -> ArtworkGenerator:
         layout_max_scale=settings.layout_max_scale,
         canvas_aspect_ratio=settings.artwork_canvas_aspect_ratio,
         gemini_request_timeout_ms=settings.gemini_request_timeout_ms,
+        observer=observer,
     )

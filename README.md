@@ -136,6 +136,14 @@ python scripts/validate_contracts.py path/to/generate-response.json
 Asset Manifest、全Asset、入力memoryText、metrics、README、目視用debug画像を1フォルダにまとめる。
 Shared Contractの配列は将来拡張のため可変長のまま維持する。
 
+`GEMINI_API_KEY` と `EFFICIENTSAM_MODEL_PATH` を `.env.example` に沿ってローカル環境へ設定後、
+代表ケースはBackendの再現環境から次のように実行する。
+
+```powershell
+cd backend
+uv run python ../scripts/run_real_ai_poc.py --memory-text "思い出の説明文" --max-photos 5 --output-dir ../poc-output/final-mvp
+```
+
 ---
 
 ## 共通Contractを変えたいとき

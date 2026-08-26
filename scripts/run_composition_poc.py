@@ -44,7 +44,6 @@ FIXED_LAYERS = (
     FixedLayerSpec("layer-02", "庭園の噴水", "IMG_2612.jpg"),
     FixedLayerSpec("layer-03", "牡丹の絵付け", "IMG_2844.png"),
     FixedLayerSpec("layer-04", "木造建築模型", "IMG_2718.png"),
-    FixedLayerSpec("layer-05", "モンブラン", "IMG_2853.jpg"),
 )
 
 
@@ -90,8 +89,8 @@ def parse_args() -> argparse.Namespace:
     # 手動REST Smoke Testで確認済みのPoC専用暫定モデル。最終採用モデルではない。
     parser.add_argument("--model", default="gemini-3.5-flash-lite")
     parser.add_argument("--timeout-ms", type=int, default=30_000)
-    # PoCで見比べやすい4:3 Landscape。Productの固定値ではなくCLIで差し替え可能。
-    parser.add_argument("--canvas-aspect-ratio", type=float, default=4 / 3)
+    # 初回MVPの2L判Landscape。非MVP比較時だけCLIで差し替える。
+    parser.add_argument("--canvas-aspect-ratio", type=float, default=178 / 127)
     parser.add_argument("--preview-width-px", type=int, default=1600)
     return parser.parse_args()
 

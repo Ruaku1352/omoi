@@ -26,9 +26,14 @@ from ai.image_ops import (
     thumbnail,
     union_masks,
 )
-from ai.internal_models import CompositionPlan, SemanticPlan
+from ai.internal_models import (
+    CompositionPlan,
+    SegmentationComponent,
+    SemanticPlan,
+    VisualElementCandidate,
+)
 from ai.quality import MaskQuality, assess_mask
-from ai.segmentation import Segmenter
+from ai.segmentation import SegmentationResult, Segmenter
 from ai.types import AssetBlob, GenerationResult, InputPhoto
 
 logger = logging.getLogger(__name__)
@@ -64,6 +69,24 @@ class Composer(Protocol):
     async def compose(self, layers: Sequence[AcceptedLayer]) -> CompositionPlan: ...
 
 
+class GenerationObserver(Protocol):
+    """PoC用の任意observer。通常APIのGenerationResult境界へdebug情報を混ぜない。"""
+
+    def semantic_plan(self, plan: SemanticPlan, images: Sequence[Image.Image]) -> None: ...
+
+    def segmentation_attempt(
+        self,
+        *,
+        candidate: VisualElementCandidate,
+        component: SegmentationComponent,
+        source_photo_index: int,
+        image: Image.Image,
+        result: SegmentationResult,
+        quality: MaskQuality,
+        attempt: int,
+    ) -> None: ...
+
+
 class GeminiSemanticPlanner:
     def __init__(
         self,
@@ -94,6 +117,9 @@ class GeminiSemanticPlanner:
             "component a tight complete bbox in 0..1000 coordinates as y_min, x_min, y_max, x_max. "
             "Choose meaningful memories, not merely easy-to-segment objects. "
             "Avoid duplicate meanings. "
+            "The P0 asset pipeline uses binary alpha masks. When equally meaningful opaque "
+            "alternatives exist, do not prioritize transparent, reflective, smoky, or water-spray "
+            "subjects whose visible pixels contain background scenery. "
             "Multiple components are allowed only when they should be one visual layer. "
             "Do not include commentary outside the schema."
         )
@@ -171,6 +197,7 @@ class GeminiArtworkGenerator:
         gemini_request_timeout_ms: int,
         semantic_planner: SemanticPlanner | None = None,
         composer: Composer | None = None,
+        observer: GenerationObserver | None = None,
     ) -> None:
         if target_layer_min < 1 or target_layer_max < target_layer_min:
             raise AiNotConfiguredError("Target Layer数の設定が不正です")
@@ -185,6 +212,7 @@ class GeminiArtworkGenerator:
         self._layout_min_scale = layout_min_scale
         self._layout_max_scale = layout_max_scale
         self._canvas_aspect_ratio = canvas_aspect_ratio
+        self._observer = observer
         self._api_key = api_key
         self._model = model
         if semantic_planner is None or composer is None:
@@ -242,6 +270,8 @@ class GeminiArtworkGenerator:
             )
             raise
         semantic_elapsed_ms = _elapsed_ms(semantic_started)
+        if self._observer is not None:
+            self._observer.semantic_plan(semantic_plan, [item.image for item in decoded])
         logger.info(
             "ai.semantic_plan elapsed_ms=%.1f candidates=%d",
             semantic_elapsed_ms,
@@ -351,6 +381,16 @@ class GeminiArtworkGenerator:
                 current_box = prompt_box if attempt == 0 else expand_box(prompt_box, image.size)
                 result = await asyncio.to_thread(self._segmenter.segment, image, current_box)
                 quality = assess_mask(result.mask, current_box, result.score)
+                if self._observer is not None:
+                    self._observer.segmentation_attempt(
+                        candidate=candidate,
+                        component=component,
+                        source_photo_index=candidate.source_photo_index,
+                        image=image,
+                        result=result,
+                        quality=quality,
+                        attempt=attempt,
+                    )
                 logger.info(
                     "ai.segmentation candidate=%s component=%s elapsed_ms=%.1f score=%s "
                     "area_ratio=%.5f accepted=%s",
