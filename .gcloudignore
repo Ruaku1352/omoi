@@ -1,0 +1,16 @@
+# gcloud builds submit 用。これがあると .gitignore は参照されない。
+# backend/.models/ は .gitignore で除外しているが、
+# real-ai target のビルドに必要なのでここでは除外しない。
+.git/
+.gitignore
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/.venv/
+**/__pycache__/
+**/*.py[cod]
+backend/.pytest_cache/
+backend/.ruff_cache/
+.env
+.env.local
+.env.*.local
