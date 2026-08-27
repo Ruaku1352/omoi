@@ -13,7 +13,7 @@ from ai.errors import AiError, AiNotConfiguredError
 from ai.gemini import GeminiArtworkGenerator
 from ai.image_ops import gemini_box_to_px, mask_to_rgba_png, union_masks
 from ai.internal_models import CompositionPlan, SemanticPlan
-from ai.quality import assess_mask
+from ai.quality import QualityPolicy, assess_mask, diagnose_mask
 from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult
 from ai.types import AssetBlob, InputPhoto
 from app.config import Settings
@@ -110,6 +110,22 @@ class RejectFirstSegmenter(FakeSegmenter):
         return super().segment(image, box_px)
 
 
+class FragmentedFirstSegmenter(FakeSegmenter):
+    """最初の候補だけを意味のない2島にし、次候補への置換を検証する。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def segment(self, image: Image.Image, box_px) -> SegmentationResult:
+        self.calls += 1
+        if self.calls == 1:
+            mask = np.zeros((image.height, image.width), dtype=bool)
+            mask[10:20, 10:20] = True
+            mask[40:50, 40:50] = True
+            return SegmentationResult(mask=mask, score=0.9, prompt_box_px=box_px)
+        return super().segment(image, box_px)
+
+
 def test_bbox_mask_union_and_rgba_png() -> None:
     assert gemini_box_to_px(
         SemanticPlan.model_validate(
@@ -158,6 +174,27 @@ def test_quality_gate_rejects_empty_and_full_masks() -> None:
     inside = np.zeros((10, 10), dtype=bool)
     inside[3:7, 3:7] = True
     assert assess_mask(inside, box, 0.8).accepted
+
+
+def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
+    mask = np.zeros((20, 20), dtype=bool)
+    mask[1:11, 1:11] = True
+    mask[15:17, 15:17] = True
+
+    diagnostics = diagnose_mask(mask, max_side=20)
+
+    assert diagnostics.component_count == 2
+    assert diagnostics.largest_component_ratio == pytest.approx(100 / 104)
+    assert diagnostics.top_component_area_ratios == pytest.approx((100 / 104, 4 / 104))
+    assert diagnostics.tail_component_area_ratio == 0
+    quality = assess_mask(mask, (0, 0, 20, 20), 0.9, diagnostics_max_side=20)
+    assert quality.accepted
+    assert quality.diagnostics == diagnostics
+    assert QualityPolicy().rejection_reason(
+        diagnostics, bbox_coverage=1, border_touch=False
+    ) is None
+    with pytest.raises(ValueError, match="at least one"):
+        QualityPolicy(mode="enforce")
 
 
 def test_layout_normalization_uses_contiguous_layer_indexes() -> None:
@@ -289,6 +326,43 @@ async def test_mvp_pipeline_fails_without_composition_when_four_layers_are_not_u
 
     assert composer.calls == 0
     assert len([metric for metric in generator.last_metrics.candidates if metric.success]) == 3
+
+
+@pytest.mark.anyio
+async def test_enforced_quality_policy_replaces_fragmented_candidate_with_next_candidate() -> None:
+    composer = FakeComposer()
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=FragmentedFirstSegmenter(),
+        candidate_count=5,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_planner=FakePlanner(candidate_count=5),
+        composer=composer,
+        quality_policy=QualityPolicy(mode="enforce", max_component_count=1),
+        quality_diagnostics_max_side=80,
+    )
+
+    result = await generator.generate(
+        [_photo((index * 20, 0, 0)) for index in range(5)],
+        "memory",
+    )
+
+    artwork = Artwork.model_validate(result.artwork)
+    assert len(artwork.layers) == 4
+    assert composer.calls == 1
+    first = generator.last_metrics.candidates[0]
+    assert first.failure_reason == "quality_fragmented"
+    assert first.mask_component_count == 2
+    assert all(layer.label != "element 0" for layer in artwork.layers)
 
 
 def test_efficient_sam_missing_model_fails_without_download(tmp_path) -> None:

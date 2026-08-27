@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # ---- AI ----
     gemini_api_key: str | None = None
     gemini_model: str | None = None
+    # baselineは既存Promptそのまま。physical_layer_v1はPoC比較用の一般的な選定指示。
+    semantic_profile: str = "baseline"
     segmentation_backend: str = "efficient_sam_onnx"
     efficientsam_model_path: Path | None = None
     segmentation_max_retries: int = Field(default=1, ge=0, le=3)
@@ -54,6 +56,13 @@ class Settings(BaseSettings):
     layer_padding_px: int = Field(default=8, ge=0, le=256)
     layout_min_scale: float = Field(default=0.05, gt=0)
     layout_max_scale: float = Field(default=1.2, gt=0)
+    # Quality Gateは校正前は観測のみ。値はPoC後に環境変数で明示設定する。
+    quality_gate_mode: str = "observe"
+    quality_max_component_count: int | None = Field(default=None, ge=1)
+    quality_min_largest_component_ratio: float | None = Field(default=None, ge=0, le=1)
+    quality_min_bbox_coverage: float | None = Field(default=None, ge=0, le=1)
+    quality_reject_border_touch: bool = False
+    quality_diagnostics_max_side: int = Field(default=1024, ge=64, le=4096)
 
     # ---- Upload制限【PoC後FIX】----
     # 代表ケースは写真5枚だが、固定5枚の契約ではない。実測後に見直す。

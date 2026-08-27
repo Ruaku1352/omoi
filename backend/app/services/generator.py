@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from ai.errors import AiNotConfiguredError
 from ai.gemini import GeminiArtworkGenerator, GenerationObserver
+from ai.quality import QualityPolicy
 from ai.segmentation import LazyEfficientSamOnnxSegmenter
 from ai.types import ArtworkGenerator
 from app.config import Settings
@@ -39,5 +40,14 @@ def build_generator(
         layout_max_scale=settings.layout_max_scale,
         canvas_aspect_ratio=settings.artwork_canvas_aspect_ratio,
         gemini_request_timeout_ms=settings.gemini_request_timeout_ms,
+        semantic_profile=settings.semantic_profile,
+        quality_policy=QualityPolicy(
+            mode=settings.quality_gate_mode,
+            max_component_count=settings.quality_max_component_count,
+            min_largest_component_ratio=settings.quality_min_largest_component_ratio,
+            min_bbox_coverage=settings.quality_min_bbox_coverage,
+            reject_border_touch=settings.quality_reject_border_touch,
+        ),
+        quality_diagnostics_max_side=settings.quality_diagnostics_max_side,
         observer=observer,
     )
