@@ -32,7 +32,7 @@ from ai.internal_models import (
     SemanticPlan,
     VisualElementCandidate,
 )
-from ai.quality import MaskQuality, assess_mask
+from ai.quality import MaskQuality, QualityPolicy, assess_mask
 from ai.segmentation import SegmentationResult, Segmenter
 from ai.types import AssetBlob, GenerationResult, InputPhoto
 
@@ -49,6 +49,13 @@ class CandidateMetric:
     mask_area_ratio: float | None
     success: bool
     failure_reason: str | None = None
+    mask_component_count: int | None = None
+    mask_largest_component_ratio: float | None = None
+    mask_top_component_area_ratios: tuple[float, ...] | None = None
+    mask_tail_component_area_ratio: float | None = None
+    mask_diagnostics_analysis_scale: int | None = None
+    mask_bbox_coverage: float | None = None
+    mask_border_touch: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +103,7 @@ class GeminiSemanticPlanner:
         request_timeout_ms: int,
         candidate_count: int = 8,
         target_layer_count: int = 4,
+        semantic_profile: str = "baseline",
     ) -> None:
         self._client = client
         self._model = model
@@ -103,6 +111,7 @@ class GeminiSemanticPlanner:
         self._request_timeout_ms = request_timeout_ms
         self._candidate_count = candidate_count
         self._target_layer_count = target_layer_count
+        self._semantic_profile = semantic_profile
 
     async def plan(self, images: Sequence[Image.Image], memory_text: str | None) -> SemanticPlan:
         photo_parts = [_image_part(thumbnail(image, self._analysis_max_side)) for image in images]
@@ -121,7 +130,8 @@ class GeminiSemanticPlanner:
             "alternatives exist, do not prioritize transparent, reflective, smoky, or water-spray "
             "subjects whose visible pixels contain background scenery. "
             "Multiple components are allowed only when they should be one visual layer. "
-            "Do not include commentary outside the schema."
+            + _semantic_profile_instruction(self._semantic_profile)
+            + "Do not include commentary outside the schema."
         )
         if memory_text:
             prompt += f"\nMemory text: {memory_text}"
@@ -195,6 +205,9 @@ class GeminiArtworkGenerator:
         layout_max_scale: float,
         canvas_aspect_ratio: float,
         gemini_request_timeout_ms: int,
+        semantic_profile: str = "baseline",
+        quality_policy: QualityPolicy | None = None,
+        quality_diagnostics_max_side: int = 1024,
         semantic_planner: SemanticPlanner | None = None,
         composer: Composer | None = None,
         observer: GenerationObserver | None = None,
@@ -203,6 +216,8 @@ class GeminiArtworkGenerator:
             raise AiNotConfiguredError("Target Layer数の設定が不正です")
         if candidate_count < target_layer_min:
             raise AiNotConfiguredError("Candidate数がTarget Layer数より少ない設定です")
+        if quality_diagnostics_max_side < 1:
+            raise AiNotConfiguredError("Quality診断の最大辺が不正です")
         self._segmenter = segmenter
         self._candidate_count = candidate_count
         self._target_layer_min = target_layer_min
@@ -212,6 +227,8 @@ class GeminiArtworkGenerator:
         self._layout_min_scale = layout_min_scale
         self._layout_max_scale = layout_max_scale
         self._canvas_aspect_ratio = canvas_aspect_ratio
+        self._quality_policy = quality_policy or QualityPolicy()
+        self._quality_diagnostics_max_side = quality_diagnostics_max_side
         self._observer = observer
         self._api_key = api_key
         self._model = model
@@ -229,6 +246,7 @@ class GeminiArtworkGenerator:
                     gemini_request_timeout_ms,
                     candidate_count,
                     target_layer_max,
+                    semantic_profile,
                 )
                 self._composer = composer or GeminiComposer(
                     client,
@@ -372,7 +390,12 @@ class GeminiArtworkGenerator:
         segmentation_started = time.perf_counter()
         masks = []
         scores: list[float] = []
-        area_ratios: list[float] = []
+        component_qualities: list[MaskQuality] = []
+        diagnostics_max_side = (
+            self._quality_diagnostics_max_side
+            if self._observer is not None or self._quality_policy.diagnostics_required
+            else None
+        )
         for component in candidate.components:
             prompt_box = gemini_box_to_px(component.box_2d, image.size)
             result = None
@@ -380,7 +403,12 @@ class GeminiArtworkGenerator:
             for attempt in range(self._segmentation_max_retries + 1):
                 current_box = prompt_box if attempt == 0 else expand_box(prompt_box, image.size)
                 result = await asyncio.to_thread(self._segmenter.segment, image, current_box)
-                quality = assess_mask(result.mask, current_box, result.score)
+                quality = assess_mask(
+                    result.mask,
+                    current_box,
+                    result.score,
+                    diagnostics_max_side=diagnostics_max_side,
+                )
                 if self._observer is not None:
                     self._observer.segmentation_attempt(
                         candidate=candidate,
@@ -417,9 +445,9 @@ class GeminiArtworkGenerator:
                     )
                 continue
             masks.append(result.mask)
+            component_qualities.append(quality)
             if result.score is not None:
                 scores.append(result.score)
-            area_ratios.append(quality.area_ratio)
 
         if not masks:
             return None, CandidateMetric(
@@ -432,9 +460,33 @@ class GeminiArtworkGenerator:
                 False,
                 "no_accepted_components",
             )
+        combined_mask = union_masks(masks)
+        combined_quality = assess_mask(
+            combined_mask,
+            (0, 0, image.width, image.height),
+            max(scores) if scores else None,
+            diagnostics_max_side=diagnostics_max_side,
+        )
+        rejection_reason = self._quality_policy.rejection_reason(
+            combined_quality.diagnostics,
+            bbox_coverage=min(item.bbox_coverage for item in component_qualities),
+            border_touch=any(item.border_touch for item in component_qualities),
+        )
+        if rejection_reason is not None:
+            return None, _candidate_metric(
+                candidate,
+                segmentation_elapsed_ms=_elapsed_ms(segmentation_started),
+                layer_build_elapsed_ms=0,
+                quality=combined_quality,
+                success=False,
+                failure_reason=rejection_reason,
+                bbox_coverage=min(item.bbox_coverage for item in component_qualities),
+                border_touch=any(item.border_touch for item in component_qualities),
+            )
+
         layer_started = time.perf_counter()
         png, width, height = mask_to_rgba_png(
-            image, union_masks(masks), padding_px=self._layer_padding_px
+            image, combined_mask, padding_px=self._layer_padding_px
         )
         asset = AssetBlob(
             asset_id=f"layer-{uuid4().hex}",
@@ -454,16 +506,65 @@ class GeminiArtworkGenerator:
                 asset=asset,
                 importance=candidate.importance,
             ),
-            CandidateMetric(
-                candidate.candidate_id,
-                candidate.label,
-                _elapsed_ms(segmentation_started),
-                _elapsed_ms(layer_started),
-                max(scores) if scores else None,
-                float(sum(area_ratios) / len(area_ratios)),
-                True,
+            _candidate_metric(
+                candidate,
+                segmentation_elapsed_ms=_elapsed_ms(segmentation_started),
+                layer_build_elapsed_ms=_elapsed_ms(layer_started),
+                quality=combined_quality,
+                success=True,
+                failure_reason=None,
+                bbox_coverage=min(item.bbox_coverage for item in component_qualities),
+                border_touch=any(item.border_touch for item in component_qualities),
             ),
         )
+
+
+def _candidate_metric(
+    candidate: VisualElementCandidate,
+    *,
+    segmentation_elapsed_ms: float,
+    layer_build_elapsed_ms: float,
+    quality: MaskQuality,
+    success: bool,
+    failure_reason: str | None,
+    bbox_coverage: float,
+    border_touch: bool,
+) -> CandidateMetric:
+    diagnostics = quality.diagnostics
+    return CandidateMetric(
+        candidate.candidate_id,
+        candidate.label,
+        segmentation_elapsed_ms,
+        layer_build_elapsed_ms,
+        quality.score,
+        quality.area_ratio,
+        success,
+        failure_reason,
+        mask_component_count=diagnostics.component_count if diagnostics else None,
+        mask_largest_component_ratio=diagnostics.largest_component_ratio if diagnostics else None,
+        mask_top_component_area_ratios=(
+            diagnostics.top_component_area_ratios if diagnostics else None
+        ),
+        mask_tail_component_area_ratio=(
+            diagnostics.tail_component_area_ratio if diagnostics else None
+        ),
+        mask_diagnostics_analysis_scale=diagnostics.analysis_scale if diagnostics else None,
+        mask_bbox_coverage=bbox_coverage,
+        mask_border_touch=border_touch,
+    )
+
+
+def _semantic_profile_instruction(profile: str) -> str:
+    if profile == "baseline":
+        return ""
+    if profile == "physical_layer_v1":
+        return (
+            "For every candidate, prioritize a self-contained layer identity. It should remain "
+            "recognizable when isolated, have a clear silhouette, and avoid a broad scenery crop "
+            "or heavily occluded subject when an equally meaningful alternative is visible. "
+            "Do not choose a collection of unrelated background fragments just to fill a layer. "
+        )
+    raise AiNotConfiguredError("未対応のSEMANTIC_PROFILEです")
 
 
 async def _generate_structured(

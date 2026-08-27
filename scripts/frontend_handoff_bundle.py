@@ -107,8 +107,7 @@ class PocDebugObserver(GenerationObserver):
         filename = f"mask-{sequence:03d}.png"
         mask_image = Image.fromarray(result.mask.astype(np.uint8) * 255, mode="L")
         _thumbnail(mask_image, 1200).save(self._masks_dir / filename)
-        self._mask_records.append(
-            {
+        record = {
                 "file": filename,
                 "candidateId": candidate.candidate_id,
                 "candidateLabel": candidate.label,
@@ -123,8 +122,16 @@ class PocDebugObserver(GenerationObserver):
                 "areaRatio": quality.area_ratio,
                 "bboxCoverage": quality.bbox_coverage,
                 "borderTouch": quality.border_touch,
+        }
+        if quality.diagnostics is not None:
+            record["diagnostics"] = {
+                "componentCount": quality.diagnostics.component_count,
+                "largestComponentRatio": quality.diagnostics.largest_component_ratio,
+                "topComponentAreaRatios": list(quality.diagnostics.top_component_area_ratios),
+                "tailComponentAreaRatio": quality.diagnostics.tail_component_area_ratio,
+                "analysisScale": quality.diagnostics.analysis_scale,
             }
-        )
+        self._mask_records.append(record)
         _write_json(self._masks_dir / "index.json", {"attempts": self._mask_records})
 
     def _write_summary(self, plan: SemanticPlan) -> None:

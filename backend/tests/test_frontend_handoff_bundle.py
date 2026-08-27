@@ -117,7 +117,12 @@ def _write_observer_evidence(module, output: Path) -> SemanticPlan:
         source_photo_index=0,
         image=image,
         result=result,
-        quality=assess_mask(mask, result.prompt_box_px, result.score),
+        quality=assess_mask(
+            mask,
+            result.prompt_box_px,
+            result.score,
+            diagnostics_max_side=100,
+        ),
         attempt=0,
     )
     return plan
@@ -208,6 +213,9 @@ def test_debug_observer_writes_real_bbox_and_mask_previews(tmp_path: Path) -> No
     assert (tmp_path / "debug" / "bbox" / "index.json").is_file()
     assert (tmp_path / "debug" / "masks" / "mask-001.png").is_file()
     assert (tmp_path / "debug" / "masks" / "index.json").is_file()
+    index_path = tmp_path / "debug" / "masks" / "index.json"
+    attempts = json.loads(index_path.read_text(encoding="utf-8"))["attempts"]
+    assert attempts[0]["diagnostics"]["componentCount"] == 1
     assert "memoryTextと一致" in (tmp_path / "debug" / "summary.md").read_text(
         encoding="utf-8"
     )
