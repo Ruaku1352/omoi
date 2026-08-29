@@ -422,3 +422,60 @@ python scripts/flat_photo_parts_poc.py --artwork <absolute path to tmp/weak-memo
 生成した比較画像は `tmp/weak-memory-icon-v2-eval-sample/comparison/memory-icon-method-8-10-v2-20260826.png` に置いた。前回案、改善案、改善STL正面を横並びで確認できる。
 
 判断として、引っ越しはかなり改善した。玄関よりトラックの方が、白い板でも意味が立つ。ペットお迎えは犬本人をSTLで残すより、大きい肉球にした方が「ペット」の記号として安定する。祖父母祝いは祝いケーキにすると読みやすくなるが、祖父母本人の記憶は残らない。ここは引き続き、写真カードを主役にし、STLは補助記号として扱う。
+
+### Frontend実生成データの印刷変換確認
+
+2026-08-29に、Driveで共有されたFrontend 3Dプレビュー用の実生成データを取得し、Physical Output側の平面STL生成PoCへ流せるか確認した。共有データそのものには個人写真が含まれるため、RepositoryへはZIPや展開AssetをCommitしない。
+
+確認したことは次の通り。
+
+- ZIPの中には `artwork.json`、`asset-manifest.json`、`generate-success-response.json`、`assets/`、`debug/` が含まれていた
+- `generate-success-response.bundle.json` と相対Asset URLを使えば、ローカルブラウザ検証用のデータとして扱える構成になっていた
+- Layer AssetはRGBA PNGだったため、平面STL生成PoCの入力として利用できた
+- 既存の `scripts/flat_photo_parts_poc.py` で、4層分の平面パーツSTLと4層3スロット土台STLを生成できた
+- 生成結果確認用のPNGを作成し、変換前の構成画像、生成STL一覧、土台情報を1枚で確認できるようにした
+
+検証は次で行った。
+
+```bash
+python scripts/validate_contracts.py tmp/drive-downloads/extracted/<bundle>/generate-success-response.json --assets tmp/drive-downloads/extracted/<bundle>/assets
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to artwork.json> --assets <absolute path to assets> --out <absolute path to print-check-default>
+python scripts/flat_photo_parts_poc.py --artwork <absolute path to artwork.json> --assets <absolute path to assets> --out <absolute path to print-check-all-layers> --include-background
+```
+
+結果として、印刷データ化はローカルPoCでは可能だった。ただし、StrictなContract検証では次の不一致が出た。
+
+- `replacementCandidates` が空で、Frontendの差し替え動作確認には足りない
+- 一部Source Photo PNGがRGBAではなくRGBだった
+- Source Photo側のRGBA不一致は、今回の平面STL生成には直接影響しない
+
+重要な発見として、既存PoCの初期挙動は `layerIndex: 0` を背景扱いで除外する。しかし共通仕様では `layerIndex: 0` は「最背面」であって、背景とは限らない。今回の実生成データでも最背面Layerが実パーツだったため、実データを印刷に回す場合は `--include-background` が必要だった。
+
+次に直すべきことは、`layerIndex: 0` を自動で除外する判断をやめ、背景除外を明示指定に寄せること。加えて、ブラウザから直接印刷データへ変換したい場合は、Frontendに「Bundle読込」「Asset解決」「STL生成」「ZIPダウンロード」の小さい検証画面を追加する必要がある。現時点のブラウザ側は3Dプレビュー確認までで、STLやG-codeを書き出す機能はまだない。
+
+### ブラウザからSTL ZIPを書き出すPoC
+
+2026-08-29に、Frontend上で表示しているArtwork Data + Asset Manifestから、平面パーツSTLと土台STLをZIPで書き出すPoCを追加した。3D Printerへ直接送信せず、ブラウザはSTL ZIPまでを担当し、3MF / G-code化はBambu Studioへ渡す前提にしている。
+
+追加した画面では、共通Mockをそのまま使うほか、Driveなどで受け取った `generate-success-response.json` または `artwork.json` / `asset-manifest.json` と、対応するassets画像をまとめて選択できる。Asset ManifestのURLをBlob URLへ置き換えるだけなので、Artwork Data本体へURLやmm値は追加しない。
+
+印刷データ生成では、各Layer PNGのalphaから0.6mmセルの平面STLを作る。離れた塊が複数ある場合は、一番大きい塊を本体とみなし、その他の塊を低い支えで本体側へ接続する。これはスライサーのサポート材ではなく、作品側に残る構造として扱う。下部には差し込み足を付け、90mm四方、4層、各層3穴の土台STLも同じZIPへ入れる。
+
+検証は次で行った。
+
+```bash
+cd frontend
+npm ci
+node node_modules/typescript/bin/tsc -b
+node node_modules/vitest/vitest.mjs run
+node node_modules/vite/bin/vite.js build
+node node_modules/oxlint/dist/cli.js
+```
+
+さらにPlaywrightで `http://127.0.0.1:5173/` を開き、`STL ZIPを生成` を押して `flat-print-mock-artwork-001.zip` がダウンロードされることを確認した。Mockでは4パーツ、90 x 90 x 8mm土台、自動支え0本だった。
+
+Driveで共有された実生成Bundleも、展開済みフォルダをブラウザで選択し、`flat-print-artwork-9b00c36b3b8349448a7e7d913a8e3a54.zip` としてダウンロードできた。この実生成データでは4パーツ、90 x 90 x 8mm土台、自動支え5本になった。自動支えは最背面Layerの離れた5塊に対して追加された。
+
+自動支えは別途、離れた2塊のテストケースで1本生成され、1つの連結形状になることを確認している。
+
+残課題は、STLサイズが大きくなりやすいことと、支えが意味的にきれいかどうかをまだ人間が見て判断する必要があること。次の改善では、セル押し出しではなく輪郭ポリゴン方式へ寄せ、支えの候補を画面で見てON/OFFできるようにする。
