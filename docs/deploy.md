@@ -82,22 +82,28 @@ Build時に `contracts/` の中身をPythonパッケージのリソースとし�
 リポジトリルートに配置（上記の方針決定に基づく）。
 
 - `Dockerfile` — `python:3.13-slim` ベース、`uv` で `uv.lock` から再現Install。
-  `PORT` は環境変数から受け取り、`8000` に固定していない
+  `PORT` は環境変数から受け取り、`8000` に固定していない。最終`default` targetは
+  Model Artifactを含まないMock用、`real-ai` targetだけがEfficientSAM ONNXを含む
 - `.dockerignore` — `frontend/`、ローカル生成物、Secret類を除外
 
 ビルド確認（ローカルDockerがあれば）:
 
 ```bash
-# リポジトリルートで実行すること。backend/へcdしない。
-docker build -t omoi-backend .
+# Mock: Model Artifactを含まないdefault target。リポジトリルートで実行すること。
+docker build --target default -t omoi-backend-mock .
 
 docker run --rm -p 8080:8080 \
   -e MOCK_AI=true \
   -e CORS_ORIGINS=http://localhost:5173 \
-  omoi-backend
+  omoi-backend-mock
 
 curl -F photos=@contracts/assets/source-p1.jpg -F memoryText=海に行った日 \
   http://127.0.0.1:8080/api/v1/artworks/generate
+
+# Real AI: 事前取得・checksum検証済みのONNX artifactを含むreal-ai target。
+uv --directory backend run python ../scripts/fetch_efficientsam_onnx.py \
+  --sha256 143c3198a7b2a15f23c21cdb723432fb3fbcdbabbdad3483cf3babd8b95c1397
+docker build --target real-ai -t omoi-backend-real .
 ```
 
 ---
@@ -125,27 +131,64 @@ gcloud services enable \
   secretmanager.googleapis.com
 ```
 
-### 3.2 Gemini API Key を Secret Manager へ登録する
+### 3.2 Real AIのSecret要件
 
-**Secret値をコマンド履歴やファイルへ直接書かない。** 対話的に入力する。
+Real AI Runtimeは `GEMINI_API_KEY` 環境変数を必要とする。Secret値はRepository・Docker Build
+Context・資料へ置かない。どのSecret resource / Versionをbindするか、どのRuntime Service
+AccountへAccessorを付与するかは、Backend/GCP担当の運用判断とする。
+
+### 3.3 共通の環境変数ルール
+
+> ### ⚠ 環境変数は毎回すべてまとめて渡す
+>
+> **`--set-env-vars` は「追加」ではなく「置き換え」。**
+> 指定しなかった環境変数は**消える**。
+> さらに `--set-env-vars` を**1コマンド内に2回以上書くと、後の指定が前を上書きする**
+> （gcloudのフラグは繰り返しても連結されない）。どちらの経路でも結果は同じで、
+> **渡し漏れた変数が黙って消える。**
+>
+> **実際に起きた事故**: Asset URLのscheme修正でDeployした際、`CORS_ORIGINS` を
+> 渡さなかったため設定が消え、Frontendから CORS で弾かれた。
+> Backendは正常に起動し `/health` も `200` を返すので、**ブラウザで叩くまで気づけない。**
+>
+> **各Deploy経路で必要な変数は、1つの `--set-env-vars` へ全部まとめて渡すこと。**
+> Real AIでは `MOCK_AI` / `APP_ENV` / `CORS_ORIGINS` / `GEMINI_MODEL`、Mockでは
+> `MOCK_AI` / `APP_ENV` / `CORS_ORIGINS` を1回の指定にする。1つだけ変えたいときも、
+> その経路で必要な他の変数を省略しない。
+
+`--set-env-vars` は**1回だけ**。分割しない。
+
+- `PORT` は**指定しない**。Cloud Runが予約している環境変数で、`--set-env-vars` に含めるとエラーになる
+- `CONTRACTS_DIR` は**指定しない**。Dockerfileがローカル開発と同じ相対配置を保っているので既定値のままで解決する
+
+#### `^|^` 記法【CORS_ORIGINS では必須】
+
+`gcloud` は `--set-env-vars` の値を**カンマで環境変数の区切りとして解釈する**。
+`CORS_ORIGINS` は許可Originをカンマ区切りで並べるため、素直に書くと壊れる。
 
 ```bash
-# プロンプトが出たらAPI Keyを貼り付けてEnter → その後Ctrl+D
-gcloud secrets create gemini-api-key --replication-policy="automatic"
-gcloud secrets versions add gemini-api-key --data-file=-
+# ✗ 壊れる。gcloud が CORS_ORIGINS / http://localhost:5174 / https://... の
+#   3つの環境変数だと解釈し、CORS_ORIGINS には最初の1つしか入らない
+--set-env-vars="CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
 ```
 
-初回のみ、Cloud RunのRuntime Service AccountにSecretへのアクセス権を渡す:
+先頭に `^区切り文字^` を付けると、**環境変数どうしの区切り文字**を変更できる。
+`^|^` なら区切りが `|` になり、値の中のカンマはそのまま渡る。
 
 ```bash
-export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
-
-gcloud secrets add-iam-policy-binding gemini-api-key \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
+# ✓ 正しい。変数の区切りは | 、CORS_ORIGINS の中の , は値として渡る
+--set-env-vars="^|^APP_ENV=deployed|CORS_ORIGINS=http://localhost:5173,http://localhost:5174"
 ```
 
-### 3.3 Deploy する（リポジトリルートで実行）
+Originは **scheme + host + port** のみ。末尾スラッシュを付けない。
+Portが違えば別Originなので `localhost:5173` と `localhost:5174` は**両方**書く。
+本番ではFirebase HostingのOriginへ限定する（AGENTS.md §2.1）。
+
+### 3.4 Mock Deploy（Model Artifactなし）
+
+`--source .` はDockerfileがある場合にDockerfileの**最終stage**をBuildする。最終stageは
+Model ArtifactをCOPYしない`default` targetなので、Mock専用の軽量Imageとして使う。
+`MOCK_AI=true` ではGemini KeyもONNX artifactも不要である。
 
 ```bash
 cd /path/to/omoi   # backend/ ではなくリポジトリルート
@@ -154,22 +197,31 @@ gcloud run deploy "$SERVICE" \
   --source . \
   --region "$REGION" \
   --allow-unauthenticated \
-  --set-env-vars="APP_ENV=deployed,MOCK_AI=false,CORS_ORIGINS=https://<frontendのFirebase Hosting Origin>" \
-  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
-  --set-env-vars="GEMINI_MODEL=gemini-3.7-flash,GEMINI_SEGMENTATION_MODEL=gemini-2.5-flash"
+  --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=true|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
 ```
 
-- `--source .` が `Dockerfile` をリポジトリルートで検出してBuildする（Buildpacksへは落ちない）
-- `PORT` は**指定しない**。Cloud Runが予約している環境変数で、`--set-env-vars` に含めるとエラーになる
-- `CONTRACTS_DIR` は**指定しない**。Dockerfileがローカル開発と同じ相対配置を保っているので既定値のままで解決する
-- `CORS_ORIGINS` は本番ではFirebase HostingのOriginへ限定する（AGENTS.md §2.1）
-- Mock AIで先にデプロイ疎通だけ確認したい場合は `MOCK_AI=true` にして、
-  `GEMINI_*` 系の `--set-secrets` / `--set-env-vars` は省略してよい
+**その場合も `CORS_ORIGINS` は省略しない。**
 
-`--set-env-vars` を2回に分けているのは読みやすさのためで、実際は1回の呼び出しへ
-まとめてよい（カンマ区切りで1つの `--set-env-vars` に連結する）。
+### 3.5 Real AIのRuntime / Packaging要件
 
-### 3.4 確認
+`gcloud run deploy --source .` の通常経路はDockerfile最終の`default` targetを使うため、
+Model Artifactを含むReal AI ImageのDeploy手順としては使わない。Real AIでは、
+`backend/.models/efficientsam_ti.onnx` を含む`real-ai` targetを明示的にBuildする必要がある。
+
+`real-ai` targetはONNX artifactを`/srv/models/efficientsam_ti.onnx`へCOPYし、
+`EFFICIENTSAM_MODEL_PATH` を設定する。Runtime中のModel Downloadは禁止し、PyTorchを
+Runtime必須依存にしない。`GEMINI_MODEL` はSemantic Planning / Composition用の環境変数で、
+具体Model IDは未FIX。`GEMINI_SEGMENTATION_MODEL` は設定しない。
+
+targetを選択するBuild方式、Container Registry、Cloud RunへのDeploy、Secret resource / Version、
+Runtime Service Account / IAMはBackend/GCP担当が決定する。AI側は上記Runtime / Packaging条件を
+満たすことだけを要求する。
+
+同期Real AI E2Eは数分規模である。Cloud Run実測では十分なtimeoutを設定する必要があり、
+**600 secは初回測定候補であってFIX値ではない**。CPU・Memory・Concurrency・Minimum instancesの
+初回測定条件は`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`を正本とする。
+
+### 3.6 確認
 
 ```bash
 export SERVICE_URL=$(gcloud run services describe "$SERVICE" \
@@ -182,13 +234,32 @@ curl -F photos=@contracts/assets/source-p1.jpg -F memoryText=海に行った日 
 ```
 
 `MOCK_AI=true` でDeployした場合は生成成功Responseが返るはず。
-`MOCK_AI=false` かつ `ai/gemini.py` が未実装のままの場合は `AI_FAILED` が返るのが正しい
+`MOCK_AI=false` では、Geminiの認証・`GEMINI_MODEL`・EfficientSAM ONNX artifactが揃った
+Real AI経路を使う。設定またはProvider処理が失敗した場合はMockへ切り替えず、対応する
+API Errorを返す。
 （黙ってMockへ落ちない設計どおり。AGENTS.md §9）。
 
-### 3.5 再Deploy
+**上の2つはCORSを検証しない。** `CORS_ORIGINS` の渡し漏れは `curl` では絶対に見つからない
+（Server側は `200` を返し、足りないのはResponse Headerだけ）。**必ず別途確認する。**
 
-コード変更後は3.3のコマンドを再実行するだけでよい（Dockerイメージが再Buildされ、
-新Revisionへ切り替わる）。
+```bash
+curl -s -D - -o /dev/null -X OPTIONS "$SERVICE_URL/api/v1/artworks/generate" \
+  -H "Origin: http://localhost:5174" \
+  -H "Access-Control-Request-Method: POST" | grep -i access-control
+```
+
+`access-control-allow-origin: http://localhost:5174` が返れば通っている。
+**何も出なければ `CORS_ORIGINS` が渡っていない**ので、実行したDeployのコマンドを
+（全変数をまとめたまま）再実行する。確認したいOriginごとに `-H "Origin: ..."` を替えて叩く。
+
+### 3.7 再Deploy
+
+Mockは3.4を再実行する。Real AIのBuild / Registry / Deploy方式はBackend/GCP担当が決定し、
+3.5のRuntime / Packaging要件を満たすことを確認する。
+
+**環境変数を1つだけ変えたいときも、各Deployコマンドから変数を削らないこと。**
+必要な変数だけを書いた短縮版を作ると、書かなかった変数が消える（3.3の警告）。
+変えたい値だけ書き換えて、コマンド全体を実行する。
 
 ---
 

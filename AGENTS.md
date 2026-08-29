@@ -137,9 +137,9 @@ Top Levelは担当者別ではなく、**「一緒にBuild / Deploy / 実行さ�
   `assetId` / `url` / `mimeType` / `widthPx` / `heightPx` を持つ
 - **Asset Manifest のSchema正本は `contracts/asset-manifest.schema.json`**【FIX】
   （技術設計 §9.5 / §24.1）。Fieldの意味を変える場合は Artwork Contract と同じ扱いで共有する
-- 両者を束ねた生成成功Responseは `contracts/generate-success-response.schema.json`。
-  Artwork / Manifest の定義を再定義せず `$ref` するだけの層。
-  **外側のKey名は【確認待ち：チーム】**（下記 §4）
+- 両者を束ねた生成成功Responseの正本は
+  **`contracts/generate-success-response.schema.json`**【FIX】（技術設計 §14.2）。
+  Artwork / Manifest の定義を再定義せず `$ref` するだけの層（下記 §4）
 - 透過Layer Assetは **RGBA PNG**
 - Artwork Bundleでは同じ `assetId` のBinaryを `assets/` 配下へ置く
 
@@ -166,12 +166,10 @@ Prefix: `/api/v1`
 { "artwork": { ... }, "assetManifest": { "assets": [ ... ] } }
 ```
 
-- **外側のKey名（`artwork` / `assetManifest`）は【確認待ち：チーム】。**
-  技術設計にまだ定義が無く、Backendが既に返している形へ合わせたRepository側の暫定案。
-  公開チャンネルで確認中であり **FIXではない**。変わる場合は Schema / Mock / 両実装を同時に直す
-- Schema: `contracts/generate-success-response.schema.json`。
-  既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない。
-  **`$ref` 先の2つは【FIX】された正本**であり、確認待ちなのは束ね方だけ
+- **外側のKeyは `artwork` / `assetManifest`**【FIX】（技術設計 §14.2）。
+  **P0では `data` 等の追加Envelopeを設けない**【FIX】
+- Schema正本: `contracts/generate-success-response.schema.json`【FIX】。
+  既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない
 - 共通Mock: `contracts/mock/generate-success-response.json`
 - JSONのKeyはArtwork Schemaと同じ **camelCase** を維持する【FIX】
 - 同期 / 非同期どちらで返すかは【PoC後FIX】。**どちらでも最終成功Resultの形は同じ**
@@ -237,12 +235,20 @@ Prefix: `/api/v1`
 
 ### AI【FIX / PoC後FIX】
 - VLM第一候補: **Gemini Developer API**【FIX】
-- 意味理解・選定・構成: `gemini-3.7-flash` から検証開始【PoC後FIX】
-- Segmentation: **モデルをFIXしない**【PoC後FIX】。初期候補は `gemini-2.5-flash`。
-  意味理解用とSegmentation用が同一モデルであることは要求しない
-- **モデルIDは環境変数化**し、他担当のInterfaceを変更せず差し替えられるようにする
+- 意味理解・象徴要素選定・bbox・構成: Gemini。具体的なSemantic / Composition Model IDは
+  `GEMINI_MODEL` で差し替え可能とし、最終FIXしない【PoC後FIX】
+- SegmentationのP0主経路: **EfficientSAM-Ti + ONNX Runtime CPU**【FIX】。
+  Geminiは最終Mask境界を決めず、Geminiが返すbboxをPromptとして渡す
+- 境界品質不足時はSAM 2.1、対象識別不足時はYOLOE、髪・半透明境界不足時はMattingを
+  比較・Escalation候補とする。P0主経路の自動Fallbackにはしない【FIX】
+- Model Path・候補数・Layer数・品質閾値は環境変数化し、他担当のInterfaceを変更せず
+  調整可能にする【FIX / PoC後FIX】。`SEGMENTATION_BACKEND` のP0値は
+  `efficient_sam_onnx` とする
 - Gemini の Structured Output / JSON Schema を利用し、自由文ではなく型検証可能な結果を受け取る【FIX】
 - Layer Assetの基本形式は RGBA PNG【FIX】
+- Runtime起動時にModel WeightをDownloadしない。Cloud Run RuntimeへPyTorchを必須依存として
+  持ち込まない【FIX】
+- Segment EverythingをP0主経路にしない。Depth EstimationもP0で実装しない【FIX】
 - 【担当裁量】Prompt分割、Gemini呼び出し回数、Score計算、Pillow / OpenCV等の内部処理
 
 ---
