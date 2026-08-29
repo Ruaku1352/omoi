@@ -105,7 +105,12 @@ async def _read_photos(photos: list[UploadFile], settings: Settings) -> list[Inp
     return result
 
 
-@router.post("/generate", response_model=GenerateSuccessResponse, response_model_by_alias=True)
+@router.post("/generate",
+    response_model=GenerateSuccessResponse,
+    response_model_by_alias=True,
+    # physicalOutput は optional。未設定時は null ではなくキーごと省略する。
+    # contracts/artwork.schema.json は object のみ許容し null を認めない。
+    response_model_exclude_none=True)
 async def generate_artwork(
     request: Request,
     photos: Annotated[list[UploadFile], File(description="複数画像。固定5枚ではない。")],
