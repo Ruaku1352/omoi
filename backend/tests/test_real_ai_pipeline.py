@@ -87,6 +87,64 @@ class FakeComposer:
         )
 
 
+class FloatingComposer:
+    def __init__(self) -> None:
+        self.compose_calls = 0
+        self.recompose_calls = 0
+
+    async def compose(self, layers) -> CompositionPlan:
+        self.compose_calls += 1
+        return self._plan(layers)
+
+    async def recompose(self, layers, *, max_bottom_gap: float) -> CompositionPlan:
+        del max_bottom_gap
+        self.recompose_calls += 1
+        # あえて同じ不適切な構図を返し、決定論的な下方補正まで検証する。
+        return self._plan(layers)
+
+    @staticmethod
+    def _plan(layers) -> CompositionPlan:
+        return CompositionPlan.model_validate(
+            {
+                "layers": [
+                    {
+                        "candidate_id": layer.candidate_id,
+                        "x": 0.5,
+                        "y": 0.15,
+                        "scale": 0.2,
+                        "order": index,
+                    }
+                    for index, layer in enumerate(layers)
+                ]
+            }
+        )
+
+
+class PhysicalPlanner(FakePlanner):
+    async def plan(self, images, memory_text) -> SemanticPlan:
+        plan = await super().plan(images, memory_text)
+        payload = plan.model_dump()
+        payload["candidates"].insert(
+            0,
+            {
+                "candidate_id": "scene-anchor",
+                "label": "garden scene",
+                "source_photo_index": 0,
+                "importance": 1,
+                "selection_reason": "shared place",
+                "kind": "scene_anchor",
+                "components": [
+                    {
+                        "component_id": "scene-range",
+                        "label": "garden scene",
+                        "box_2d": {"y_min": 0, "x_min": 0, "y_max": 1000, "x_max": 1000},
+                    }
+                ],
+            },
+        )
+        return SemanticPlan.model_validate(payload)
+
+
 class FakeSegmenter:
     def segment(self, image: Image.Image, box_px) -> SegmentationResult:
         x0, y0, x1, y1 = box_px
@@ -375,3 +433,81 @@ def test_mvp_settings_default_to_four_layers_and_2l_landscape() -> None:
 
     assert settings.target_layer_min == settings.target_layer_max == 4
     assert settings.artwork_canvas_aspect_ratio == 178 / 127
+    assert settings.semantic_profile == "physical_layer_v2"
+    assert settings.candidate_count == 12
+
+
+@pytest.mark.anyio
+async def test_physical_v2_uses_rectangular_scene_anchor_and_limits_floating() -> None:
+    composer = FloatingComposer()
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=FakeSegmenter(),
+        candidate_count=5,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v2",
+        semantic_planner=PhysicalPlanner(candidate_count=4),
+        composer=composer,
+    )
+
+    result = await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    artwork = Artwork.model_validate(result.artwork)
+    assert len(artwork.layers) == 4
+    assert "kind" not in result.artwork["layers"][0]
+    diagnostics = generator.last_metrics.physical_ready
+    assert diagnostics is not None
+    assert diagnostics.scene_anchor_candidate_id == "scene-anchor"
+    assert not diagnostics.background_missing
+    assert diagnostics.recomposed
+    assert composer.compose_calls == 1
+    assert composer.recompose_calls == 1
+    assert diagnostics.y_corrections
+    assert all(gap <= 0.30 + 1e-9 for _candidate_id, gap in diagnostics.final_bottom_gaps)
+    anchor_metric = next(
+        metric for metric in generator.last_metrics.candidates if metric.candidate_id == "scene-anchor"
+    )
+    assert anchor_metric.layer_build_mode == "rectangular_crop"
+    anchor_asset = next(asset for asset in result.assets if asset.asset_id == artwork.layers[0].asset.asset_id)
+    with Image.open(BytesIO(anchor_asset.data)) as image:
+        assert image.mode == "RGBA"
+        assert image.getchannel("A").getextrema() == (255, 255)
+
+
+@pytest.mark.anyio
+async def test_physical_v2_rejects_fragmented_subject_without_bridge() -> None:
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=FragmentedFirstSegmenter(),
+        candidate_count=5,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v2",
+        semantic_planner=FakePlanner(candidate_count=5),
+        composer=FakeComposer(),
+    )
+
+    result = await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    assert len(result.artwork["layers"]) == 4
+    assert generator.last_metrics.physical_ready is not None
+    assert generator.last_metrics.physical_ready.background_missing
+    first = generator.last_metrics.candidates[0]
+    assert first.failure_reason == "not_single_component"

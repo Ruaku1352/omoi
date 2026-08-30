@@ -75,3 +75,11 @@
 - [ ] 主役候補が極端に外れない
 - [ ] Segmentation都合だけで無意味なObjectを選ばない
 - [ ] 一部候補失敗でも代替候補で作品が成立
+
+## physical-ready構図（AI側の限定判定）
+
+- [ ] 背景として機能する範囲候補を最大1件だけ優先し、使えない場合は `background_missing` をprivate debugへ記録する
+- [ ] 通常Layerは最終Maskが単一連結でなければ候補を不採用にし、画像上の橋渡しを行わない
+- [ ] Canvas下端からの距離が0.30を超えた場合、全Layerの再構図を1回行い、なお超えるLayerだけを下方補正する
+- [ ] Artwork Data・Asset Manifest・共通Contractに、候補種別・診断・支え・mm値を追加しない
+- [ ] 支柱・土台・スロット・STL・実寸・組立はPhysical Output担当へ委ねる

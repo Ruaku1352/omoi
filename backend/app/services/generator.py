@@ -49,5 +49,7 @@ def build_generator(
             reject_border_touch=settings.quality_reject_border_touch,
         ),
         quality_diagnostics_max_side=settings.quality_diagnostics_max_side,
+        physical_scene_anchor_min_scale=settings.physical_scene_anchor_min_scale,
+        physical_max_bottom_gap=settings.physical_max_bottom_gap,
         observer=observer,
     )

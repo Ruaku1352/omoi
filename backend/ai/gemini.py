@@ -12,13 +12,22 @@ from io import BytesIO
 from typing import Any, Protocol
 from uuid import uuid4
 
+import numpy as np
 from google import genai
 from google.genai import types
 from PIL import Image
 
-from ai.assembly import AcceptedLayer, SourcePhotoAsset, assemble_artwork, normalize_composition
+from ai.assembly import (
+    AcceptedLayer,
+    SourcePhotoAsset,
+    assemble_artwork,
+    bottom_gaps,
+    clamp_bottom_gaps,
+    normalize_composition,
+)
 from ai.errors import AiError, AiNotConfiguredError, AiRateLimitedError, AiTimeoutError
 from ai.image_ops import (
+    crop_to_rgba_png,
     decode_photo,
     expand_box,
     gemini_box_to_px,
@@ -56,6 +65,20 @@ class CandidateMetric:
     mask_diagnostics_analysis_scale: int | None = None
     mask_bbox_coverage: float | None = None
     mask_border_touch: bool | None = None
+    candidate_kind: str = "subject"
+    layer_build_mode: str = "segmented_mask"
+
+
+@dataclass(frozen=True)
+class PhysicalReadyDiagnostics:
+    """physical_layer_v2専用のprivate PoC診断。公開Responseには含めない。"""
+
+    scene_anchor_candidate_id: str | None
+    background_missing: bool
+    initial_bottom_gaps: tuple[tuple[str, float], ...]
+    recomposed: bool
+    final_bottom_gaps: tuple[tuple[str, float], ...]
+    y_corrections: tuple[tuple[str, float], ...]
 
 
 @dataclass(frozen=True)
@@ -64,6 +87,7 @@ class GenerationMetrics:
     composition_elapsed_ms: float = 0
     total_elapsed_ms: float = 0
     candidates: tuple[CandidateMetric, ...] = field(default_factory=tuple)
+    physical_ready: PhysicalReadyDiagnostics | None = None
 
 
 class SemanticPlanner(Protocol):
@@ -74,6 +98,10 @@ class SemanticPlanner(Protocol):
 
 class Composer(Protocol):
     async def compose(self, layers: Sequence[AcceptedLayer]) -> CompositionPlan: ...
+
+    async def recompose(
+        self, layers: Sequence[AcceptedLayer], *, max_bottom_gap: float
+    ) -> CompositionPlan: ...
 
 
 class GenerationObserver(Protocol):
@@ -101,7 +129,7 @@ class GeminiSemanticPlanner:
         model: str,
         analysis_max_side: int,
         request_timeout_ms: int,
-        candidate_count: int = 8,
+        candidate_count: int = 12,
         target_layer_count: int = 4,
         semantic_profile: str = "baseline",
     ) -> None:
@@ -160,6 +188,16 @@ class GeminiComposer:
         self._canvas_aspect_ratio = canvas_aspect_ratio
 
     async def compose(self, layers: Sequence[AcceptedLayer]) -> CompositionPlan:
+        return await self._compose(layers, max_bottom_gap=None)
+
+    async def recompose(
+        self, layers: Sequence[AcceptedLayer], *, max_bottom_gap: float
+    ) -> CompositionPlan:
+        return await self._compose(layers, max_bottom_gap=max_bottom_gap)
+
+    async def _compose(
+        self, layers: Sequence[AcceptedLayer], *, max_bottom_gap: float | None
+    ) -> CompositionPlan:
         parts: list[object] = [
             "Create an initial composition for supplied transparent artwork layers. "
             f"The landscape canvas width/height ratio is {self._canvas_aspect_ratio:.9f}. "
@@ -168,10 +206,17 @@ class GeminiComposer:
             "Compose a balanced keepsake, not literal scene depth. "
             "Do not add commentary outside the schema.\n\nLayers:"
         ]
+        if max_bottom_gap is not None:
+            parts.append(
+                "This is a constrained recomposition. For every layer, calculate its displayed "
+                f"lower edge from its aspect ratio and keep it no more than {max_bottom_gap:.2f} "
+                "of the canvas height above the canvas bottom. Recompose all layers together."
+            )
         for layer in layers:
             parts.append(
                 f"candidate_id={layer.candidate_id}; label={layer.label}; "
-                f"importance={layer.importance:.3f}; width_px={layer.asset.width_px}; "
+                f"kind={layer.kind}; importance={layer.importance:.3f}; "
+                f"width_px={layer.asset.width_px}; "
                 f"height_px={layer.asset.height_px}"
             )
             parts.append(_image_part(_asset_thumbnail(layer.asset)))
@@ -208,6 +253,8 @@ class GeminiArtworkGenerator:
         semantic_profile: str = "baseline",
         quality_policy: QualityPolicy | None = None,
         quality_diagnostics_max_side: int = 1024,
+        physical_scene_anchor_min_scale: float = 0.60,
+        physical_max_bottom_gap: float = 0.30,
         semantic_planner: SemanticPlanner | None = None,
         composer: Composer | None = None,
         observer: GenerationObserver | None = None,
@@ -218,6 +265,10 @@ class GeminiArtworkGenerator:
             raise AiNotConfiguredError("Candidate数がTarget Layer数より少ない設定です")
         if quality_diagnostics_max_side < 1:
             raise AiNotConfiguredError("Quality診断の最大辺が不正です")
+        if not 0 < physical_scene_anchor_min_scale <= 1:
+            raise AiNotConfiguredError("背景Layerの最小表示幅設定が不正です")
+        if not 0 <= physical_max_bottom_gap <= 1:
+            raise AiNotConfiguredError("Layer浮遊量の設定が不正です")
         self._segmenter = segmenter
         self._candidate_count = candidate_count
         self._target_layer_min = target_layer_min
@@ -229,6 +280,10 @@ class GeminiArtworkGenerator:
         self._canvas_aspect_ratio = canvas_aspect_ratio
         self._quality_policy = quality_policy or QualityPolicy()
         self._quality_diagnostics_max_side = quality_diagnostics_max_side
+        self._semantic_profile = semantic_profile
+        self._physical_ready = semantic_profile == "physical_layer_v2"
+        self._physical_scene_anchor_min_scale = physical_scene_anchor_min_scale
+        self._physical_max_bottom_gap = physical_max_bottom_gap
         self._observer = observer
         self._api_key = api_key
         self._model = model
@@ -296,15 +351,13 @@ class GeminiArtworkGenerator:
             len(semantic_plan.candidates),
         )
 
-        accepted: list[AcceptedLayer] = []
+        usable_layers: list[AcceptedLayer] = []
         candidate_metrics: list[CandidateMetric] = []
         candidates = sorted(
             semantic_plan.candidates, key=lambda item: item.importance, reverse=True
         )
         seen_candidate_ids: set[str] = set()
         for candidate in candidates[: self._candidate_count]:
-            if len(accepted) >= self._target_layer_max:
-                break
             if candidate.candidate_id in seen_candidate_ids:
                 candidate_metrics.append(
                     CandidateMetric(
@@ -316,6 +369,7 @@ class GeminiArtworkGenerator:
                         None,
                         False,
                         "duplicate_candidate_id",
+                        candidate_kind=candidate.kind,
                     )
                 )
                 continue
@@ -331,6 +385,7 @@ class GeminiArtworkGenerator:
                         None,
                         False,
                         "source_photo_out_of_range",
+                        candidate_kind=candidate.kind,
                     )
                 )
                 continue
@@ -339,7 +394,9 @@ class GeminiArtworkGenerator:
             )
             candidate_metrics.append(metric)
             if layer is not None:
-                accepted.append(layer)
+                usable_layers.append(layer)
+
+        accepted, scene_anchor_candidate_id = self._select_layers(usable_layers)
 
         if len(accepted) < self._target_layer_min:
             self.last_metrics = GenerationMetrics(
@@ -351,14 +408,83 @@ class GeminiArtworkGenerator:
 
         composition_started = time.perf_counter()
         composition_plan = await self._composer.compose(accepted)
-        composition_elapsed_ms = _elapsed_ms(composition_started)
         layout = normalize_composition(
             accepted,
             composition_plan,
             canvas_aspect_ratio=self._canvas_aspect_ratio,
             min_scale=self._layout_min_scale,
             max_scale=self._layout_max_scale,
+            minimum_scales=(
+                {scene_anchor_candidate_id: self._physical_scene_anchor_min_scale}
+                if scene_anchor_candidate_id is not None
+                else None
+            ),
         )
+        initial_gaps = (
+            bottom_gaps(
+                accepted, layout, canvas_aspect_ratio=self._canvas_aspect_ratio
+            )
+            if self._physical_ready
+            else {}
+        )
+        recomposed = False
+        corrections: dict[str, float] = {}
+        if self._physical_ready and any(
+            gap > self._physical_max_bottom_gap for gap in initial_gaps.values()
+        ):
+            recomposed = True
+            recompose = getattr(self._composer, "recompose", None)
+            constrained_plan = (
+                await recompose(accepted, max_bottom_gap=self._physical_max_bottom_gap)
+                if callable(recompose)
+                else await self._composer.compose(accepted)
+            )
+            layout = normalize_composition(
+                accepted,
+                constrained_plan,
+                canvas_aspect_ratio=self._canvas_aspect_ratio,
+                min_scale=self._layout_min_scale,
+                max_scale=self._layout_max_scale,
+                minimum_scales=(
+                    {scene_anchor_candidate_id: self._physical_scene_anchor_min_scale}
+                    if scene_anchor_candidate_id is not None
+                    else None
+                ),
+            )
+            if any(
+                gap > self._physical_max_bottom_gap
+                for gap in bottom_gaps(
+                    accepted, layout, canvas_aspect_ratio=self._canvas_aspect_ratio
+                ).values()
+            ):
+                layout, corrections = clamp_bottom_gaps(
+                    accepted,
+                    layout,
+                    canvas_aspect_ratio=self._canvas_aspect_ratio,
+                    max_bottom_gap=self._physical_max_bottom_gap,
+                )
+        composition_elapsed_ms = _elapsed_ms(composition_started)
+        physical_ready = (
+            PhysicalReadyDiagnostics(
+                scene_anchor_candidate_id=scene_anchor_candidate_id,
+                background_missing=scene_anchor_candidate_id is None,
+                initial_bottom_gaps=tuple(sorted(initial_gaps.items())),
+                recomposed=recomposed,
+                final_bottom_gaps=tuple(
+                    sorted(
+                        bottom_gaps(
+                            accepted,
+                            layout,
+                            canvas_aspect_ratio=self._canvas_aspect_ratio,
+                        ).items()
+                    )
+                ),
+                y_corrections=tuple(sorted(corrections.items())),
+            )
+            if self._physical_ready
+            else None
+        )
+        self._notify_composition(accepted, physical_ready)
         artwork = assemble_artwork(
             source_assets,
             accepted,
@@ -370,6 +496,7 @@ class GeminiArtworkGenerator:
             composition_elapsed_ms=composition_elapsed_ms,
             total_elapsed_ms=_elapsed_ms(started),
             candidates=tuple(candidate_metrics),
+            physical_ready=physical_ready,
         )
         logger.info(
             "ai.composition elapsed_ms=%.1f ai.total elapsed_ms=%.1f layers=%d",
@@ -384,16 +511,58 @@ class GeminiArtworkGenerator:
             ),
         )
 
+    def _select_layers(
+        self, usable_layers: list[AcceptedLayer]
+    ) -> tuple[list[AcceptedLayer], str | None]:
+        """scene anchorは最大1件だけ優先し、残りをsubjectで満たす。"""
+
+        if not self._physical_ready:
+            return usable_layers[: self._target_layer_max], None
+        anchors = sorted(
+            (layer for layer in usable_layers if layer.kind == "scene_anchor"),
+            key=lambda layer: layer.importance,
+            reverse=True,
+        )
+        subjects = sorted(
+            (layer for layer in usable_layers if layer.kind != "scene_anchor"),
+            key=lambda layer: layer.importance,
+            reverse=True,
+        )
+        selected: list[AcceptedLayer] = []
+        anchor_id: str | None = None
+        if anchors:
+            selected.append(anchors[0])
+            anchor_id = anchors[0].candidate_id
+        selected.extend(subjects[: self._target_layer_max - len(selected)])
+        return selected, anchor_id
+
+    def _notify_composition(
+        self,
+        accepted: Sequence[AcceptedLayer],
+        diagnostics: PhysicalReadyDiagnostics | None,
+    ) -> None:
+        if self._observer is None:
+            return
+        callback = getattr(self._observer, "composition_result", None)
+        if callable(callback):
+            callback(accepted=accepted, diagnostics=diagnostics)
+
     async def _build_candidate(
         self, candidate, image: Image.Image
     ) -> tuple[AcceptedLayer | None, CandidateMetric]:
+        if self._physical_ready and candidate.kind == "scene_anchor":
+            return self._build_scene_anchor(candidate, image)
         segmentation_started = time.perf_counter()
         masks = []
         scores: list[float] = []
         component_qualities: list[MaskQuality] = []
         diagnostics_max_side = (
             self._quality_diagnostics_max_side
-            if self._observer is not None or self._quality_policy.diagnostics_required
+            if (
+                self._physical_ready
+                or self._observer is not None
+                or self._quality_policy.diagnostics_required
+            )
             else None
         )
         for component in candidate.components:
@@ -467,6 +636,21 @@ class GeminiArtworkGenerator:
             max(scores) if scores else None,
             diagnostics_max_side=diagnostics_max_side,
         )
+        if (
+            self._physical_ready
+            and combined_quality.diagnostics is not None
+            and combined_quality.diagnostics.component_count != 1
+        ):
+            return None, _candidate_metric(
+                candidate,
+                segmentation_elapsed_ms=_elapsed_ms(segmentation_started),
+                layer_build_elapsed_ms=0,
+                quality=combined_quality,
+                success=False,
+                failure_reason="not_single_component",
+                bbox_coverage=min(item.bbox_coverage for item in component_qualities),
+                border_touch=any(item.border_touch for item in component_qualities),
+            )
         rejection_reason = self._quality_policy.rejection_reason(
             combined_quality.diagnostics,
             bbox_coverage=min(item.bbox_coverage for item in component_qualities),
@@ -505,6 +689,7 @@ class GeminiArtworkGenerator:
                 ),
                 asset=asset,
                 importance=candidate.importance,
+                kind=candidate.kind,
             ),
             _candidate_metric(
                 candidate,
@@ -515,6 +700,96 @@ class GeminiArtworkGenerator:
                 failure_reason=None,
                 bbox_coverage=min(item.bbox_coverage for item in component_qualities),
                 border_touch=any(item.border_touch for item in component_qualities),
+            ),
+        )
+
+    def _build_scene_anchor(
+        self, candidate: VisualElementCandidate, image: Image.Image
+    ) -> tuple[AcceptedLayer | None, CandidateMetric]:
+        """背景として機能する範囲を、分割せず矩形CropでLayer化する。"""
+
+        started = time.perf_counter()
+        if len(candidate.components) != 1:
+            return None, CandidateMetric(
+                candidate.candidate_id,
+                candidate.label,
+                0,
+                0,
+                None,
+                None,
+                False,
+                "scene_anchor_requires_single_bbox",
+                candidate_kind=candidate.kind,
+                layer_build_mode="rectangular_crop",
+            )
+        component = candidate.components[0]
+        box = gemini_box_to_px(component.box_2d, image.size)
+        x0, y0, x1, y1 = box
+        mask = np.zeros((image.height, image.width), dtype=bool)
+        mask[y0:y1, x0:x1] = True
+        quality = assess_mask(
+            mask,
+            box,
+            None,
+            diagnostics_max_side=self._quality_diagnostics_max_side,
+        )
+        if self._observer is not None:
+            self._observer.segmentation_attempt(
+                candidate=candidate,
+                component=component,
+                source_photo_index=candidate.source_photo_index,
+                image=image,
+                result=SegmentationResult(mask=mask, score=None, prompt_box_px=box),
+                quality=quality,
+                attempt=0,
+            )
+        fit_scale = min(
+            1.0,
+            (x1 - x0) / (self._canvas_aspect_ratio * (y1 - y0)),
+        )
+        if min(self._layout_max_scale, fit_scale) < self._physical_scene_anchor_min_scale:
+            return None, _candidate_metric(
+                candidate,
+                segmentation_elapsed_ms=_elapsed_ms(started),
+                layer_build_elapsed_ms=0,
+                quality=quality,
+                success=False,
+                failure_reason="scene_anchor_too_tall_for_minimum_width",
+                bbox_coverage=quality.bbox_coverage,
+                border_touch=quality.border_touch,
+                layer_build_mode="rectangular_crop",
+            )
+        layer_started = time.perf_counter()
+        png, width, height = crop_to_rgba_png(image, box)
+        asset = AssetBlob(
+            asset_id=f"layer-{uuid4().hex}",
+            mime_type="image/png",
+            width_px=width,
+            height_px=height,
+            data=png,
+        )
+        return (
+            AcceptedLayer(
+                candidate_id=candidate.candidate_id,
+                label=candidate.label,
+                source_photo_index=candidate.source_photo_index,
+                source_layer_id=(
+                    f"source-layer-{hashlib.sha256(candidate.candidate_id.encode()).hexdigest()[:16]}"
+                ),
+                asset=asset,
+                importance=candidate.importance,
+                kind=candidate.kind,
+            ),
+            _candidate_metric(
+                candidate,
+                segmentation_elapsed_ms=_elapsed_ms(started),
+                layer_build_elapsed_ms=_elapsed_ms(layer_started),
+                quality=quality,
+                success=True,
+                failure_reason=None,
+                bbox_coverage=quality.bbox_coverage,
+                border_touch=quality.border_touch,
+                layer_build_mode="rectangular_crop",
             ),
         )
 
@@ -529,6 +804,7 @@ def _candidate_metric(
     failure_reason: str | None,
     bbox_coverage: float,
     border_touch: bool,
+    layer_build_mode: str = "segmented_mask",
 ) -> CandidateMetric:
     diagnostics = quality.diagnostics
     return CandidateMetric(
@@ -551,6 +827,8 @@ def _candidate_metric(
         mask_diagnostics_analysis_scale=diagnostics.analysis_scale if diagnostics else None,
         mask_bbox_coverage=bbox_coverage,
         mask_border_touch=border_touch,
+        candidate_kind=candidate.kind,
+        layer_build_mode=layer_build_mode,
     )
 
 
@@ -563,6 +841,17 @@ def _semantic_profile_instruction(profile: str) -> str:
             "recognizable when isolated, have a clear silhouette, and avoid a broad scenery crop "
             "or heavily occluded subject when an equally meaningful alternative is visible. "
             "Do not choose a collection of unrelated background fragments just to fill a layer. "
+        )
+    if profile == "physical_layer_v2":
+        return (
+            "Classify every candidate with kind subject or scene_anchor. Return at most two "
+            "scene_anchor candidates and prefer one when a broad meaningful scene range can work "
+            "as the background of the artwork. A scene_anchor must have exactly one component: "
+            "one broad rectangular range such as a garden, room, or landscape; do not split it "
+            "into individual objects. Give it a landscape-friendly range that can be displayed at "
+            "least 0.60 of canvas width. Subjects must be self-contained and must resolve to one "
+            "connected visible shape after segmentation; never combine separated objects merely "
+            "to fill a layer. Avoid candidates that would need to float high above the canvas. "
         )
     raise AiNotConfiguredError("未対応のSEMANTIC_PROFILEです")
 
@@ -626,6 +915,7 @@ def _semantic_plan_schema() -> dict[str, Any]:
             "source_photo_index": {"type": "integer"},
             "importance": {"type": "number"},
             "selection_reason": {"type": "string"},
+            "kind": {"type": "string", "enum": ["subject", "scene_anchor"]},
             "components": {"type": "array", "items": component},
         },
         "required": [
@@ -634,6 +924,7 @@ def _semantic_plan_schema() -> dict[str, Any]:
             "source_photo_index",
             "importance",
             "selection_reason",
+            "kind",
             "components",
         ],
     }

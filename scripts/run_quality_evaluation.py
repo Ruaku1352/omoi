@@ -12,7 +12,7 @@ import asyncio
 import json
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,14 +22,19 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from frontend_handoff_bundle import PocDebugObserver, write_frontend_handoff_bundle  # noqa: E402
-
-from ai.gemini import GeminiArtworkGenerator  # noqa: E402
-from ai.types import InputPhoto  # noqa: E402
-from app.config import Settings  # noqa: E402
-from app.models.artwork import Artwork  # noqa: E402
-from app.services.generator import build_generator  # noqa: E402
-from app.services.validation import check_artwork_rules, check_assets_present  # noqa: E402
+from ai.gemini import GeminiArtworkGenerator
+from ai.types import InputPhoto
+from app.config import Settings
+from app.models.artwork import Artwork
+from app.services.generator import build_generator
+from app.services.validation import (
+    check_artwork_rules,
+    check_assets_present,
+)
+from frontend_handoff_bundle import (
+    PocDebugObserver,
+    write_frontend_handoff_bundle,
+)
 
 MIME_TYPES = {
     ".jpg": "image/jpeg",
@@ -37,7 +42,8 @@ MIME_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
-SUPPORTED_PROFILES = ("baseline", "physical_layer_v1")
+SUPPORTED_PROFILES = ("baseline", "physical_layer_v1", "physical_layer_v2")
+DEFAULT_PROFILES = ("baseline", "physical_layer_v2")
 
 
 @dataclass(frozen=True)
@@ -72,7 +78,7 @@ def load_dataset(path: Path) -> tuple[EvaluationCase, ...]:
     seen_ids: set[str] = set()
     for item in items:
         if not isinstance(item, dict):
-            raise ValueError("dataset.casesの各要素はobjectである必要があります")
+            raise TypeError("dataset.casesの各要素はobjectである必要があります")
         case_id = item.get("id")
         photos = item.get("photos")
         memory_text = item.get("memoryText")
@@ -120,7 +126,7 @@ def load_photos(case: EvaluationCase, photos_dir: Path) -> list[InputPhoto]:
 
 async def run(args: argparse.Namespace) -> int:
     cases = load_dataset(args.dataset)
-    profiles = tuple(args.profile or SUPPORTED_PROFILES)
+    profiles = tuple(args.profile or DEFAULT_PROFILES)
     run_plan = build_run_plan(cases, profiles, args.max_e2e_runs)
     if args.preview_width_px <= 0:
         raise ValueError("preview-width-pxは正の値である必要があります")
@@ -131,7 +137,7 @@ async def run(args: argparse.Namespace) -> int:
     if not base_settings.gemini_api_key or not base_settings.efficientsam_model_path:
         raise ValueError("GEMINI_API_KEYとEFFICIENTSAM_MODEL_PATHが必要です")
 
-    output = args.output_dir / f"quality-evaluation-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    output = args.output_dir / f"quality-evaluation-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
     output.mkdir(parents=True)
     records: list[dict[str, Any]] = []
     for ordinal, (case, profile) in enumerate(run_plan, start=1):
@@ -176,7 +182,7 @@ async def run_case(
     observer = PocDebugObserver(output / "debug")
     generator = build_generator(settings, observer=observer)
     if not isinstance(generator, GeminiArtworkGenerator):
-        raise RuntimeError("MOCK_AI=falseのReal generatorを構成できません")
+        raise TypeError("MOCK_AI=falseのReal generatorを構成できません")
     try:
         result = await generator.generate(load_photos(case, photos_dir), case.memory_text)
         artwork = Artwork.model_validate(result.artwork)
@@ -202,7 +208,7 @@ async def run_case(
         )
         _write_review_template(output / "quality-review.json", record)
         return record
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - PoCでは失敗種別を問わず記録して次ケースへ進む
         record = {
             "caseId": case.case_id,
             "profile": profile,
