@@ -16,6 +16,7 @@ class VisualElementCandidate(BaseModel):
     source_photo_index: int
     importance: float
     selection_reason: str
+    kind: Literal["subject", "scene_anchor"]
     components: list[SegmentationComponent]
 
 
@@ -59,6 +60,7 @@ class AcceptedLayer:
     source_layer_id: str
     asset: AssetBlob
     importance: float
+    kind: str
 ```
 
 ## Composition Plan
@@ -84,6 +86,18 @@ Pythonで:
 - 0..N-1正規化
 
 してからArtworkへ変換。
+
+## physical_layer_v2の内部情報
+
+- `scene_anchor` は背景として機能する1つの広い範囲候補。Segmentationせず、単一bboxの矩形Cropを
+  不透明RGBA PNGとして使う。最終表示幅はCanvas幅の0.60以上とする。
+- `subject` は最終統合Maskが単一連結である候補だけを採用する。複数componentなら別候補を試し、
+  画像上の橋渡しはしない。
+- `kind`、component数、`background_missing`、Canvas下端からの距離、再構図・下方補正は
+  `GenerationMetrics` とPoC debugだけの内部情報である。Artwork Data / Asset Manifest / API Responseへ
+  出力しない。
+- Canvas下端からの距離が0.30を超えた構図は、全Layerを対象に1回だけ再構図する。なお超えるLayerだけを
+  決定論的に下方補正する。支柱・土台・スロット・STLはこのModelの責務ではない。
 
 ## Shared Typeとの境界
 

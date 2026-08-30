@@ -221,6 +221,38 @@ def test_debug_observer_writes_real_bbox_and_mask_previews(tmp_path: Path) -> No
     )
 
 
+def test_debug_observer_keeps_physical_ready_diagnostics_private(tmp_path: Path) -> None:
+    module = _module()
+    observer = module.PocDebugObserver(tmp_path / "debug")
+    asset = AssetBlob("layer-private", "image/png", 10, 10, b"x")
+    observer.composition_result(
+        accepted=[
+            module.AcceptedLayer(
+                "scene-anchor", "庭園", 0, "source-layer-1", asset, 1, "scene_anchor"
+            )
+        ],
+        diagnostics=module.PhysicalReadyDiagnostics(
+            scene_anchor_candidate_id="scene-anchor",
+            background_missing=False,
+            initial_bottom_gaps=(("scene-anchor", 0.5),),
+            recomposed=True,
+            final_bottom_gaps=(("scene-anchor", 0.3),),
+            y_corrections=(("scene-anchor", 0.2),),
+        ),
+    )
+
+    payload = json.loads((tmp_path / "debug" / "physical-ready.json").read_text("utf-8"))
+    assert payload["layers"] == [
+        {
+            "candidateId": "scene-anchor",
+            "label": "庭園",
+            "kind": "scene_anchor",
+            "sourcePhotoIndex": 0,
+        }
+    ]
+    assert payload["diagnostics"]["recomposed"] is True
+
+
 def test_writer_rejects_bundle_without_bbox_and_mask_evidence(tmp_path: Path) -> None:
     module = _module()
     artwork, assets = _mock_artwork_and_assets()

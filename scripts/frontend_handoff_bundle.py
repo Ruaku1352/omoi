@@ -10,6 +10,7 @@ import json
 import math
 import sys
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -21,19 +22,23 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = REPO_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-from ai.gemini import GenerationObserver  # noqa: E402
-from ai.internal_models import (  # noqa: E402
+from ai.assembly import AcceptedLayer
+from ai.gemini import GenerationObserver, PhysicalReadyDiagnostics
+from ai.internal_models import (
     SegmentationComponent,
     SemanticPlan,
     VisualElementCandidate,
 )
-from ai.quality import MaskQuality  # noqa: E402
-from ai.segmentation import SegmentationResult  # noqa: E402
-from ai.types import AssetBlob  # noqa: E402
-from app.models.api import GenerateSuccessResponse  # noqa: E402
-from app.models.artwork import Artwork  # noqa: E402
-from app.models.asset_manifest import AssetManifest, AssetManifestEntry  # noqa: E402
-from app.services.validation import check_artwork_rules, check_assets_present  # noqa: E402
+from ai.quality import MaskQuality
+from ai.segmentation import SegmentationResult
+from ai.types import AssetBlob
+from app.models.api import GenerateSuccessResponse
+from app.models.artwork import Artwork
+from app.models.asset_manifest import AssetManifest, AssetManifestEntry
+from app.services.validation import (
+    check_artwork_rules,
+    check_assets_present,
+)
 
 _EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 _BBOX_COLORS = ("#ff3b30", "#007aff", "#34c759", "#ff9500", "#af52de", "#00c7be")
@@ -79,6 +84,7 @@ class PocDebugObserver(GenerationObserver):
                         {
                             "candidateId": candidate.candidate_id,
                             "candidateLabel": candidate.label,
+                            "candidateKind": candidate.kind,
                             "selectionReason": candidate.selection_reason,
                             "sourcePhotoIndex": source_index,
                             "componentId": component.component_id,
@@ -111,6 +117,7 @@ class PocDebugObserver(GenerationObserver):
                 "file": filename,
                 "candidateId": candidate.candidate_id,
                 "candidateLabel": candidate.label,
+                "candidateKind": candidate.kind,
                 "componentId": component.component_id,
                 "componentLabel": component.label,
                 "sourcePhotoIndex": source_photo_index,
@@ -134,6 +141,30 @@ class PocDebugObserver(GenerationObserver):
         self._mask_records.append(record)
         _write_json(self._masks_dir / "index.json", {"attempts": self._mask_records})
 
+    def composition_result(
+        self,
+        *,
+        accepted: Sequence[AcceptedLayer],
+        diagnostics: PhysicalReadyDiagnostics | None,
+    ) -> None:
+        """physical_layer_v2のprivate診断をPoC bundle内だけへ保存する。"""
+
+        _write_json(
+            self._debug_dir / "physical-ready.json",
+            {
+                "layers": [
+                    {
+                        "candidateId": layer.candidate_id,
+                        "label": layer.label,
+                        "kind": layer.kind,
+                        "sourcePhotoIndex": layer.source_photo_index,
+                    }
+                    for layer in accepted
+                ],
+                "diagnostics": asdict(diagnostics) if diagnostics is not None else None,
+            },
+        )
+
     def _write_summary(self, plan: SemanticPlan) -> None:
         lines = [
             "# AI生成Debug Summary",
@@ -148,6 +179,7 @@ class PocDebugObserver(GenerationObserver):
             lines.extend(
                 [
                     f"- `{candidate.candidate_id}` {candidate.label}",
+                    f"  - kind: {candidate.kind}",
                     f"  - source photo: {candidate.source_photo_index + 1}",
                     f"  - reason: {candidate.selection_reason}",
                     f"  - components: {len(candidate.components)}",
@@ -328,11 +360,8 @@ def _validate_asset_bytes(asset: AssetBlob, *, is_layer_asset: bool) -> None:
             image.load()
             if image.size != (asset.width_px, asset.height_px):
                 raise ValueError(f"Asset寸法がMetadataと一致しません: {asset.asset_id}")
-            if is_layer_asset:
-                if image.mode != "RGBA":
-                    raise ValueError(f"Layer AssetがRGBAではありません: {asset.asset_id}")
-                if image.getchannel("A").getextrema()[0] != 0:
-                    raise ValueError(f"Layer PNGに透明pixelがありません: {asset.asset_id}")
+            if is_layer_asset and image.mode != "RGBA":
+                raise ValueError(f"Layer AssetがRGBAではありません: {asset.asset_id}")
     except ValueError:
         raise
     except Exception as exc:
@@ -394,7 +423,7 @@ Frontend handoffです。個人データを含むため、外部公開やGit com
 - `assets/`: `assetManifest` が参照するsource / layer Assetの実ファイル群
 - `memory-text.txt`: 今回のReal生成入力で使った思い出テキスト
 - `metrics.json`: Semantic Planning / Segmentation / Composition / Totalの計測値
-- `debug/`: composition、source、bbox、mask、layerの補助確認用ファイル群
+- `debug/`: composition、source、bbox、mask、layer、physical-ready診断の補助確認用ファイル群
 
 ## Frontend担当がまず読む流れ
 
