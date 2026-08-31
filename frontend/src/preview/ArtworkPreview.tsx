@@ -1,11 +1,18 @@
 import { Suspense, useRef, type ComponentRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useTexture } from '@react-three/drei'
+import { DoubleSide } from 'three'
 import { resolveAssetUrl, type AssetIndex } from '../artwork/assetIndex'
 import { toLayerPlane } from '../artwork/geometry'
 import { sortByLayerIndex } from '../artwork/layerOrder'
-import { previewDepthStep } from '../config/artworkEditing'
+import {
+  previewDepthStep,
+  previewLayerSheets,
+  previewLayerThickness,
+} from '../config/artworkEditing'
 import type { Artwork, Layer } from '../types/artwork'
+import iconRotate from '../assets/icon-rotate.svg'
+import './ArtworkPreview.css'
 
 function LayerPlane({
   layer,
@@ -18,12 +25,17 @@ function LayerPlane({
 }) {
   const texture = useTexture(url)
   const plane = toLayerPlane(layer, canvas, previewDepthStep)
+  const gap = previewLayerThickness / Math.max(1, previewLayerSheets - 1)
 
   return (
-    <mesh position={[plane.x3d, plane.y3d, plane.z]}>
-      <planeGeometry args={[plane.width, plane.height]} />
-      <meshBasicMaterial map={texture} transparent depthWrite={false} />
-    </mesh>
+    <>
+      {Array.from({ length: previewLayerSheets }, (_, i) => (
+        <mesh key={i} position={[plane.x3d, plane.y3d, plane.z + i * gap]}>
+          <planeGeometry args={[plane.width, plane.height]} />
+          <meshBasicMaterial map={texture} alphaTest={0.5} side={DoubleSide} />
+        </mesh>
+      ))}
+    </>
   )
 }
 
@@ -38,28 +50,36 @@ export default function ArtworkPreview({
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null)
 
   return (
-    <div style={{ position: 'relative', height: 400, background: 'var(--preview-bg)' }}>
-      <button
-        type="button"
-        onClick={() => controlsRef.current?.reset()}
-        style={{ position: 'absolute', top: 12, left: 12, zIndex: 1 }}
-      >
-        正面に戻す
-      </button>
+    <div className="preview3d">
+      <div className="preview3d-head">
+        <button
+          type="button"
+          className="preview3d-reset"
+          onClick={() => controlsRef.current?.reset()}
+        >
+          正面に戻す
+        </button>
+        <span className="preview3d-hint">
+          <img src={iconRotate} alt="" />
+          ドラッグで回す・ホイールで寄る
+        </span>
+      </div>
 
-      <Canvas camera={{ position: [0, 0, 2] }}>
-        <OrbitControls ref={controlsRef} makeDefault />
-        <Suspense fallback={null}>
-          {layers.map((layer) => (
-            <LayerPlane
-              key={layer.layerId}
-              layer={layer}
-              canvas={artwork.canvas}
-              url={resolveAssetUrl(assets, layer.asset.assetId)}
-            />
-          ))}
-        </Suspense>
-      </Canvas>
+      <div className="preview3d-canvas">
+        <Canvas camera={{ position: [0, 0, 1.0] }}>
+          <OrbitControls ref={controlsRef} makeDefault />
+          <Suspense fallback={null}>
+            {layers.map((layer) => (
+              <LayerPlane
+                key={layer.layerId}
+                layer={layer}
+                canvas={artwork.canvas}
+                url={resolveAssetUrl(assets, layer.asset.assetId)}
+              />
+            ))}
+          </Suspense>
+        </Canvas>
+      </div>
     </div>
   )
 }

@@ -3,7 +3,7 @@ import type Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Transformer } from 'react-konva'
 import { resolveAssetUrl, type AssetIndex } from '../artwork/assetIndex'
 import { fromLayerRectPx, toLayerRectPx } from '../artwork/geometry'
-import { normalizeLayerIndexes, sortByLayerIndex } from '../artwork/layerOrder'
+import { sortByLayerIndex } from '../artwork/layerOrder'
 import { clampScale } from '../config/artworkEditing'
 import type { Artwork, Layer as ArtworkLayer } from '../types/artwork'
 
@@ -127,55 +127,9 @@ export default function ArtworkEditor({
     })
   }
 
-  const swapOrder = (layerId: string, direction: -1 | 1) => {
-    const ordered = sortByLayerIndex(artwork.layers)
-    const i = ordered.findIndex((l) => l.layerId === layerId)
-    const j = i + direction
-    if (i < 0 || j < 0 || j >= ordered.length) return
+  
 
-    const a = ordered[i]
-    const b = ordered[j]
-
-    onChange({
-      ...artwork,
-      layers: normalizeLayerIndexes(
-        artwork.layers.map((l) => {
-          if (l.layerId === a.layerId) return { ...l, layerIndex: b.layerIndex }
-          if (l.layerId === b.layerId) return { ...l, layerIndex: a.layerIndex }
-          return l
-        }),
-      ),
-    })
-  }
-
-    const replaceLayer = (layerId: string, candidateId: string) => {
-    onChange({
-      ...artwork,
-      layers: artwork.layers.map((l) => {
-        if (l.layerId !== layerId) return l
-        const c = l.replacementCandidates.find((x) => x.candidateId === candidateId)
-        if (!c) return l
-        return {
-          ...l,
-          sourcePhotoId: c.sourcePhotoId,
-          sourceLayerId: c.sourceLayerId,
-          asset: c.asset,
-          label: c.label,
-          replacementCandidates: l.replacementCandidates.map((x) =>
-            x.candidateId === candidateId
-              ? {
-                  candidateId: x.candidateId,
-                  sourcePhotoId: l.sourcePhotoId,
-                  sourceLayerId: l.sourceLayerId,
-                  asset: l.asset,
-                  label: l.label,
-                }
-              : x,
-          ),
-        }
-      }),
-    })
-  }
+    
 
   return (
     <div style={{ background: 'var(--editor-bg)', display: 'inline-block' }}>
@@ -202,29 +156,7 @@ export default function ArtworkEditor({
         </Layer>
       </Stage>
 
-      <ol style={{ color: '#eee', fontSize: 14, padding: '12px 24px' }}>
-        {layers.map((layer) => (
-          <li key={layer.layerId} style={{ marginBottom: 6 }}>
-            {layer.label}（{layer.layerIndex}）
-            <button type="button" onClick={() => swapOrder(layer.layerId, 1)} style={{ marginLeft: 8 }}>
-              手前へ
-            </button>
-            <button type="button" onClick={() => swapOrder(layer.layerId, -1)} style={{ marginLeft: 4 }}>
-              奥へ
-            </button>
-            {layer.replacementCandidates.map((c) => (
-              <button
-                key={c.candidateId}
-                type="button"
-                onClick={() => replaceLayer(layer.layerId, c.candidateId)}
-                style={{ marginLeft: 4 }}
-              >
-                → {c.label}
-              </button>
-            ))}
-          </li>
-        ))}
-      </ol>
+      
     </div>
   )
 }
