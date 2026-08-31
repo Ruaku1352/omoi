@@ -51,5 +51,6 @@ def build_generator(
         quality_diagnostics_max_side=settings.quality_diagnostics_max_side,
         physical_scene_anchor_min_scale=settings.physical_scene_anchor_min_scale,
         physical_max_bottom_gap=settings.physical_max_bottom_gap,
+        architecture_micro_island_max_area_ratio=settings.architecture_micro_island_max_area_ratio,
         observer=observer,
     )
