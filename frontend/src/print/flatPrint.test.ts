@@ -39,6 +39,10 @@ describe('browser flat print STL helpers', () => {
 
     expect(base.report.layerCapacity).toBe(4)
     expect(base.report.slotsPerLayer).toBe(3)
+    expect(config.targetWidthMm).toBe(120)
+    expect(base.report.widthMm).toBe(170)
+    expect(base.report.depthMm).toBe(121)
+    expect(base.report.heightMm).toBe(5)
     expect(stl.triangleCount).toBeGreaterThan(0)
     expect(stl.stl).toContain('solid flat-parts-grid-base')
   })

@@ -479,3 +479,65 @@ Driveで共有された実生成Bundleも、展開済みフォルダをブラウ
 自動支えは別途、離れた2塊のテストケースで1本生成され、1つの連結形状になることを確認している。
 
 残課題は、STLサイズが大きくなりやすいことと、支えが意味的にきれいかどうかをまだ人間が見て判断する必要があること。次の改善では、セル押し出しではなく輪郭ポリゴン方式へ寄せ、支えの候補を画面で見てON/OFFできるようにする。
+
+### 屋敷レイヤーの再現確認と小型土台
+
+2026-08-29に、Frontend実生成Bundleと同じ5枚・同じ思い出テキストでReal AI再生成を試した。実行環境ではGeminiのSemantic Planningが2回ともProvider側のServerErrorで失敗し、候補生成まで進まなかった。そのため、フル再生成で屋敷が再び選ばれるかは未確認である。
+
+一方で、過去Bundleに残っている屋敷候補のbboxを使い、EfficientSAMだけを再実行した。対象は `c5_samurai_garden_house`、bboxは過去の `debug/masks/index.json` に残っていた `promptBoxPx: [1746, 314, 4032, 1703]`。結果は、旧layer PNGと同じサイズの `house-replay-layer.png` になり、pixel alpha上の分離数も同じ8個だった。屋敷の崩れはSTL化で急に発生したものではなく、bboxとmaskの段階でほぼ再現する。
+
+このbboxは右端が画像端まで届き、品質情報でも `borderTouch: true`、`bboxCoverage: 0.2736` だった。現在の品質判定ではacceptedになっているが、物理出力へ回すには危険なmaskである。次は、AI側で「画像端に触れる」「分離が多い」「bbox内の塊が小さい」maskを再試行または不採用にする必要がある。
+
+同日に、ブラウザSTL ZIPの土台も小型化した。旧版は90 x 90 x 8mmで大きすぎたため、既定を68 x 54 x 5mmへ変更し、差し込みタブも16mmから12mmへ下げた。ブラウザで実生成Bundleを読み直し、4パーツ、68 x 54 x 5mm土台、自動支え5本のSTL ZIPを書き出せることを確認した。屋敷レイヤーには、切り抜き済みレイヤーが分離している旨の警告も表示する。
+
+検証生成物は次に置いた。
+
+- `tmp/real-ai-rerun-20260829/sam-replay-house/house-sam-replay-comparison.png`
+- `tmp/real-ai-rerun-20260829/sam-replay-house/house-replay-report.json`
+- `tmp/browser-stl-export-small-base/flat-print-artwork-9b00c36b3b8349448a7e7d913a8e3a54.zip`
+
+### 2L判寄り土台への再調整
+
+2026-08-31に、土台サイズを再調整した。68 x 54mmの小型土台は印刷確認には扱いやすかったが、作品としては小さすぎる。2L判は約178 x 127mmだが、Bambu Lab A1 miniの造形範囲に対して横178mmは端まで使いすぎるため、既定は2L比率に近い170 x 121mmへ寄せた。
+
+ブラウザSTL ZIP側の既定は次に変更した。
+
+- 土台寸法: 170 x 121 x 5mm
+- 層数: 4
+- 各層の差し込み口: 3
+- 土台グリッド: 1mm
+- 差し込み足: 12mm幅、5mm奥行き
+- スロット幅: `partThicknessMm + slotClearanceMm` = 1.95mm
+- 前余白: 8mm
+- 後ろ余白: 20mm
+
+ローカルPoCスクリプトも、正方形土台専用の `baseSideMm` ではなく、`baseWidthMm` / `baseDepthMm` を持つ形に変更した。後方互換用に `--base-side-mm` は残し、指定した場合だけ幅と奥行きの両方を同じ値へ上書きする。
+
+実生成Bundleから、4層すべてを含む印刷用データを作成した。ブラウザ側と同じ考え方に合わせるため、ローカル生成では `--shape-mode grid --grid-cell-mm 0.6` を明示した。出力は4つの平面パーツSTL、2L判寄り土台STL、1:1印刷用SVG、レポート、ZIPである。
+
+```bash
+python -m py_compile scripts/flat_photo_parts_poc.py
+python scripts/flat_photo_parts_poc.py --artwork tmp/drive-downloads/extracted/frontend-debug-bundle-20260826-122150/artwork.json --assets tmp/drive-downloads/extracted/frontend-debug-bundle-20260826-122150/assets --out tmp/print-data-2l-real-bundle-20260831-v3-grid06 --include-background --shape-mode grid --grid-cell-mm 0.6
+```
+
+結果は成功。警告なしで、4パーツと土台を生成できた。生成物は `tmp/print-data-2l-real-bundle-20260831-v3-grid06/`、ZIPは `tmp/print-data-2l-real-bundle-20260831-v3-grid06.zip` に置いた。
+
+Contract検証では、以前と同じく `replacementCandidates` が空であることと、一部Source Photo PNGがRGBであることが注意として出る。ただし、今回のSTL化はLayer PNGのalphaを入力にするため、この注意は印刷データ生成の直接ブロッカーではない。
+
+### 2L判土台のまま素材パーツを小さくする調整
+
+2026-08-31に、土台は2L判寄りの170 x 121 x 5mmのまま、差し込む素材パーツだけを小さくした。前回はパーツ側も `targetWidthMm: 160` を基準にしていたため、最大レイヤーが約138mm幅になり、2L土台の上で主張が強すぎた。
+
+今回の既定は `targetWidthMm: 120` に変更した。Artwork Dataの `x / y / scale / layerIndex` はそのまま使い、物理出力Config側の実寸解釈だけを変える。これにより、2L判の土台に対して素材パーツは一回り小さくなり、棚やデスクに置く飾りとして余白が残る。
+
+実生成Bundleを同じ条件で作り直すと、最大パーツ幅は約138mmから約103mmへ下がった。差し込み足は12mm幅、スロットは1.95mm幅のまま維持するため、既存の4層3穴土台との整合は変えない。
+
+出力は `tmp/print-data-2l-small-parts-20260831-grid06/`、ZIPは `tmp/print-data-2l-small-parts-20260831-grid06.zip` に置いた。共有用の寸法比較PNGとして `parts-size-comparison-120mm.png` も同じフォルダへ入れた。
+
+### 未接続レイヤーを1パーツ化する修正
+
+2026-08-31に、Bambu Studio上で素材パーツの一部が離れた島として見える問題を確認した。STLファイル上は同じファイルに含まれていても、形状が物理的につながっていない場合、印刷後は小片として分離する。4層分のパーツが別々に並ぶことは問題ないが、1つのlayer STLの内部に未接続の島が残る状態は印刷データとして失敗扱いにする。
+
+ローカルPoCスクリプトに、RGBA alphaをグリッド化した後で連結成分を検出し、最大成分へ細い連結橋を追加する処理を入れた。輪郭ポリゴン方式で複数輪郭が出た場合も、そのまま複数島STLにせず、グリッド方式へ戻して連結処理を通す。生成後に `connectedComponentCount` が1より大きい場合は警告を出し、成功扱いにしない。
+
+同じ実生成Bundleを使って作り直した結果、屋敷レイヤーは元が6塊、追加した橋が5本、最終的に1塊になった。他の3レイヤーは最初から1塊だった。出力は `tmp/print-data-2l-connected-parts-20260831-grid06/`、ZIPは `tmp/print-data-2l-connected-parts-20260831-grid06.zip` に置いた。確認用PNGは `connected-parts-check-20260831.png` で、黒が元のalpha由来形状、緑が追加した連結橋である。

@@ -31,29 +31,31 @@ EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 @dataclass(frozen=True)
 class FlatPhotoPartConfig:
-    target_width_mm: float = 160.0
+    target_width_mm: float = 120.0
     part_thickness_mm: float = 1.6
     outline_margin_mm: float = 0.35
     shape_mode: str = "contour"
     contour_simplify_mm: float = 0.10
     grid_cell_mm: float = 2.0
+    support_bridge_width_mm: float = 1.8
     mount_mode: str = "rear"
-    tab_width_mm: float = 16.0
-    tab_height_mm: float = 7.0
+    tab_width_mm: float = 12.0
+    tab_height_mm: float = 5.0
     tab_overlap_mm: float = 1.0
     tab_edge_margin_mm: float = 4.0
-    slot_clearance_mm: float = 0.4
+    slot_clearance_mm: float = 0.35
     slot_side_clearance_mm: float = 0.8
     base_mode: str = "square-grid"
-    base_side_mm: float = 90.0
+    base_width_mm: float = 170.0
+    base_depth_mm: float = 121.0
     base_layer_capacity: int = 4
     base_slots_per_layer: int = 3
-    base_slot_length_mm: float = 16.0
+    base_slot_length_mm: float = 12.0
     base_margin_x_mm: float = 12.0
     base_margin_y_mm: float = 8.0
-    base_back_margin_y_mm: float = 24.0
+    base_back_margin_y_mm: float = 20.0
     base_layer_gap_mm: float = 7.0
-    base_height_mm: float = 8.0
+    base_height_mm: float = 5.0
     alpha_threshold: int = 16
     min_cell_coverage: float = 0.10
     print_layout_margin_mm: float = 10.0
@@ -69,6 +71,7 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "shapeMode": config.shape_mode,
         "contourSimplifyMm": config.contour_simplify_mm,
         "gridCellMm": config.grid_cell_mm,
+        "supportBridgeWidthMm": config.support_bridge_width_mm,
         "mountMode": config.mount_mode,
         "tabWidthMm": config.tab_width_mm,
         "tabHeightMm": config.tab_height_mm,
@@ -77,7 +80,8 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "slotClearanceMm": config.slot_clearance_mm,
         "slotSideClearanceMm": config.slot_side_clearance_mm,
         "baseMode": config.base_mode,
-        "baseSideMm": config.base_side_mm,
+        "baseWidthMm": config.base_width_mm,
+        "baseDepthMm": config.base_depth_mm,
         "baseLayerCapacity": config.base_layer_capacity,
         "baseSlotsPerLayer": config.base_slots_per_layer,
         "baseSlotLengthMm": config.base_slot_length_mm,
@@ -108,6 +112,14 @@ def _asset_path(asset: dict, assets_dir: pathlib.Path) -> pathlib.Path:
     if not ext:
         raise ValueError(f"Unsupported asset mimeType: {asset['mimeType']}")
     return assets_dir / f"{asset['assetId']}.{ext}"
+
+
+def _display_path(path: pathlib.Path) -> str:
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(resolved).replace("\\", "/")
 
 
 def _normal(
@@ -267,6 +279,156 @@ def _grid_triangles(
             tris += _quad((x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1))
 
     return tris
+
+
+def _cell_neighbors(
+    cell: tuple[int, int],
+    columns: int,
+    rows: int,
+) -> list[tuple[int, int]]:
+    row, col = cell
+    neighbors = []
+    if row > 0:
+        neighbors.append((row - 1, col))
+    if row < rows - 1:
+        neighbors.append((row + 1, col))
+    if col > 0:
+        neighbors.append((row, col - 1))
+    if col < columns - 1:
+        neighbors.append((row, col + 1))
+    return neighbors
+
+
+def _occupied_components(
+    occupied: set[tuple[int, int]],
+    columns: int,
+    rows: int,
+) -> list[set[tuple[int, int]]]:
+    remaining = set(occupied)
+    components: list[set[tuple[int, int]]] = []
+
+    while remaining:
+        start = remaining.pop()
+        component = {start}
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            for neighbor in _cell_neighbors(current, columns, rows):
+                if neighbor not in remaining:
+                    continue
+                remaining.remove(neighbor)
+                component.add(neighbor)
+                stack.append(neighbor)
+        components.append(component)
+
+    return sorted(components, key=len, reverse=True)
+
+
+def _trace_cell_path(
+    previous: dict[tuple[int, int], tuple[int, int] | None],
+    start: tuple[int, int],
+) -> list[tuple[int, int]]:
+    path = [start]
+    current = start
+    while previous.get(current) is not None:
+        current = previous[current]
+        path.append(current)
+    return path
+
+
+def _paint_bridge_cells(
+    occupied: set[tuple[int, int]],
+    path: list[tuple[int, int]],
+    columns: int,
+    rows: int,
+    radius_cells: int,
+) -> set[tuple[int, int]]:
+    painted: set[tuple[int, int]] = set()
+    for row, col in path:
+        for dy in range(-radius_cells, radius_cells + 1):
+            for dx in range(-radius_cells, radius_cells + 1):
+                if dx * dx + dy * dy > radius_cells * radius_cells:
+                    continue
+                next_row = row + dy
+                next_col = col + dx
+                if 0 <= next_row < rows and 0 <= next_col < columns:
+                    cell = (next_row, next_col)
+                    occupied.add(cell)
+                    painted.add(cell)
+    return painted
+
+
+def _bridge_component_to_connected(
+    occupied: set[tuple[int, int]],
+    connected: set[tuple[int, int]],
+    component: set[tuple[int, int]],
+    columns: int,
+    rows: int,
+    radius_cells: int,
+) -> bool:
+    queue = list(component)
+    previous: dict[tuple[int, int], tuple[int, int] | None] = {
+        cell: None for cell in component
+    }
+    cursor = 0
+
+    while cursor < len(queue):
+        current = queue[cursor]
+        cursor += 1
+
+        for neighbor in _cell_neighbors(current, columns, rows):
+            if neighbor in connected:
+                painted = _paint_bridge_cells(
+                    occupied,
+                    _trace_cell_path(previous, current),
+                    columns,
+                    rows,
+                    radius_cells,
+                )
+                connected.update(component)
+                connected.update(painted)
+                return True
+            if neighbor in occupied or neighbor in previous:
+                continue
+            previous[neighbor] = current
+            queue.append(neighbor)
+
+    return False
+
+
+def _connect_occupied_components(
+    occupied: set[tuple[int, int]],
+    columns: int,
+    rows: int,
+    config: FlatPhotoPartConfig,
+) -> dict:
+    components = _occupied_components(occupied, columns, rows)
+    bridge_count = 0
+    radius_cells = max(
+        0,
+        math.floor(config.support_bridge_width_mm / config.grid_cell_mm / 2),
+    )
+
+    connected = set(components[0]) if components else set()
+    for component in components[1:]:
+        if _bridge_component_to_connected(
+            occupied,
+            connected,
+            component,
+            columns,
+            rows,
+            radius_cells,
+        ):
+            bridge_count += 1
+
+    connected_components = _occupied_components(occupied, columns, rows)
+    return {
+        "originalComponentCount": len(components),
+        "floatingComponentCount": max(len(components) - 1, 0),
+        "supportBridgeCount": bridge_count,
+        "connectedComponentCount": len(connected_components),
+        "supportBridgeWidthMm": round(config.support_bridge_width_mm, 3),
+    }
 
 
 def _signed_area(points: list[tuple[float, float]]) -> float:
@@ -446,12 +608,18 @@ def _contour_shape_triangles(
 
     if not triangles:
         return None
+    if len(contour_reports) > 1:
+        return None
 
     return triangles, {
         "strategy": "contour",
         "contours": contour_reports,
         "contourCount": len(contour_reports),
         "fallbackUsed": False,
+        "originalComponentCount": 1,
+        "floatingComponentCount": 0,
+        "supportBridgeCount": 0,
+        "connectedComponentCount": 1,
     }
 
 
@@ -473,6 +641,7 @@ def _grid_shape_triangles(
     columns = max(1, math.ceil(width_mm / config.grid_cell_mm))
     rows = max(1, math.ceil(height_mm / config.grid_cell_mm))
     occupied = _occupancy_from_mask(mask, columns, rows, config)
+    connectivity = _connect_occupied_components(occupied, columns, rows, config)
     return (
         _grid_triangles(
             occupied,
@@ -489,6 +658,7 @@ def _grid_shape_triangles(
             "rows": rows,
             "occupiedCells": len(occupied),
             "totalCells": columns * rows,
+            **connectivity,
         },
     )
 
@@ -782,9 +952,9 @@ def _part_from_layer(
         "sourcePhotoId": layer["sourcePhotoId"],
         "sourceLayerId": layer["sourceLayerId"],
         "assetId": asset["assetId"],
-        "assetPath": str(path.relative_to(ROOT)).replace("\\", "/"),
+        "assetPath": _display_path(path),
         "layerIndex": layer["layerIndex"],
-        "outputStl": str(stl_path.relative_to(ROOT)).replace("\\", "/"),
+        "outputStl": _display_path(stl_path),
         "triangles": triangle_count,
         "flatSurface": True,
         "usesRelief": False,
@@ -896,8 +1066,8 @@ def _square_grid_base_triangles_for_parts(parts: list[dict], config: FlatPhotoPa
     front_to_back_parts = sorted(parts, key=lambda part: part["layerIndex"], reverse=True)
     layer_capacity = max(config.base_layer_capacity, len(front_to_back_parts), 1)
     slot_width = config.part_thickness_mm + config.slot_clearance_mm
-    base_width = config.base_side_mm
-    base_depth = config.base_side_mm
+    base_width = config.base_width_mm
+    base_depth = config.base_depth_mm
     usable_depth = base_depth - config.base_margin_y_mm - config.base_back_margin_y_mm - slot_width * layer_capacity
     layer_gap = max(usable_depth / max(layer_capacity - 1, 1), 2.0) if layer_capacity > 1 else 0.0
     if usable_depth < 0:
@@ -1253,6 +1423,8 @@ def build_poc(
             continue
         if part["geometry"].get("fallbackUsed"):
             warnings.append(f"{layer['layerId']}: 輪郭生成に失敗したためグリッド方式へフォールバック")
+        if part["geometry"].get("connectedComponentCount", 1) > 1:
+            warnings.append(f"{layer['layerId']}: STL内に未接続の島が残っている")
         parts.append(part)
         cropped_images.append(cropped_image)
 
@@ -1260,7 +1432,7 @@ def build_poc(
     base_path = out_dir / "flat-photo-parts-slot-base.stl"
     if parts:
         base_triangles, base = _base_triangles_for_parts(parts, config)
-        base["outputStl"] = str(base_path.relative_to(ROOT)).replace("\\", "/")
+        base["outputStl"] = _display_path(base_path)
         base["triangles"] = _write_stl(base_path, "flat-photo-parts-slot-base", base_triangles)
 
     print_layout_path = out_dir / "flat-photo-print-layout.svg"
@@ -1272,15 +1444,15 @@ def build_poc(
         "ok": bool(parts) and not warnings,
         "artworkId": artwork["artworkId"],
         "input": {
-            "artwork": str(artwork_path.relative_to(ROOT)).replace("\\", "/"),
-            "assetsDir": str(assets_dir.relative_to(ROOT)).replace("\\", "/"),
+            "artwork": _display_path(artwork_path),
+            "assetsDir": _display_path(assets_dir),
         },
         "flatPhotoPartConfig": _config_to_json(config),
         "parts": parts,
         "base": base,
         "outputs": {
-            "report": str(report_path.relative_to(ROOT)).replace("\\", "/"),
-            "printLayoutSvg": str(print_layout_path.relative_to(ROOT)).replace("\\", "/") if parts else None,
+            "report": _display_path(report_path),
+            "printLayoutSvg": _display_path(print_layout_path) if parts else None,
             "stlFiles": [part["outputStl"] for part in parts] + ([base["outputStl"]] if base else []),
         },
         "warnings": warnings,
@@ -1308,13 +1480,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shape-mode", choices=("contour", "grid"), default=FlatPhotoPartConfig.shape_mode)
     parser.add_argument("--contour-simplify-mm", type=float, default=FlatPhotoPartConfig.contour_simplify_mm)
     parser.add_argument("--grid-cell-mm", type=float, default=FlatPhotoPartConfig.grid_cell_mm)
+    parser.add_argument("--support-bridge-width-mm", type=float, default=FlatPhotoPartConfig.support_bridge_width_mm)
     parser.add_argument("--mount-mode", choices=("rear", "front-tab"), default=FlatPhotoPartConfig.mount_mode)
     parser.add_argument("--tab-width-mm", type=float, default=FlatPhotoPartConfig.tab_width_mm)
     parser.add_argument("--tab-height-mm", type=float, default=FlatPhotoPartConfig.tab_height_mm)
     parser.add_argument("--tab-overlap-mm", type=float, default=FlatPhotoPartConfig.tab_overlap_mm)
     parser.add_argument("--slot-clearance-mm", type=float, default=FlatPhotoPartConfig.slot_clearance_mm)
     parser.add_argument("--base-mode", choices=("square-grid", "part-tabs"), default=FlatPhotoPartConfig.base_mode)
-    parser.add_argument("--base-side-mm", type=float, default=FlatPhotoPartConfig.base_side_mm)
+    parser.add_argument("--base-width-mm", type=float, default=FlatPhotoPartConfig.base_width_mm)
+    parser.add_argument("--base-depth-mm", type=float, default=FlatPhotoPartConfig.base_depth_mm)
+    parser.add_argument(
+        "--base-side-mm",
+        type=float,
+        default=None,
+        help="後方互換用。指定するとbase width/depthの両方を同じ値にする。",
+    )
     parser.add_argument("--base-layer-capacity", type=int, default=FlatPhotoPartConfig.base_layer_capacity)
     parser.add_argument("--base-slots-per-layer", type=int, default=FlatPhotoPartConfig.base_slots_per_layer)
     parser.add_argument("--base-slot-length-mm", type=float, default=FlatPhotoPartConfig.base_slot_length_mm)
@@ -1328,6 +1508,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    base_width_mm = args.base_side_mm if args.base_side_mm is not None else args.base_width_mm
+    base_depth_mm = args.base_side_mm if args.base_side_mm is not None else args.base_depth_mm
     config = FlatPhotoPartConfig(
         target_width_mm=args.target_width_mm,
         part_thickness_mm=args.part_thickness_mm,
@@ -1335,13 +1517,15 @@ def main() -> int:
         shape_mode=args.shape_mode,
         contour_simplify_mm=args.contour_simplify_mm,
         grid_cell_mm=args.grid_cell_mm,
+        support_bridge_width_mm=args.support_bridge_width_mm,
         mount_mode=args.mount_mode,
         tab_width_mm=args.tab_width_mm,
         tab_height_mm=args.tab_height_mm,
         tab_overlap_mm=args.tab_overlap_mm,
         slot_clearance_mm=args.slot_clearance_mm,
         base_mode=args.base_mode,
-        base_side_mm=args.base_side_mm,
+        base_width_mm=base_width_mm,
+        base_depth_mm=base_depth_mm,
         base_layer_capacity=args.base_layer_capacity,
         base_slots_per_layer=args.base_slots_per_layer,
         base_slot_length_mm=args.base_slot_length_mm,
