@@ -42,6 +42,8 @@ class VisualElementCandidate(BaseModel):
     # Internal semantic-planning metadata. It is intentionally not exported through
     # Artwork Data or the shared API contract.
     kind: Literal["subject", "scene_anchor"] = "subject"
+    # 建造物比較Profile専用の内部意味役割。公開Artwork Dataには出さない。
+    semantic_role: Literal["general", "architecture_primary", "architecture_detail"] = "general"
     components: list[SegmentationComponent] = Field(min_length=1)
 
 
