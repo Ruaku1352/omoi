@@ -97,6 +97,13 @@ uv run python ../scripts/run_real_ai_poc.py --memory-text "思い出の説明文
 `run_multi_real_ai_poc.py` は複数ケース比較用の補助PoCであり、Frontend handoffの正規Bundleは
 上記 `run_real_ai_poc.py` で生成する。
 
+## physical-ready構図PoC（AI側）
+
+`physical_layer_v2` では、背景範囲候補の有無、各通常Layerの連結成分数、Canvas下端からの距離を
+private debugで確認する。背景候補がなければ `background_missing` を記録するが、既定画像を追加せず、
+4層生成を継続する。意味的な正しさと物理強度・耐久性は、組み立てPoCの合格判定からは除外されるが、
+このAIテスト計画では引き続き別の品質軸として扱う。支え・土台・STL・組立方法は扱わない。
+
 ## Cloud Run Test
 
 Local成功後:

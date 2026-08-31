@@ -10,7 +10,7 @@ JSON Schema だけでは表現できない規則もここで検証する:
   - layer / candidate の sourcePhotoId が sourcePhotos[] に存在すること
   - layerId / assetId / candidateId が重複しないこと
   - 参照 Asset の実ファイルが存在し、実寸が widthPx / heightPx と一致すること
-  - Layer Asset が実際に透過（alpha）を持つ RGBA PNG であること
+  - Layer Asset が RGBA PNG であること（背景範囲Cropは不透明RGBAを許容）
   - rotation を持ち込んでいないこと（P0では持たせない【FIX】）
   - 生成成功Responseでは、Artworkが参照する全AssetをAsset Manifestが解決できること
   - 共通Mock同士（artwork.json / asset-manifest.json / generate-success-response.json）が
@@ -189,11 +189,8 @@ def check_assets(artwork: dict, assets_dir: pathlib.Path) -> list[str]:
                     f"{owner}: {path.name} の実寸 {img.width}x{img.height} が "
                     f"Metadata {asset['widthPx']}x{asset['heightPx']} と一致しない"
                 )
-            if is_layer_asset:
-                if img.mode != "RGBA":
-                    errs.append(f"{owner}: {path.name} は RGBA ではない (mode={img.mode})")
-                elif img.getchannel("A").getextrema()[0] == 255:
-                    errs.append(f"{owner}: {path.name} に透過領域が無い（Layerは透過PNG）")
+            if is_layer_asset and img.mode != "RGBA":
+                errs.append(f"{owner}: {path.name} は RGBA ではない (mode={img.mode})")
     return errs
 
 

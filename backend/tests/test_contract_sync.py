@@ -10,10 +10,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from pathlib import Path
 
 import jsonschema
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from tests.conftest import CONTRACTS_DIR
 
@@ -87,6 +89,35 @@ def test_real_artwork_does_not_require_replacement_candidates(mock_artwork: dict
 
     assert not module.check_rules(artwork)
     assert module.check_mock_fixture_rules(artwork)
+
+
+def test_contract_validator_allows_opaque_rgba_scene_range(tmp_path: Path) -> None:
+    """背景範囲Cropは透過pixelを持たないRGBA PNGでもContract外へ出さない。"""
+
+    path = CONTRACTS_DIR.parent / "scripts" / "validate_contracts.py"
+    spec = importlib.util.spec_from_file_location("validate_contracts_opaque", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    Image.new("RGBA", (8, 6), "green").save(tmp_path / "scene-anchor.png")
+    artwork = {
+        "sourcePhotos": [],
+        "layers": [
+            {
+                "layerId": "layer-1",
+                "asset": {
+                    "assetId": "scene-anchor",
+                    "mimeType": "image/png",
+                    "widthPx": 8,
+                    "heightPx": 6,
+                },
+                "replacementCandidates": [],
+            }
+        ],
+    }
+
+    assert not module.check_assets(artwork, tmp_path)
 
 
 @pytest.mark.parametrize(

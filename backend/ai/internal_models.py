@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -37,6 +39,9 @@ class VisualElementCandidate(BaseModel):
     source_photo_index: int = Field(ge=0)
     importance: float = Field(ge=0, le=1)
     selection_reason: str = Field(min_length=1, max_length=512)
+    # Internal semantic-planning metadata. It is intentionally not exported through
+    # Artwork Data or the shared API contract.
+    kind: Literal["subject", "scene_anchor"] = "subject"
     components: list[SegmentationComponent] = Field(min_length=1)
 
 

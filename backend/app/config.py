@@ -39,12 +39,12 @@ class Settings(BaseSettings):
     # ---- AI ----
     gemini_api_key: str | None = None
     gemini_model: str | None = None
-    # baselineは既存Promptそのまま。physical_layer_v1はPoC比較用の一般的な選定指示。
-    semantic_profile: str = "baseline"
+    # physical_layer_v2がReal生成の既定。baseline / v1はPoC比較用に残す。
+    semantic_profile: str = "physical_layer_v2"
     segmentation_backend: str = "efficient_sam_onnx"
     efficientsam_model_path: Path | None = None
     segmentation_max_retries: int = Field(default=1, ge=0, le=3)
-    candidate_count: int = Field(default=8, ge=1, le=20)
+    candidate_count: int = Field(default=12, ge=1, le=20)
     # MVP production profileは4層を成功条件にする。Schema自体の可変長性は維持する。
     target_layer_min: int = Field(default=4, ge=1, le=20)
     target_layer_max: int = Field(default=4, ge=1, le=20)
@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     layer_padding_px: int = Field(default=8, ge=0, le=256)
     layout_min_scale: float = Field(default=0.05, gt=0)
     layout_max_scale: float = Field(default=1.2, gt=0)
+    # physical_layer_v2の内部構図制約。Artwork Data / 共通Contractには出さない。
+    physical_scene_anchor_min_scale: float = Field(default=0.60, gt=0, le=1)
+    physical_max_bottom_gap: float = Field(default=0.30, ge=0, le=1)
     # Quality Gateは校正前は観測のみ。値はPoC後に環境変数で明示設定する。
     quality_gate_mode: str = "observe"
     quality_max_component_count: int | None = Field(default=None, ge=1)
