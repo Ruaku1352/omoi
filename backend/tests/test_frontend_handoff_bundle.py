@@ -40,8 +40,7 @@ def _validator() -> jsonschema.Draft202012Validator:
         "generate-success-response.schema.json",
     )
     schemas = {
-        name: json.loads((CONTRACTS_DIR / name).read_text(encoding="utf-8"))
-        for name in names
+        name: json.loads((CONTRACTS_DIR / name).read_text(encoding="utf-8")) for name in names
     }
     registry = Registry().with_resources(
         (schema["$id"], Resource.from_contents(schema)) for schema in schemas.values()
@@ -67,9 +66,7 @@ def _mock_artwork_and_assets() -> tuple[Artwork, list[AssetBlob]]:
             width_px=entry["widthPx"],
             height_px=entry["heightPx"],
             data=(
-                CONTRACTS_DIR
-                / "assets"
-                / f"{entry['assetId']}.{extension[entry['mimeType']]}"
+                CONTRACTS_DIR / "assets" / f"{entry['assetId']}.{extension[entry['mimeType']]}"
             ).read_bytes(),
         )
         for entry in manifest["assets"]
@@ -178,9 +175,7 @@ def test_writer_creates_complete_api_and_local_bundle(tmp_path: Path) -> None:
         for entry in api_response["assetManifest"]["assets"]
     )
     assert all(
-        entry["url"].startswith("assets/")
-        and ".." not in entry["url"]
-        and "\\" not in entry["url"]
+        entry["url"].startswith("assets/") and ".." not in entry["url"] and "\\" not in entry["url"]
         for entry in bundle_response["assetManifest"]["assets"]
     )
     for entry in bundle_response["assetManifest"]["assets"]:
@@ -216,9 +211,7 @@ def test_debug_observer_writes_real_bbox_and_mask_previews(tmp_path: Path) -> No
     index_path = tmp_path / "debug" / "masks" / "index.json"
     attempts = json.loads(index_path.read_text(encoding="utf-8"))["attempts"]
     assert attempts[0]["diagnostics"]["componentCount"] == 1
-    assert "memoryTextと一致" in (tmp_path / "debug" / "summary.md").read_text(
-        encoding="utf-8"
-    )
+    assert "memoryTextと一致" in (tmp_path / "debug" / "summary.md").read_text(encoding="utf-8")
 
 
 def test_debug_observer_keeps_physical_ready_diagnostics_private(tmp_path: Path) -> None:

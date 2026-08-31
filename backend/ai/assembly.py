@@ -84,9 +84,7 @@ def normalize_composition(
             default=lower_scale,
         )
         half_width = scale / 2
-        half_height = (
-            scale * canvas_aspect_ratio * asset.height_px / asset.width_px / 2
-        )
+        half_height = scale * canvas_aspect_ratio * asset.height_px / asset.width_px / 2
         result[placement.candidate_id] = {
             "x": _clamp_finite(
                 placement.x,
