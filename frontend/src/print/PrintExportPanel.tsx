@@ -42,7 +42,7 @@ export function PrintExportPanel({
         <div>
           <h2>印刷データ</h2>
           <p className="muted">
-            {datasetName} から、平面パーツSTLと4層3穴土台STLをZIPで出力する。
+            {datasetName} から、小さめの平面パーツSTLと2L判寄りの4層3穴土台STLをZIPで出力する。
           </p>
         </div>
         <button className="primary-button" type="button" onClick={handleGenerate} disabled={isGenerating}>
@@ -52,6 +52,8 @@ export function PrintExportPanel({
 
       <div className="print-rules">
         <span>layerIndex 0も出力</span>
+        <span>素材幅 120mm基準</span>
+        <span>土台 170 x 121mm</span>
         <span>浮いた塊は低い支えで接続</span>
         <span>G-codeはBambu Studioで作成</span>
       </div>

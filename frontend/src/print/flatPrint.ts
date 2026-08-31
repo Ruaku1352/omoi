@@ -15,32 +15,38 @@ export interface BrowserFlatPrintConfig {
   tabWidthMm: number
   tabHeightMm: number
   tabStemWidthMm: number
-  baseSideMm: number
+  baseWidthMm: number
+  baseDepthMm: number
   baseHeightMm: number
   baseLayerCapacity: number
   baseSlotsPerLayer: number
   baseCellSizeMm: number
+  baseFrontMarginMm: number
+  baseBackMarginMm: number
   slotClearanceMm: number
   slotSideClearanceMm: number
 }
 
 export const defaultBrowserFlatPrintConfig: BrowserFlatPrintConfig = {
-  targetWidthMm: 160,
+  targetWidthMm: 120,
   partThicknessMm: 1.6,
   cellSizeMm: 0.6,
   alphaThreshold: 16,
   outlineMarginMm: 0.35,
   supportBridgeWidthMm: 1.8,
   supportBridgeHeightMm: 0.8,
-  tabWidthMm: 16,
-  tabHeightMm: 7,
-  tabStemWidthMm: 5,
-  baseSideMm: 90,
-  baseHeightMm: 8,
+  tabWidthMm: 12,
+  tabHeightMm: 5,
+  tabStemWidthMm: 3.2,
+  baseWidthMm: 170,
+  baseDepthMm: 121,
+  baseHeightMm: 5,
   baseLayerCapacity: 4,
   baseSlotsPerLayer: 3,
-  baseCellSizeMm: 0.5,
-  slotClearanceMm: 0.4,
+  baseCellSizeMm: 1,
+  baseFrontMarginMm: 8,
+  baseBackMarginMm: 20,
+  slotClearanceMm: 0.35,
   slotSideClearanceMm: 0.8,
 }
 
@@ -582,22 +588,25 @@ function createBaseHeightMap(
   config: BrowserFlatPrintConfig,
   layerCount: number,
 ): { heights: Float32Array; widthCells: number; heightCells: number; report: BrowserFlatPrintBaseReport } {
-  const widthCells = Math.ceil(config.baseSideMm / config.baseCellSizeMm)
-  const heightCells = Math.ceil(config.baseSideMm / config.baseCellSizeMm)
+  const widthCells = Math.ceil(config.baseWidthMm / config.baseCellSizeMm)
+  const heightCells = Math.ceil(config.baseDepthMm / config.baseCellSizeMm)
   const heights = new Float32Array(widthCells * heightCells)
   heights.fill(config.baseHeightMm)
 
   const slotLengthMm = config.tabWidthMm + config.slotSideClearanceMm
   const slotWidthMm = config.partThicknessMm + config.slotClearanceMm
   const layerCapacity = Math.max(config.baseLayerCapacity, layerCount)
-  const xGap = config.baseSideMm / (config.baseSlotsPerLayer + 1)
-  const frontMarginMm = 8
-  const backMarginMm = 24
-  const usableDepthMm = config.baseSideMm - frontMarginMm - backMarginMm - slotWidthMm * layerCapacity
+  const xGap = config.baseWidthMm / (config.baseSlotsPerLayer + 1)
+  const usableDepthMm =
+    config.baseDepthMm -
+    config.baseFrontMarginMm -
+    config.baseBackMarginMm -
+    slotWidthMm * layerCapacity
   const yGap = layerCapacity > 1 ? Math.max(usableDepthMm / (layerCapacity - 1), 2) : 0
 
   for (let layer = 0; layer < layerCapacity; layer += 1) {
-    const slotCenterY = frontMarginMm + layer * (slotWidthMm + yGap) + slotWidthMm / 2
+    const slotCenterY =
+      config.baseFrontMarginMm + layer * (slotWidthMm + yGap) + slotWidthMm / 2
     for (let slot = 0; slot < config.baseSlotsPerLayer; slot += 1) {
       const slotCenterX = xGap * (slot + 1)
       const x0 = Math.floor((slotCenterX - slotLengthMm / 2) / config.baseCellSizeMm)
@@ -665,6 +674,11 @@ export async function generateBrowserFlatPrintPackage(
     })
     if (heightMap.floatingComponentCount > 0 && heightMap.supportBridgeCount === 0) {
       warnings.push(`${layer.label}: 離れた塊を検出したが自動支えを作れなかった`)
+    }
+    if (heightMap.originalComponentCount >= 4) {
+      warnings.push(
+        `${layer.label}: 切り抜き済みレイヤーが${heightMap.originalComponentCount}個に分離しているため、AI側のレイヤー生成を再確認する`,
+      )
     }
   }
 
