@@ -1,0 +1,157 @@
+.done { display: flex; flex-direction: column; }
+
+.done-flow {
+  background: #fff;
+  padding: 16px 50px;
+}
+
+.done-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px;
+  border: 1px solid #000;
+  background: var(--omoi-bg);
+  overflow: hidden;
+}
+.done-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../assets/wood.png') center / cover;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.done-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  box-shadow: 4px 8px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- 左（プレビュー） ---- */
+.done-left {
+  width: 928px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.done-left .preview3d {
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 16px;
+  width: 100%;
+}
+.done-left .preview3d-head { width: 100%; }
+.done-left .preview3d-canvas { width: 616px; height: 491px; }
+
+.done-caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 51px;
+  padding: 0 115px;
+  background: #f8f1ec;
+  border: 1px solid var(--omoi-orange);
+  border-radius: 8px;
+  box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.25);
+}
+.done-caption-title {
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: 4.8px;
+  color: #000;
+}
+.done-caption-date {
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--omoi-gray);
+}
+
+/* ---- 右（確定パネル） ---- */
+.done-right {
+  width: 390px;
+  height: 708px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.done-panel {
+  width: 100%;
+  height: 626px;
+  background: #fff;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.done-panel-top {
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+.done-title { margin: 0; font-weight: 700; font-size: 32px; color: #000; }
+.done-lead { margin: 0; font-weight: 500; font-size: 20px; line-height: 1.5; color: #000; }
+.done-note { margin: 0; font-size: 16px; line-height: 1.5; color: red; }
+
+.done-panel-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 32px;
+  padding: 16px 24px;
+}
+
+.done-restart {
+  padding: 0 8px;
+  border: none;
+  border-bottom: 1px solid red;
+  background: none;
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  color: red;
+  cursor: pointer;
+}
+.done-again {
+  width: 176px;
+  padding: 0 8px;
+  border: none;
+  border-bottom: 1px solid var(--omoi-gray);
+  background: none;
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 500;
+  font-size: 20px;
+  color: var(--omoi-gray);
+  cursor: pointer;
+}
+.done-confirm {
+  height: 64px;
+  padding: 0 24px;
+  border: none;
+  border-radius: 24px;
+  background: var(--omoi-orange);
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 900;
+  font-size: 24px;
+  color: #fff;
+  box-shadow: 4px 4px 2px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}

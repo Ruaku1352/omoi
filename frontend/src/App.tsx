@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import './App.css'
-import { buildAssetIndex, resolveAssetUrl } from './artwork/assetIndex'
-import { layerHeightRatio } from './artwork/geometry'
-import { sortByLayerIndex } from './artwork/layerOrder'
-import { apiBaseUrl } from './config/env'
+import { buildAssetIndex } from './artwork/assetIndex'
 import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
 import PhotoSelect from './screens/PhotoSelect'
-import ArtworkPreview from './preview/ArtworkPreview'
-import ArtworkEditor from './edit/ArtworkEditor'
-type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
+import Navbar from './components/Navbar'
+import Breadcrumb from './components/Breadcrumb'
+import PreviewScreen from './screens/PreviewScreen'
+import EditScreen from './screens/EditScreen'
+import GeneratingScreen from './screens/GeneratingScreen'
+import DoneScreen from './screens/DoneScreen'
+export type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
 
 /**
  * 共通Mockの `layers[]` を **layerIndex 昇順（0が最背面）** で並べて確認するページ。
@@ -19,18 +20,35 @@ type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
 export default function App() {
 const [artwork, setArtwork] = useState(mockArtwork)
 const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
-const [screen, setScreen] = useState<Screen>('preview')
+const [screen, setScreen] = useState<Screen>('select')
 const [error, setError] = useState<string | null>(null) 
   // `layers[]` の配列位置は奥行き順ではない。必ず layerIndex で並べ替える。
-  const layers = sortByLayerIndex(artwork.layers)
   const assets = buildAssetIndex(manifest)
 
   return (
     <main className="app">
-      <header>
-        <h1>omoi</h1>
-        <p className="tagline">Our Memories, One Image — Frontend Scaffold</p>
-      </header>
+      <Navbar />
+      {error && <p className="app-error">{error}</p>}
+{(screen === 'select' || screen === 'generating') && <Breadcrumb current={screen} />}
+      <button
+  type="button"
+  onClick={async () => {
+    const base = 'http://localhost:8000'
+    const res = await fetch(`${base}/generate-success-response.bundle.json`)
+    const data = await res.json()
+    const manifest = {
+      assets: data.assetManifest.assets.map((a: { url: string }) => ({
+        ...a,
+        url: `${base}/${a.url}`,
+      })),
+    }
+    setArtwork(data.artwork)
+    setManifest(manifest)
+    setScreen('preview')
+  }}
+>
+  実データを読む（デバッグ用）
+</button>
       {screen ==='select' &&(
        <PhotoSelect
         onGenerated={(nextArtwork, nextManifest) => {
@@ -38,62 +56,27 @@ const [error, setError] = useState<string | null>(null)
           setManifest(nextManifest)
           setScreen('preview') 
         }}
-         onStart={() => {
-    setError(null)
-    setScreen('generating')
-  }}
+         onStart={() => { setError(null); setScreen('generating') }}
   onFailed={(message) => setError(message)}
       />)}
-      {screen === 'generating' && (
-  <section style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-    {error === null ? (
-      <p>作品を作っています…</p>
-    ) : (
-      <>
-        <p style={{ color: 'salmon' }}>{error}</p>
-        <button type="button" onClick={() => setScreen('select')}>
-          写真を選び直す
-        </button>
-      </>
-    )}
-  </section>
-)}
+      {screen === 'generating' && <GeneratingScreen />}
 {screen === 'preview' && (
-  <>
-    <ArtworkPreview artwork={artwork} assets={assets} />
-    <button type="button" onClick={() => setScreen('done')}>
-      この作品で完成
-    </button>
-    <button type="button" onClick={() => setScreen('edit')}>
-      少し調整する
-    </button>
-  </>
+  <PreviewScreen
+    artwork={artwork}
+    assets={assets}
+    onSelectScreen={setScreen}
+  />
 )}
 {screen === 'edit' && (
-  <><ArtworkEditor artwork={artwork} onChange={setArtwork} assets={assets} />
-  <button type="button" onClick={() => setScreen('preview')}>
-      編集を終える
-    </button>
-  </>
+  <EditScreen
+    artwork={artwork}
+    assets={assets}
+    onChange={setArtwork}
+    onSelectScreen={setScreen}
+  />
 )}
 {screen === 'done' && (
-  <>
-    <ArtworkPreview artwork={artwork} assets={assets} />
-
-    <section style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2>作品が完成しました</h2>
-      <p>このデータから、実物のレイヤーアートを作ります。</p>
-
-      <div style={{ display: 'flex', gap: 12 }}>
-        <button type="button" onClick={() => setScreen('edit')}>
-          もう一度調整する
-        </button>
-        <button type="button" onClick={() => setScreen('select')}>
-          最初から作る
-        </button>
-      </div>
-    </section>
-  </>
+  <DoneScreen artwork={artwork} assets={assets} onSelectScreen={setScreen} />
 )}
       {/* <section className="meta">
         <dl>
@@ -176,9 +159,9 @@ const [error, setError] = useState<string | null>(null)
         </ol>
       </section> */}
 
-      <footer className="muted">
+      {/*<footer className="muted">
         Artwork Data はURLを持たない。画像は Asset Manifest 経由で <code>assetId</code> を解決している。
-      </footer>
+      </footer>*/}
     </main>
   )
 }

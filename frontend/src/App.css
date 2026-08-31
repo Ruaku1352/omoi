@@ -1,7 +1,7 @@
 .app {
-  max-width: 52rem;
-  margin: 0 auto;
-  padding: 2.5rem 1.5rem 4rem;
+  max-width: none;
+  margin: 0;
+  padding: 0;   
 }
 
 .app h1 {
@@ -105,4 +105,14 @@ code {
 
 footer {
   margin-top: 3rem;
+}
+.app-error {
+  max-width: 1120px;
+  margin: 8px auto 0;
+  padding: 12px 16px;
+  background: #fdeaea;
+  border: 1px solid #c00;
+  border-radius: 8px;
+  color: #c00;
+  font-size: 14px;
 }
