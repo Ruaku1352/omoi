@@ -445,9 +445,7 @@ class GeminiArtworkGenerator:
             ),
         )
         initial_gaps = (
-            bottom_gaps(
-                accepted, layout, canvas_aspect_ratio=self._canvas_aspect_ratio
-            )
+            bottom_gaps(accepted, layout, canvas_aspect_ratio=self._canvas_aspect_ratio)
             if self._physical_ready
             else {}
         )
@@ -557,9 +555,7 @@ class GeminiArtworkGenerator:
         if anchors:
             selected.append(anchors[0])
             anchor_id = anchors[0].candidate_id
-        primaries = [
-            layer for layer in subjects if layer.semantic_role == "architecture_primary"
-        ]
+        primaries = [layer for layer in subjects if layer.semantic_role == "architecture_primary"]
         if self._architecture_ready and primaries:
             selected.append(primaries[0])
         remaining_subjects = [layer for layer in subjects if layer not in selected]
@@ -685,9 +681,7 @@ class GeminiArtworkGenerator:
                     failure_reason="not_single_component",
                     bbox_coverage=min(item.bbox_coverage for item in component_qualities),
                     border_touch=any(item.border_touch for item in component_qualities),
-                    architecture_cleanup=(
-                        f"rejected_detached:{cleanup.removed_area_ratio:.6f}"
-                    ),
+                    architecture_cleanup=(f"rejected_detached:{cleanup.removed_area_ratio:.6f}"),
                 )
             if cleanup.applied:
                 combined_mask = cleanup.mask

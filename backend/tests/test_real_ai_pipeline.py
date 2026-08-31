@@ -276,9 +276,9 @@ def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
     quality = assess_mask(mask, (0, 0, 20, 20), 0.9, diagnostics_max_side=20)
     assert quality.accepted
     assert quality.diagnostics == diagnostics
-    assert QualityPolicy().rejection_reason(
-        diagnostics, bbox_coverage=1, border_touch=False
-    ) is None
+    assert (
+        QualityPolicy().rejection_reason(diagnostics, bbox_coverage=1, border_touch=False) is None
+    )
     with pytest.raises(ValueError, match="at least one"):
         QualityPolicy(mode="enforce")
 
@@ -534,10 +534,14 @@ async def test_physical_v2_uses_rectangular_scene_anchor_and_limits_floating() -
     assert diagnostics.y_corrections
     assert all(gap <= 0.30 + 1e-9 for _candidate_id, gap in diagnostics.final_bottom_gaps)
     anchor_metric = next(
-        metric for metric in generator.last_metrics.candidates if metric.candidate_id == "scene-anchor"
+        metric
+        for metric in generator.last_metrics.candidates
+        if metric.candidate_id == "scene-anchor"
     )
     assert anchor_metric.layer_build_mode == "rectangular_crop"
-    anchor_asset = next(asset for asset in result.assets if asset.asset_id == artwork.layers[0].asset.asset_id)
+    anchor_asset = next(
+        asset for asset in result.assets if asset.asset_id == artwork.layers[0].asset.asset_id
+    )
     with Image.open(BytesIO(anchor_asset.data)) as image:
         assert image.mode == "RGBA"
         assert image.getchannel("A").getextrema() == (255, 255)
