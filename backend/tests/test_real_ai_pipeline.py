@@ -10,10 +10,15 @@ from PIL import Image
 
 from ai.assembly import AcceptedLayer, normalize_composition
 from ai.errors import AiError, AiNotConfiguredError
-from ai.gemini import GeminiArtworkGenerator
+from ai.gemini import GeminiArtworkGenerator, _semantic_plan_schema
 from ai.image_ops import gemini_box_to_px, mask_to_rgba_png, union_masks
 from ai.internal_models import CompositionPlan, SemanticPlan
-from ai.quality import QualityPolicy, assess_mask, diagnose_mask
+from ai.quality import (
+    QualityPolicy,
+    assess_mask,
+    clean_architecture_micro_islands,
+    diagnose_mask,
+)
 from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult
 from ai.types import AssetBlob, InputPhoto
 from app.config import Settings
@@ -184,6 +189,29 @@ class FragmentedFirstSegmenter(FakeSegmenter):
         return super().segment(image, box_px)
 
 
+class ArchitecturePlanner(FakePlanner):
+    async def plan(self, images, memory_text) -> SemanticPlan:
+        plan = await super().plan(images, memory_text)
+        payload = plan.model_dump()
+        payload["candidates"][0]["label"] = "main historic building"
+        payload["candidates"][0]["semantic_role"] = "architecture_primary"
+        return SemanticPlan.model_validate(payload)
+
+
+class MicroIslandFirstSegmenter(FakeSegmenter):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def segment(self, image: Image.Image, box_px) -> SegmentationResult:
+        self.calls += 1
+        if self.calls == 1:
+            mask = np.zeros((image.height, image.width), dtype=bool)
+            mask[10:50, 10:50] = True
+            mask[55, 70] = True
+            return SegmentationResult(mask=mask, score=0.9, prompt_box_px=box_px)
+        return super().segment(image, box_px)
+
+
 def test_bbox_mask_union_and_rgba_png() -> None:
     assert gemini_box_to_px(
         SemanticPlan.model_validate(
@@ -253,6 +281,38 @@ def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
     ) is None
     with pytest.raises(ValueError, match="at least one"):
         QualityPolicy(mode="enforce")
+
+
+def test_architecture_cleanup_removes_only_micro_islands_at_full_resolution() -> None:
+    mask = np.zeros((100, 100), dtype=bool)
+    mask[10:50, 10:50] = True
+    mask[90, 90] = True
+
+    cleaned = clean_architecture_micro_islands(mask, max_removed_area_ratio=0.001)
+
+    assert cleaned.component_count == 2
+    assert cleaned.applied
+    assert cleaned.removed_area_ratio == pytest.approx(1 / 1601)
+    assert cleaned.mask.sum() == 1600
+    assert not cleaned.mask[90, 90]
+
+    detached = np.array(mask, copy=True)
+    detached[90:92, 90:92] = True
+    rejected = clean_architecture_micro_islands(detached, max_removed_area_ratio=0.001)
+    assert rejected.component_count == 2
+    assert not rejected.applied
+    assert rejected.removed_area_ratio > 0.001
+    assert np.array_equal(rejected.mask, detached)
+
+
+def test_architecture_profile_schema_requires_semantic_role() -> None:
+    default_schema = _semantic_plan_schema()
+    architecture_schema = _semantic_plan_schema(require_semantic_role=True)
+    default_candidate = default_schema["properties"]["candidates"]["items"]
+    architecture_candidate = architecture_schema["properties"]["candidates"]["items"]
+
+    assert "semantic_role" not in default_candidate["required"]
+    assert "semantic_role" in architecture_candidate["required"]
 
 
 def test_layout_normalization_uses_contiguous_layer_indexes() -> None:
@@ -511,3 +571,34 @@ async def test_physical_v2_rejects_fragmented_subject_without_bridge() -> None:
     assert generator.last_metrics.physical_ready.background_missing
     first = generator.last_metrics.candidates[0]
     assert first.failure_reason == "not_single_component"
+
+
+@pytest.mark.anyio
+async def test_architecture_profile_keeps_primary_building_and_cleans_micro_island() -> None:
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=MicroIslandFirstSegmenter(),
+        candidate_count=4,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v3_architecture",
+        semantic_planner=ArchitecturePlanner(candidate_count=4),
+        composer=FakeComposer(),
+    )
+
+    result = await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    assert len(result.artwork["layers"]) == 4
+    primary = generator.last_metrics.candidates[0]
+    assert primary.semantic_role == "architecture_primary"
+    assert primary.architecture_cleanup.startswith("removed_micro_islands:")
+    assert primary.success
+    assert any(layer["label"] == "main historic building" for layer in result.artwork["layers"])

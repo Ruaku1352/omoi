@@ -20,6 +20,8 @@ class AcceptedLayer:
     asset: AssetBlob
     importance: float
     kind: str = "subject"
+    # Semantic planner内部の選定情報。Artwork Dataへはserializeしない。
+    semantic_role: str = "general"
 
 
 @dataclass(frozen=True)

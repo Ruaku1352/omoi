@@ -36,6 +36,17 @@ class MaskDiagnostics:
 
 
 @dataclass(frozen=True)
+class ArchitectureMaskCleanup:
+    """主建物Maskに対するfull-resolutionの孤立成分判定結果。"""
+
+    mask: np.ndarray
+    component_count: int
+    largest_component_ratio: float
+    removed_area_ratio: float
+    applied: bool
+
+
+@dataclass(frozen=True)
 class QualityPolicy:
     """校正済み設定を明示した時だけ働く候補置換policy。既定は観測のみ。"""
 
@@ -168,12 +179,59 @@ def diagnose_mask(mask: np.ndarray, *, max_side: int) -> MaskDiagnostics:
     )
 
 
+def clean_architecture_micro_islands(
+    mask: np.ndarray, *, max_removed_area_ratio: float
+) -> ArchitectureMaskCleanup:
+    """微小な孤立成分だけを最大成分から除去する。
+
+    8近傍でfull-resolutionの連結成分を調べる。閾値超過の分離領域は残して
+    ``applied=False`` を返すため、呼び出し元は物理Layerとして拒否できる。
+    形状の橋渡しや成分間の結合は一切行わない。
+    """
+
+    if not 0 <= max_removed_area_ratio <= 1:
+        raise ValueError("max_removed_area_ratio must be between 0 and 1")
+    if mask.ndim != 2 or not mask.size or not mask.any():
+        return ArchitectureMaskCleanup(mask, 0, 0, 0, False)
+
+    components = _connected_components(mask)
+    foreground = sum(component.shape[0] for component in components)
+    largest = max(components, key=lambda component: component.shape[0])
+    largest_area = largest.shape[0]
+    removed_area_ratio = (foreground - largest_area) / foreground
+    if len(components) == 1:
+        return ArchitectureMaskCleanup(mask, 1, 1, 0, False)
+    if removed_area_ratio > max_removed_area_ratio:
+        return ArchitectureMaskCleanup(
+            mask,
+            len(components),
+            largest_area / foreground,
+            removed_area_ratio,
+            False,
+        )
+    cleaned = np.zeros_like(mask, dtype=bool)
+    cleaned[largest[:, 0], largest[:, 1]] = True
+    return ArchitectureMaskCleanup(
+        cleaned,
+        len(components),
+        largest_area / foreground,
+        removed_area_ratio,
+        True,
+    )
+
+
 def _component_areas(mask: np.ndarray) -> list[int]:
     """PoC診断だけで使うdependency-freeな8近傍連結成分の面積集計。"""
 
+    return [component.shape[0] for component in _connected_components(mask)]
+
+
+def _connected_components(mask: np.ndarray) -> list[np.ndarray]:
+    """dependency-freeな8近傍連結成分。full-resolution cleanupにも利用する。"""
+
     height, width = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
-    areas: list[int] = []
+    components: list[np.ndarray] = []
     for start_y, start_x in np.argwhere(mask):
         y = int(start_y)
         x = int(start_x)
@@ -181,14 +239,14 @@ def _component_areas(mask: np.ndarray) -> list[int]:
             continue
         visited[y, x] = True
         stack = [(y, x)]
-        area = 0
+        points: list[tuple[int, int]] = []
         while stack:
             current_y, current_x = stack.pop()
-            area += 1
+            points.append((current_y, current_x))
             for neighbor_y in range(max(0, current_y - 1), min(height, current_y + 2)):
                 for neighbor_x in range(max(0, current_x - 1), min(width, current_x + 2)):
                     if mask[neighbor_y, neighbor_x] and not visited[neighbor_y, neighbor_x]:
                         visited[neighbor_y, neighbor_x] = True
                         stack.append((neighbor_y, neighbor_x))
-        areas.append(area)
-    return areas
+        components.append(np.asarray(points, dtype=np.intp))
+    return components

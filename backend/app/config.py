@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # ---- AI ----
     gemini_api_key: str | None = None
     gemini_model: str | None = None
-    # physical_layer_v2がReal生成の既定。baseline / v1はPoC比較用に残す。
+    # physical_layer_v2がReal生成の既定。v3 architectureはPoC比較用に残す。
     semantic_profile: str = "physical_layer_v2"
     segmentation_backend: str = "efficient_sam_onnx"
     efficientsam_model_path: Path | None = None
@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # physical_layer_v2の内部構図制約。Artwork Data / 共通Contractには出さない。
     physical_scene_anchor_min_scale: float = Field(default=0.60, gt=0, le=1)
     physical_max_bottom_gap: float = Field(default=0.30, ge=0, le=1)
+    # physical_layer_v3_architectureだけで使う、主建物Maskの微小孤立成分除去上限。
+    # 閾値を超える分離領域は結合せず不採用にする。
+    architecture_micro_island_max_area_ratio: float = Field(default=0.001, ge=0, le=1)
     # Quality Gateは校正前は観測のみ。値はPoC後に環境変数で明示設定する。
     quality_gate_mode: str = "observe"
     quality_max_component_count: int | None = Field(default=None, ge=1)
