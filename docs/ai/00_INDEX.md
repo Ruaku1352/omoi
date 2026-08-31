@@ -32,6 +32,13 @@ EfficientSAM-Tiが「どこまでがその対象か」を切り、
 Pillow/Pythonが「作品として使えるLayer」にする。
 ```
 
+## physical-ready構図におけるAIの責務
+
+`physical_layer_v2` は、背景として機能する範囲Layerを優先し、通常Layerを単一連結に保ち、
+Canvas下端からの浮遊量を抑えるAI内部Profileである。診断はprivate PoC debugだけへ残し、
+Artwork Data・共通Contractへ製造情報は追加しない。支柱・土台・スロット・STL・実寸・組立は
+Physical Output担当の責務である。
+
 ## 状態
 
 - 意味理解・構成モデル: Gemini Developer API。具体的な `GEMINI_MODEL` は【PoC後FIX】

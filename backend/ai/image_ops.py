@@ -101,6 +101,18 @@ def mask_to_rgba_png(
     return output.getvalue(), cropped.width, cropped.height
 
 
+def crop_to_rgba_png(image: Image.Image, box: BoxPx) -> tuple[bytes, int, int]:
+    """範囲Layer用に、指定範囲を不透明RGBA PNGとして切り出す。"""
+
+    x0, y0, x1, y1 = box
+    if not (0 <= x0 < x1 <= image.width and 0 <= y0 < y1 <= image.height):
+        raise AiError("Crop範囲が画像内に収まりません")
+    cropped = image.crop(box).convert("RGBA")
+    output = BytesIO()
+    cropped.save(output, format="PNG", optimize=True)
+    return output.getvalue(), cropped.width, cropped.height
+
+
 def image_to_png(image: Image.Image) -> bytes:
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)

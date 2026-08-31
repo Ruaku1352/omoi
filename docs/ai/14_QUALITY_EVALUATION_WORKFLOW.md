@@ -34,7 +34,7 @@ uv run --project backend python scripts/run_quality_evaluation.py `
   --max-e2e-runs 24
 ```
 
-既定では各caseを `baseline` と `physical_layer_v1` で比較する。予定数が上限を超える場合は
+既定では各caseを `baseline` と `physical_layer_v2` で比較する。予定数が上限を超える場合は
 実行せず失敗する。Real Geminiは最大24 E2E run（Semantic + Compositionの最大48呼出し）に
 制限する。
 
@@ -52,3 +52,10 @@ uv run --project backend python scripts/run_quality_evaluation.py `
 
 - Contract変更、Frontend変更、SAM 2.1自動fallback、largest componentだけを残す後処理。
 - 製造上のmm閾値の決定。これはPhysical Output PoCの結果を待つ。
+
+## physical-ready構図との境界
+
+品質評価ではSemantic / Source / BBox / Mask / Layer / Compositionを観測する。`physical_layer_v2`
+の背景範囲・単一連結・浮遊量はAIの構図制約であり、診断はPoC debugだけへ記録する。組み立てPoCで
+意味的な正しさや物理強度・耐久性を合格判定から外すことは、AI品質評価を省略する意味ではない。
+支柱・土台・スロット・STL・実寸・組立はPhysical Output担当の検証範囲である。

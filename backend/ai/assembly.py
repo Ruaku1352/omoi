@@ -19,6 +19,7 @@ class AcceptedLayer:
     source_layer_id: str
     asset: AssetBlob
     importance: float
+    kind: str = "subject"
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ def normalize_composition(
     canvas_aspect_ratio: float,
     min_scale: float,
     max_scale: float,
+    minimum_scales: dict[str, float] | None = None,
 ) -> dict[str, dict[str, float | int]]:
     """Geminiの構図を検証し、全LayerをCanvas内へ収めて正規化する。"""
 
@@ -60,8 +62,19 @@ def normalize_composition(
             asset.width_px / (canvas_aspect_ratio * asset.height_px),
         )
         upper_scale = min(max_scale, fit_scale)
-        # 極端な縦長AssetではCanvas内収容をminScaleより優先する。
-        lower_scale = min(min_scale, upper_scale)
+        explicit_minimum = (minimum_scales or {}).get(placement.candidate_id)
+        requested_minimum = explicit_minimum if explicit_minimum is not None else min_scale
+        if requested_minimum <= 0:
+            raise AiError("Layerごとの最小scale設定が不正です")
+        # 極端な縦長AssetではCanvas内収容をminScaleより優先する。ただし、
+        # scene anchor等の明示的な最小表示幅を満たせない候補は採用しない。
+        if explicit_minimum is not None and requested_minimum > upper_scale:
+            raise AiError("Layerが必要な表示幅でCanvas内に収まりません")
+        lower_scale = (
+            max(min_scale, requested_minimum)
+            if explicit_minimum is not None
+            else min(min_scale, upper_scale)
+        )
         scale = _clamp_finite(
             placement.scale,
             lower_scale,
@@ -89,6 +102,55 @@ def normalize_composition(
             "layerIndex": layer_index,
         }
     return result
+
+
+def bottom_gaps(
+    accepted_layers: list[AcceptedLayer],
+    composition: dict[str, dict[str, float | int]],
+    *,
+    canvas_aspect_ratio: float,
+) -> dict[str, float]:
+    """各Layerの下端からCanvas下端までの正規化距離を返す。"""
+
+    accepted_by_id = {layer.candidate_id: layer for layer in accepted_layers}
+    if set(composition) != set(accepted_by_id):
+        raise AiError("Artwork構図とLayerが一致しません")
+    gaps: dict[str, float] = {}
+    for candidate_id, layout in composition.items():
+        layer = accepted_by_id[candidate_id]
+        scale = float(layout["scale"])
+        display_height = scale * canvas_aspect_ratio * layer.asset.height_px / layer.asset.width_px
+        gaps[candidate_id] = 1 - (float(layout["y"]) + display_height / 2)
+    return gaps
+
+
+def clamp_bottom_gaps(
+    accepted_layers: list[AcceptedLayer],
+    composition: dict[str, dict[str, float | int]],
+    *,
+    canvas_aspect_ratio: float,
+    max_bottom_gap: float,
+) -> tuple[dict[str, dict[str, float | int]], dict[str, float]]:
+    """上限を超えたLayerだけを下げ、補正量を内部PoC診断用に返す。"""
+
+    if not 0 <= max_bottom_gap <= 1:
+        raise AiError("Canvas下端からの最大距離設定が不正です")
+    result = {candidate_id: dict(layout) for candidate_id, layout in composition.items()}
+    corrections: dict[str, float] = {}
+    accepted_by_id = {layer.candidate_id: layer for layer in accepted_layers}
+    for candidate_id, gap in bottom_gaps(
+        accepted_layers, result, canvas_aspect_ratio=canvas_aspect_ratio
+    ).items():
+        if gap <= max_bottom_gap:
+            continue
+        layer = accepted_by_id[candidate_id]
+        scale = float(result[candidate_id]["scale"])
+        half_height = scale * canvas_aspect_ratio * layer.asset.height_px / layer.asset.width_px / 2
+        previous_y = float(result[candidate_id]["y"])
+        corrected_y = max(half_height, min(1 - half_height, 1 - max_bottom_gap - half_height))
+        result[candidate_id]["y"] = corrected_y
+        corrections[candidate_id] = corrected_y - previous_y
+    return result, corrections
 
 
 def assemble_artwork(
