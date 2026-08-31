@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 
 import numpy as np
@@ -19,7 +20,7 @@ from ai.quality import (
     clean_architecture_micro_islands,
     diagnose_mask,
 )
-from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult
+from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult, SegmentationTimings
 from ai.types import AssetBlob, InputPhoto
 from app.config import Settings
 from app.models.artwork import Artwork
@@ -173,6 +174,22 @@ class RejectFirstSegmenter(FakeSegmenter):
         return super().segment(image, box_px)
 
 
+class TimedRetrySegmenter(RejectFirstSegmenter):
+    def segment(self, image: Image.Image, box_px) -> SegmentationResult:
+        result = super().segment(image, box_px)
+        return SegmentationResult(
+            mask=result.mask,
+            score=result.score,
+            prompt_box_px=result.prompt_box_px,
+            timings=SegmentationTimings(
+                resize_elapsed_ms=1,
+                tensor_preparation_elapsed_ms=2,
+                onnx_inference_elapsed_ms=3,
+                mask_restore_elapsed_ms=4,
+            ),
+        )
+
+
 class FragmentedFirstSegmenter(FakeSegmenter):
     """最初の候補だけを意味のない2島にし、次候補への置換を検証する。"""
 
@@ -276,9 +293,9 @@ def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
     quality = assess_mask(mask, (0, 0, 20, 20), 0.9, diagnostics_max_side=20)
     assert quality.accepted
     assert quality.diagnostics == diagnostics
-    assert QualityPolicy().rejection_reason(
-        diagnostics, bbox_coverage=1, border_touch=False
-    ) is None
+    assert (
+        QualityPolicy().rejection_reason(diagnostics, bbox_coverage=1, border_touch=False) is None
+    )
     with pytest.raises(ValueError, match="at least one"):
         QualityPolicy(mode="enforce")
 
@@ -488,6 +505,94 @@ def test_efficient_sam_missing_model_fails_without_download(tmp_path) -> None:
         EfficientSamOnnxSegmenter(tmp_path / "missing.onnx", 1024)
 
 
+def test_efficient_sam_records_separate_internal_timings(tmp_path, monkeypatch) -> None:
+    class FakeInput:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class FakeSession:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def get_inputs(self):
+            return [
+                FakeInput("batched_images"),
+                FakeInput("batched_point_coords"),
+                FakeInput("batched_point_labels"),
+            ]
+
+        def run(self, _outputs, _inputs):
+            return (
+                np.ones((1, 1, 1, 2, 4), dtype=np.float32),
+                np.array([[[0.9]]], dtype=np.float32),
+            )
+
+    model_path = tmp_path / "model.onnx"
+    model_path.touch()
+    monkeypatch.setattr("ai.segmentation.ort.InferenceSession", FakeSession)
+
+    result = EfficientSamOnnxSegmenter(model_path, max_side=4).segment(
+        Image.new("RGB", (8, 4), "white"), (1, 1, 7, 3)
+    )
+
+    assert result.timings.resize_elapsed_ms is not None
+    assert result.timings.tensor_preparation_elapsed_ms is not None
+    assert result.timings.onnx_inference_elapsed_ms is not None
+    assert result.timings.mask_restore_elapsed_ms is not None
+    assert all(
+        elapsed >= 0
+        for elapsed in (
+            result.timings.resize_elapsed_ms,
+            result.timings.tensor_preparation_elapsed_ms,
+            result.timings.onnx_inference_elapsed_ms,
+            result.timings.mask_restore_elapsed_ms,
+        )
+    )
+
+
+@pytest.mark.anyio
+async def test_performance_logs_separate_retry_and_candidate_pipeline(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="ai.gemini")
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=TimedRetrySegmenter(),
+        candidate_count=4,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=1,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_planner=FakePlanner(),
+        composer=FakeComposer(),
+    )
+
+    await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("stage=input.decode_preprocess" in message for message in messages)
+    assert any("stage=source_asset_build" in message for message in messages)
+    assert any("stage=candidate.bbox_convert" in message for message in messages)
+    assert any(
+        "stage=candidate.segmentation_attempt" in message
+        and "candidate_id=candidate-0" in message
+        and "component_id=component-0" in message
+        and "attempt=1" in message
+        for message in messages
+    )
+    assert any("stage=efficient_sam.onnx_inference" in message for message in messages)
+    assert any("stage=candidate.mask_union" in message for message in messages)
+    assert any("stage=candidate.rgba_layer_build" in message for message in messages)
+    assert any("stage=layer_selection" in message for message in messages)
+    assert any("stage=composition.normalize_constraint" in message for message in messages)
+    assert any("stage=artwork_assembly" in message for message in messages)
+    assert any("stage=ai.total" in message and "outcome=ok" in message for message in messages)
+
+
 def test_mvp_settings_default_to_four_layers_and_2l_landscape() -> None:
     settings = Settings(_env_file=None)
 
@@ -534,10 +639,14 @@ async def test_physical_v2_uses_rectangular_scene_anchor_and_limits_floating() -
     assert diagnostics.y_corrections
     assert all(gap <= 0.30 + 1e-9 for _candidate_id, gap in diagnostics.final_bottom_gaps)
     anchor_metric = next(
-        metric for metric in generator.last_metrics.candidates if metric.candidate_id == "scene-anchor"
+        metric
+        for metric in generator.last_metrics.candidates
+        if metric.candidate_id == "scene-anchor"
     )
     assert anchor_metric.layer_build_mode == "rectangular_crop"
-    anchor_asset = next(asset for asset in result.assets if asset.asset_id == artwork.layers[0].asset.asset_id)
+    anchor_asset = next(
+        asset for asset in result.assets if asset.asset_id == artwork.layers[0].asset.asset_id
+    )
     with Image.open(BytesIO(anchor_asset.data)) as image:
         assert image.mode == "RGBA"
         assert image.getchannel("A").getextrema() == (255, 255)
