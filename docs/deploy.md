@@ -125,7 +125,12 @@ export PROJECT_ID=omoi-506412
 export REGION=asia-northeast1
 export SERVICE=omoi-backend
 
+# 非同期構成で使う（§6）。Bucket名は自由だがProject内で一意にする
+export JOB_INPUT_BUCKET="${PROJECT_ID}-omoi-job-input"
+
 gcloud config set project "$PROJECT_ID"
+
+export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 
 gcloud services enable \
   run.googleapis.com \
@@ -149,10 +154,15 @@ Imageは `asia-northeast1-docker.pkg.dev/omoi-506412/omoi/omoi-backend-real:late
 Real AI Runtimeは `GEMINI_API_KEY` 環境変数を必要とする。Secret値はRepository・Docker Build
 Context・資料へ置かない。
 
-**採用した構成**: Secret Manager の `GEMINI_API_KEY` を `:latest` でbindする。
-Deployコマンドの `--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest` がそれにあたる。
+**採用した構成**: Secret Manager の **`gemini-api-key`** を `:latest` でbindする。
+Deployコマンドの `--set-secrets=GEMINI_API_KEY=gemini-api-key:latest` がそれにあたる
+（左が環境変数名、右がSecret resource名）。
 Runtime Service Accountは既定のCompute Service Accountを使い、
 そこへ `roles/secretmanager.secretAccessor` を付与しておく。
+
+非同期構成では Worker Endpoint保護用の `task-worker-token` も要る（§6.6で作る）。
+**Deploy時は2つのSecretを1つの `--set-secrets` へまとめて渡す。**
+`--set-secrets` も `--set-env-vars` と同じ「置き換え」なので、片方だけ渡すともう片方が外れる。
 
 ### 3.3 共通の環境変数ルール
 
@@ -219,7 +229,28 @@ gcloud run deploy "$SERVICE" \
 
 **その場合も `CORS_ORIGINS` は省略しない。**
 
-### 3.5 Real AI Deploy（Model Artifactあり）
+### 3.5 Real AI + 非同期 Deploy（本番構成）
+
+**このNodeが本番Deployの正本。** Real AIのImage BuildもJob / Cloud Tasksの環境変数も
+ここに1つのコマンドとしてまとまっている。§6はその前提となるProvisioning。
+
+#### 実行順（上から順に）
+
+| # | やること | どこ | Owner権限 |
+|---|---|---|---|
+| 1 | API有効化 / Artifact Registry作成 | §3.1 | 不要 |
+| 2 | Secret作成（`gemini-api-key`） | §3.2 | 作成は不要 / **IAM付与は必要** |
+| 3 | Firestore作成 + `roles/datastore.user` | §6.3 | **IAM付与は必要** |
+| 4 | GCS Bucket作成 + Lifecycle + IAM | §6.4 | **IAM付与は必要** |
+| 5 | Cloud Tasks Queue + invoker SA + `roles/run.invoker` | §6.5 | **IAM付与は必要** |
+| 6 | Worker Token Secret作成 + IAM | §6.6 | **IAM付与は必要** |
+| 7 | Model Artifact取得 → Image Build | §3.5 手順1–2 | 不要 |
+| 8 | Deploy（2段階） | §3.5 手順3 | 不要 |
+| 9 | 動作確認 | §3.6 / §6.8 | 不要 |
+
+**`add-iam-policy-binding` を含む手順はEditor権限では実行できない。**
+Editorでも `gcloud run deploy` 自体は通るが `Setting IAM policy failed` の警告が出る
+（既存のIAM設定は保持されるので実害はない）。3〜6のIAM付与はOwnerに依頼する。
 
 #### Runtime / Packaging要件（AI側の要求）
 
@@ -254,20 +285,51 @@ Build設定はリポジトリルートの [`cloudbuild.real-ai.yaml`](../cloudbu
 asia-northeast1-docker.pkg.dev/omoi-506412/omoi/omoi-backend-real:latest
 ```
 
-**3. Deployする**
+**3. Deployする（2段階）**
+
+`CLOUD_TASKS_WORKER_BASE_URL` はCloud Run自身のURLなので、**初回Deployの時点では
+まだ確定していない**。1段階目でURLを確定させてから、2段階目で本設定へ切り替える。
+Deployは何度でもやり直せる。
+
+**3-a. URLを確定させる**（Job関連は使わない最小構成で一度上げる）
 
 ```bash
 gcloud run deploy "$SERVICE" \
   --image asia-northeast1-docker.pkg.dev/$PROJECT_ID/omoi/omoi-backend-real:latest \
   --region "$REGION" \
   --no-allow-unauthenticated \
-  --cpu=1 --memory=2Gi --concurrency=1 \
+  --cpu=1 --memory=2Gi --concurrency=4 \
   --min-instances=0 --max-instances=1 --timeout=600 \
-  --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest \
-  "--set-env-vars=^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=gemini-3.5-flash-lite|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
+  "--set-env-vars=^|^APP_ENV=deployed|MOCK_AI=true|JOB_STORE_BACKEND=memory|TASK_QUEUE_BACKEND=inline|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
+
+export SERVICE_URL=$(gcloud run services describe "$SERVICE" \
+  --region "$REGION" --format='value(status.url)')
+echo "$SERVICE_URL"
 ```
 
-`--set-env-vars` は1回だけ。`^|^` は `CORS_ORIGINS` のカンマを守るため必須（3.3参照）。
+**3-b. 本設定でDeployする**
+
+```bash
+gcloud run deploy "$SERVICE" \
+  --image asia-northeast1-docker.pkg.dev/$PROJECT_ID/omoi/omoi-backend-real:latest \
+  --region "$REGION" \
+  --no-allow-unauthenticated \
+  --cpu=1 --memory=2Gi --concurrency=4 \
+  --min-instances=0 --max-instances=1 --timeout=600 \
+  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest,TASK_WORKER_TOKEN=task-worker-token:latest" \
+  "--set-env-vars=^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=gemini-3.5-flash-lite|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app|JOB_STORE_BACKEND=firestore|TASK_QUEUE_BACKEND=cloud_tasks|FIRESTORE_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_LOCATION=asia-northeast1|CLOUD_TASKS_WORKER_BASE_URL=$SERVICE_URL|CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=omoi-task-invoker@$PROJECT_ID.iam.gserviceaccount.com|JOB_INPUT_BACKEND=gcs|GCS_BUCKET=$JOB_INPUT_BUCKET"
+```
+
+- `--set-env-vars` は**1回だけ**。`^|^` は `CORS_ORIGINS` のカンマを守るため必須（3.3参照）
+- `--set-secrets` も**1回だけ**。2つのSecretをカンマで並べる。値にカンマが無いので `^|^` は不要
+- `ASSET_BACKEND` は**渡さない**（既定の `local` のまま）。理由は下記
+
+#### ⚠ `ASSET_BACKEND=gcs` はまだ有効化しない
+
+Asset用GCS Bucketは**共通契約に関わるため有効化しない**。Bucket名・公開URLか署名付きURLか・
+保持期間（初期案2週間）が**チーム確認待ち**（§5 / §6.4）。
+上記コマンドで渡している `GCS_BUCKET` / `JOB_INPUT_BACKEND=gcs` は
+**Job入力写真の一時置き場**であって、Asset配信のGCS化ではない。
 
 #### ⚠ `--source .` は使えない
 
@@ -303,6 +365,14 @@ Deploy自体はEditorでできるが `Setting IAM policy failed` の警告が出
 
 実測後は `MOCK_AI=true` へ戻してから公開を開ける。
 
+**⚠ ここはFrontend E2Eと衝突する。** `--no-allow-unauthenticated` のままだと
+BrowserのFrontendからは呼べない（Cloud Tasksは invoker SA を持つので影響しない）。
+Frontendから通しで確認する場合は `--allow-unauthenticated` が要るが、
+**`MOCK_AI=false` のまま開けると誰でもGemini課金を発生させられる。**
+どちらで運用するかはチームで決める。判断がつくまでは上記コマンドどおり
+`--no-allow-unauthenticated` を既定とし、Frontend確認時だけ一時的に開けて、
+終わったら閉じるか `MOCK_AI=true` へ戻す。
+
 #### ⚠ Cloud Runのリクエストサイズ上限は32MB（拡張不可）
 
 元サイズの写真5枚だと超えることがある（実測で34MB → `413`）。
@@ -310,9 +380,17 @@ Deploy自体はEditorでできるが `Setting IAM policy failed` の警告が出
 
 #### Deploy設定の根拠
 
-- CPU 1 / Memory 2GiB / Concurrency 1 / Min instances 0 は
-  [`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`](ai/09_CLOUD_RUN_CONSTRAINTS.md) が正本
-- `--timeout=600` は**初回測定候補であってFIX値ではない**。同期Real AI E2Eは数分規模
+| 設定 | 値 | 根拠 |
+|---|---|---|
+| `--cpu` / `--memory` | 1 / 2Gi | [`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`](ai/09_CLOUD_RUN_CONSTRAINTS.md) が正本 |
+| `--min-instances` | 0 | 同上 |
+| `--concurrency` | **4** | 非同期化に伴い変更。理由は §6.7 |
+| `--max-instances` | 1 | LocalDirAssetStoreが複数Instanceで破綻するため上げられない（§4 / §6.7） |
+| `--timeout` | 600 | **初回測定候補であってFIX値ではない** |
+
+`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md` のConcurrency 1 は同期実行前提の値。
+非同期化でWorkerとPollingが同一Instanceに同居するため4へ上げている（§6.7）。
+CPU / Memory / Min instances は同Documentが正本のまま。
 
 #### 実測値
 
@@ -335,9 +413,17 @@ export SERVICE_URL=$(gcloud run services describe "$SERVICE" \
   --region "$REGION" --format='value(status.url)')
 
 curl "$SERVICE_URL/health"
+```
 
+**`POST /api/v1/artworks/generate` は非同期化済みで、`202` + `{"jobId": "..."}` を返す。**
+生成成功Responseはこの場では返らない。非同期経路の通しの確認は **§6.8** を使う。
+
+Job / Cloud Tasksを挟まず1リクエストで完結させたい場合（切り分け用）は、
+同期用に残してある内部Endpointを叩く。`/api/v1` 配下ではなくOpenAPIにも出ない（§6.1）。
+
+```bash
 curl -F photos=@contracts/assets/source-p1.jpg -F memoryText=海に行った日 \
-  "$SERVICE_URL/api/v1/artworks/generate"
+  "$SERVICE_URL/internal/artworks/generate-sync"
 ```
 
 `MOCK_AI=true` でDeployした場合は生成成功Responseが返るはず。
@@ -346,7 +432,7 @@ Real AI経路を使う。設定またはProvider処理が失敗した場合はMo
 API Errorを返す。
 （黙ってMockへ落ちない設計どおり。AGENTS.md §9）。
 
-**上の2つはCORSを検証しない。** `CORS_ORIGINS` の渡し漏れは `curl` では絶対に見つからない
+**上のcurlはCORSを検証しない。** `CORS_ORIGINS` の渡し漏れは `curl` では絶対に見つからない
 （Server側は `200` を返し、足りないのはResponse Headerだけ）。**必ず別途確認する。**
 
 ```bash
@@ -363,10 +449,12 @@ curl -s -D - -o /dev/null -X OPTIONS "$SERVICE_URL/api/v1/artworks/generate" \
 
 Mockは3.4を再実行する。
 
-Real AIはコード変更があれば3.5の手順2（`gcloud builds submit`）から、
-環境変数だけの変更なら手順3（`gcloud run deploy --image ...`）から再実行する。
+Real AI + 非同期はコード変更があれば3.5の手順2（`gcloud builds submit`）から、
+環境変数だけの変更なら**手順3-b だけ**を再実行する（3-a はURL確定用なので初回のみ）。
 Model Artifactは `backend/.models/` に残っていれば手順1をやり直す必要はない
 （Cloud Shellがリセットされた場合は再取得する）。
+
+Provisioning（§6.3〜6.6）は初回のみ。再Deployでやり直す必要はない。
 
 **環境変数を1つだけ変えたいときも、各Deployコマンドから変数を削らないこと。**
 必要な変数だけを書いた短縮版を作ると、書かなかった変数が消える（3.3の警告）。
@@ -582,23 +670,51 @@ gcloud secrets add-iam-policy-binding task-worker-token \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-### 6.7 Deploy（非同期・Real AI・Cloud Tasks経路の例）
+### 6.7 Concurrency / Max instances の決定
 
-3.3の警告どおり、必要な環境変数は1回の`--set-env-vars`にすべてまとめる。
+**Deployコマンドは §3.5 手順3 が正本。** ここには重複して置かない。
+§6.3〜6.6 のProvisioningを終えてから §3.5 手順3 を実行する。
 
-```bash
-gcloud run deploy omoi-backend \
-  --source . \
-  --region asia-northeast1 \
-  --allow-unauthenticated \
-  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest,TASK_WORKER_TOKEN=task-worker-token:latest" \
-  --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=false|CORS_ORIGINS=https://omoi-manami-test-77989.web.app|JOB_STORE_BACKEND=firestore|TASK_QUEUE_BACKEND=cloud_tasks|FIRESTORE_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_LOCATION=asia-northeast1|CLOUD_TASKS_WORKER_BASE_URL=$SERVICE_URL|CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=omoi-task-invoker@$PROJECT_ID.iam.gserviceaccount.com|JOB_INPUT_BACKEND=gcs|GCS_BUCKET=$JOB_INPUT_BUCKET"
-```
+初回Deploy時点で `CLOUD_TASKS_WORKER_BASE_URL`（Cloud Run自身のURL）が確定しないため、
+§3.5 手順3 は **3-a でURLを確定 → 3-b で本設定** の2段階になっている。
 
-`CLOUD_TASKS_WORKER_BASE_URL`は初回Deploy時点ではまだ確定しないので
-（`gcloud run services describe`で得るCloud RunのURL自体）、初回は
-`MOCK_AI=true` / `TASK_QUEUE_BACKEND=inline`でDeployしてURLを確定させてから、
-そのURLを使って本設定へ切り替えるのが安全（Deployは何度でもやり直せる）。
+#### `--concurrency=4` にした理由
+
+**非同期化により、1つのInstanceで2種類のRequestが同時に走る。**
+
+| Request | 特性 |
+|---|---|
+| Worker（Cloud Tasks → `POST /internal/jobs/{jobId}/run`） | **約4分Instanceを占有する** |
+| Polling（Frontend → `GET /api/v1/jobs/{jobId}`） | 2秒おき、1 Jobあたり120回程度。1回は軽い |
+
+`--concurrency=1` だと、**Workerが占有している約4分間 Pollingが1件も処理できない。**
+`--max-instances=1` なので別Instanceも立たず、Frontendは進捗を取得できないまま待つ。
+Pollingを捌けるだけの余裕として4にした。
+
+#### `--max-instances=1` を上げなかった理由
+
+上げれば同時実行の余裕は増えるが、**`LocalDirAssetStore` が破綻する。**
+Asset を書いたInstanceと配信するInstanceが分かれると、生成は成功したのに
+画像だけ404になる（§4参照）。
+
+つまり **max-instancesを上げるにはAssetのGCS化が必須条件**になる。
+GCS化はBucket名・URL方式・保持期間がチーム確認待ちで、共通契約に関わる（§5）。
+そこへ先に踏み込まず、**まずconcurrencyを上げる形で動かす**方針とした。
+
+#### メモリが不足したときの次の選択肢
+
+1 Instanceに最大4 Requestが同居するので、Peak Memoryは同期時より増える。
+`2Gi` で足りない場合は上から順に検討する。
+
+| # | 手段 | 制約 |
+|---|---|---|
+| 1 | `--memory` を 4Gi へ上げる | **1 vCPUでの上限が4GiB**（`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`）。まずここ |
+| 2 | `--cpu=2 --memory=8Gi` へ上げる | 2 vCPUなら8GiBまで。費用が上がる |
+| 3 | `--concurrency` を 2〜3 へ下げる | Pollingの詰まりと引き換え。Frontendのポーリング間隔を延ばす調整とセット |
+| 4 | AssetをGCS化して `--max-instances` を上げる | **共通契約に関わるためチーム合意が先**（§5） |
+
+Instanceがmemory limitを超えると terminate されるため、
+`failed` が出た場合はError Codeだけでなく **Cloud Runのログでmemory超過を確認する。**
 
 ### 6.8 確認
 
