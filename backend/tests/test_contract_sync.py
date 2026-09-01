@@ -23,6 +23,8 @@ SCHEMA_FILES = (
     "artwork.schema.json",
     "asset-manifest.schema.json",
     "generate-success-response.schema.json",
+    "generate-accepted-response.schema.json",
+    "job-status-response.schema.json",
 )
 
 
@@ -45,6 +47,58 @@ def test_response_satisfies_contract_schemas(client: TestClient, photo_upload) -
     # （非同期化方針Doc: 新しい形を作らずそのまま同梱する）。
     assert body["status"] == "completed"
     _validator("generate-success-response.schema.json").validate(body["result"])
+
+
+def test_generate_returns_accepted_response_satisfying_contract(
+    client: TestClient, photo_upload
+) -> None:
+    body = client.post("/api/v1/artworks/generate", files=[photo_upload]).json()
+
+    _validator("generate-accepted-response.schema.json").validate(body)
+
+
+def test_job_pending_status_satisfies_contract_schema() -> None:
+    """`pending`はstageを持たない（Schema側の`allOf`制約）。
+
+    以前は`pending`/`processing`を同じModelで表現していて、`pending`でも
+    stageを常に含めてしまいSchema違反になっていた（実際のCloud Tasks経路で
+    POST直後・Worker着手前のpendingを踏むと発生する）。
+    """
+
+    from app.models.job import JobPendingStatus
+
+    body = JobPendingStatus(job_id="job-1", status="pending").model_dump(
+        by_alias=True, exclude_none=True
+    )
+    _validator("job-status-response.schema.json").validate(body)
+
+
+def test_job_processing_status_satisfies_contract_schema() -> None:
+    from app.models.job import JobProcessingStatus
+
+    body = JobProcessingStatus(job_id="job-1", status="processing", stage="analyzing").model_dump(
+        by_alias=True, exclude_none=True
+    )
+    _validator("job-status-response.schema.json").validate(body)
+
+
+def test_job_failed_status_satisfies_contract_schema() -> None:
+    from app.models.job import JobErrorBody, JobFailedStatus
+
+    status = JobFailedStatus(
+        job_id="job-1",
+        status="failed",
+        error=JobErrorBody(code="AI_TIMEOUT", message="失敗しました。", retryable=True),
+    )
+    body = status.model_dump(by_alias=True, exclude_none=True)
+    _validator("job-status-response.schema.json").validate(body)
+
+
+def test_job_completed_status_satisfies_contract_schema(client: TestClient, photo_upload) -> None:
+    body = generate_and_wait(client, files=[photo_upload]).json()
+
+    assert body["status"] == "completed"
+    _validator("job-status-response.schema.json").validate(body)
 
 
 def test_mock_mode_matches_shared_mock_response(client: TestClient, photo_upload) -> None:

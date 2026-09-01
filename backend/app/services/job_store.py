@@ -25,7 +25,9 @@ JobStage = Literal["analyzing", "extracting", "composing", "finalizing"]
 class JobRecord:
     job_id: str
     status: JobStatus
-    stage: JobStage
+    #: pendingの間はNone（`contracts/job-status-response.schema.json`は
+    #: status=pendingのときstageを持つことを許さない）。processingで初めて値が入る。
+    stage: JobStage | None
     memory_text: str | None
     #: `GenerateSuccessResponse.model_dump(by_alias=True, exclude_none=True)` の結果。
     result: dict[str, Any] | None = None
@@ -71,7 +73,7 @@ class InMemoryJobStore:
         self._jobs[job_id] = JobRecord(
             job_id=job_id,
             status="pending",
-            stage="analyzing",
+            stage=None,
             memory_text=memory_text,
         )
 
@@ -141,7 +143,7 @@ class FirestoreJobStore:
             {
                 "jobId": job_id,
                 "status": "pending",
-                "stage": "analyzing",
+                "stage": None,
                 "memoryText": memory_text,
                 "result": None,
                 "error": None,
@@ -158,7 +160,7 @@ class FirestoreJobStore:
         return JobRecord(
             job_id=job_id,
             status=data["status"],
-            stage=data["stage"],
+            stage=data.get("stage"),
             memory_text=data.get("memoryText"),
             result=data.get("result"),
             error=data.get("error"),
