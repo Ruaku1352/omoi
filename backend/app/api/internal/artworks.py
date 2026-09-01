@@ -37,7 +37,14 @@ def get_asset_store(request: Request) -> AssetStore:
     return request.app.state.asset_store
 
 
-@router.post("/generate-sync", response_model=GenerateSuccessResponse, include_in_schema=False)
+@router.post(
+    "/generate-sync",
+    response_model=GenerateSuccessResponse,
+    include_in_schema=False,
+    # physicalOutputはArtwork自体のmodel_serializerがNoneのとき省くので必須ではないが、
+    # 明示的にも付けておく（昨日入れていたものが非同期化Rewriteで一度消えていた）。
+    response_model_exclude_none=True,
+)
 async def generate_artwork_sync(
     request: Request,
     photos: Annotated[list[UploadFile], File()],

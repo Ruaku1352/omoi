@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 from pydantic.alias_generators import to_camel
 
 SCHEMA_VERSION_PATTERN = r"^[0-9]+\.[0-9]+$"
@@ -104,3 +104,21 @@ class Artwork(ContractModel):
     #: 可変長。配列位置に前景/中景/背景の意味を持たせない。
     layers: list[Layer] = Field(min_length=1)
     physical_output: PhysicalOutput | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_physical_output_when_none(self, handler: SerializerFunctionWrapHandler) -> dict:
+        """`physicalOutput`はSchema上optionalかつtype: object（null不可）。
+
+        呼び出し側が`response_model_exclude_none`を付け忘れても
+        （または`error.details`等の他FieldではNoneをnullとして残したいために
+        Route単位でexclude_noneを付けられない場合でも）、このFieldだけは
+        Noneのとき必ずKeyごと省く。実機Deployで"physicalOutput: null"を
+        Real AI経路が返しSchema違反になった実測結果への対応（一度規約化済みだが、
+        非同期化でRoute側のexclude_noneが抜け落ちて再発したため、Model側で担保する）。
+        """
+
+        data = handler(self)
+        if self.physical_output is None:
+            data.pop("physicalOutput", None)
+            data.pop("physical_output", None)
+        return data

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import jsonschema
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -98,6 +99,109 @@ def test_job_completed_status_satisfies_contract_schema(client: TestClient, phot
     body = generate_and_wait(client, files=[photo_upload]).json()
 
     assert body["status"] == "completed"
+    _validator("job-status-response.schema.json").validate(body)
+
+
+def _patch_generator(app: FastAPI, generator) -> None:
+    """app.state.generatorを差し替え、依存するjob_runner/task_queueも作り直す。
+
+    `create_app()`はgeneratorをJobRunnerへ固定Referenceで渡すため、
+    差し替えるにはjob_runner/task_queueごと作り直す必要がある
+    （`app.dependency_overrides`はHTTP Request経路のDependsにしか効かず、
+    JobRunnerが直接持つReferenceには効かない）。
+    """
+
+    from app.services.job_runner import JobRunner
+    from app.services.task_queue import InlineTaskQueue
+
+    app.state.generator = generator
+    app.state.job_runner = JobRunner(
+        generator=generator,
+        asset_store=app.state.asset_store,
+        job_store=app.state.job_store,
+    )
+    app.state.task_queue = InlineTaskQueue(app.state.job_runner)
+
+
+def _asset_blobs_for(artwork: dict) -> list:
+    from ai.types import AssetBlob
+
+    ext_by_mime = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+    refs = [p["asset"] for p in artwork["sourcePhotos"]]
+    for layer in artwork["layers"]:
+        refs.append(layer["asset"])
+        refs.extend(c["asset"] for c in layer.get("replacementCandidates", []))
+    return [
+        AssetBlob(
+            asset_id=ref["assetId"],
+            mime_type=ref["mimeType"],
+            width_px=ref["widthPx"],
+            height_px=ref["heightPx"],
+            data=(
+                CONTRACTS_DIR / "assets" / f"{ref['assetId']}.{ext_by_mime[ref['mimeType']]}"
+            ).read_bytes(),
+        )
+        for ref in refs
+    ]
+
+
+def test_job_completed_without_physical_output_satisfies_schema_via_endpoint(
+    app: FastAPI, client: TestClient, photo_upload, mock_artwork: dict
+) -> None:
+    """Real AI経路(physicalOutputを持たない)を非同期Endpoint経由で再現する。
+
+    `Artwork`の`model_serializer`がphysicalOutputをNoneのとき省くこと自体は
+    `test_real_shape_contract.py`がModel単体で検証しているが、実際に
+    POST→GETのEndpointを通した結果がSchemaを満たすかはここで検証する
+    （Route側の`response_model_exclude_none`付け忘れが再発してもここで拾えるように、
+    Model側の対応そのものをEndpoint経由で確認する）。
+    """
+
+    from ai.types import GenerationResult
+
+    artwork = json.loads(json.dumps(mock_artwork))
+    artwork.pop("physicalOutput", None)
+    assets = _asset_blobs_for(artwork)
+
+    class _FakeGenerator:
+        async def generate(self, photos, memory_text):
+            del photos, memory_text
+            return GenerationResult(artwork=artwork, assets=tuple(assets))
+
+    _patch_generator(app, _FakeGenerator())
+
+    body = generate_and_wait(client, files=[photo_upload]).json()
+
+    assert body["status"] == "completed"
+    assert "physicalOutput" not in body["result"]["artwork"]
+    _validator("job-status-response.schema.json").validate(body)
+
+
+def test_job_failed_error_details_stays_null_via_endpoint(
+    app: FastAPI, client: TestClient, photo_upload
+) -> None:
+    """failedの`error.details`はNoneでも省略されず`null`のまま残ること
+    （AGENTS.md §4のError形式、`job-status-response.schema.json`のerror定義どおり）。
+
+    physicalOutputの省略をRoute単位の`response_model_exclude_none`でやると
+    こちらの`details`まで一緒に消えてしまう（別の回帰）。Artwork model側だけで
+    physicalOutputを省く実装にしたことをEndpoint経由で確認する。
+    """
+
+    from ai.errors import AiTimeoutError
+
+    class _FailingGenerator:
+        async def generate(self, photos, memory_text):
+            del photos, memory_text
+            raise AiTimeoutError("timeout")
+
+    _patch_generator(app, _FailingGenerator())
+
+    body = generate_and_wait(client, files=[photo_upload]).json()
+
+    assert body["status"] == "failed"
+    assert "details" in body["error"]
+    assert body["error"]["details"] is None
     _validator("job-status-response.schema.json").validate(body)
 
 
