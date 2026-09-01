@@ -336,10 +336,172 @@ Settingsから作られていたのに、Endpoint内の `settings` だけ別経�
 
 ## 5. 単独でFIXしていないこと（このDocumentの範囲外）
 
-- 同期 / 非同期方式（現状は同期のまま）
-- Asset Binary Storage方式（現状はLocal Directoryのまま、上記4節参照）
-- Queue / Job Runnerの導入
+- Asset Binary Storage方式（`GcsAssetStore`は実装済みだが、Bucket名・公開/署名付きURL・
+  保持期間はチーム確認後に`ASSET_BACKEND=gcs`で有効化する。既定は引き続きLocal Directory）
 - 追加Endpoint
 - Bundle生成主体
 
-`skills/backend/SKILL.md` の通り、これらは公開チャンネルで共有してから進める。
+**同期 / 非同期方式、Queue / Job Runnerの導入は§6の通りFIXした。**
+写真5枚の実測でAI処理だけで234秒（アップロード込み4分10秒）かかることが確認され、
+同期のままではブラウザが固まる。正式なFrontend ↔ Backend Contractは非同期一本
+（Job Store: Firestore、実行基盤: Cloud Tasks + 同一Cloud RunのWorker Endpoint、
+Asset: GCS）。詳細は「非同期化に伴う設計方針・回答案」Doc（クメ先生, 2026/08/25）参照。
+
+`skills/backend/SKILL.md` の通り、上記未FIX事項は公開チャンネルで共有してから進める。
+
+---
+
+## 6. 非同期化（Job Store / Cloud Tasks）のProvisioning
+
+### 6.1 実装済みのもの
+
+- `POST /api/v1/artworks/generate` → 202 + `{"jobId": "..."}`
+- `GET /api/v1/jobs/{jobId}` → `status`(pending/processing/completed/failed) + `stage`
+  (analyzing/extracting/composing/finalizing)。completed時の`result`は既存
+  `contracts/generate-success-response.schema.json`と同じ形をそのまま同梱する
+- 同期処理は`POST /internal/artworks/generate-sync`にローカルデバッグ/実測用として残した
+  （`/api/v1`配下ではない。OpenAPI Schemaにも出ない。§3.4/3.6の実測curlはこちらを使う）
+- Job実行本体は`POST /internal/jobs/{jobId}/run`（Cloud Tasksが叩くWorker Endpoint）
+- 既定Backend（`JOB_STORE_BACKEND=memory` / `TASK_QUEUE_BACKEND=inline` / `ASSET_BACKEND=local`）
+  はFirestore/Cloud Tasks/GCSなしでローカル/テストが完結する。本番は環境変数で
+  `firestore` / `cloud_tasks` / (確認後に)`gcs` へ切り替える
+
+### 6.2 stage粒度の既知の制限
+
+`ai/`側にJob単位の進捗通知の仕組みが無い（既存の`GenerationObserver`はPoC用で、
+単一Generator Instanceを複数Jobで共有する非同期Workerとは相性が悪い）。
+そのため現状`stage`は「AI呼び出し前」= `analyzing`、「AI呼び出し完了後（Backend側の
+Validation/Asset公開中）」= `finalizing` の2点しか区別しない。`extracting` /
+`composing`の遷移を出したい場合は、クメ先生とJob単位のObserver設計を別途相談する
+（`app/services/generation.py`の`on_stage`フックへ差し込む形を想定）。
+
+### 6.3 Firestore
+
+```bash
+# Native modeのDatabaseをProjectへ1つ作る（初回のみ。Region未確定ならCloud Run同様asia-northeast1）
+gcloud firestore databases create --location=asia-northeast1
+
+gcloud services enable firestore.googleapis.com
+```
+
+Runtime Service Accountへ権限を付与する（Secret Managerと同様、Project全体ではなく
+最小権限のRoleを使う）:
+
+```bash
+export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/datastore.user"
+```
+
+保持期間（非同期化方針Doc §1の初期案: completed Job 2週間 / failed Job 24時間）は、
+FirestoreのTTL Policyで`updatedAt`等のFieldに対して設定する。物理削除タイミングと
+API上の`JOB_NOT_FOUND`判定は分離しているので、TTL削除された古いJobIdへのGETは
+自然に404になる（Backend側で追加の期限ロジックは持たない）。
+
+### 6.4 GCS（Job入力写真の一時置き場）
+
+```bash
+gcloud storage buckets create "gs://$JOB_INPUT_BUCKET" --location=asia-northeast1
+```
+
+保持期間の初期案（入力元写真: 24時間）はObject Lifecycle Ruleで設定する:
+
+```bash
+cat > /tmp/job-input-lifecycle.json <<'EOF'
+{"rule": [{"action": {"type": "Delete"}, "condition": {"age": 1}}]}
+EOF
+gcloud storage buckets update "gs://$JOB_INPUT_BUCKET" \
+  --lifecycle-file=/tmp/job-input-lifecycle.json
+```
+
+Runtime Service Accountへ:
+
+```bash
+gcloud storage buckets add-iam-policy-binding "gs://$JOB_INPUT_BUCKET" \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin"
+```
+
+Asset用GCS Bucket（`ASSET_BACKEND=gcs`を有効化する場合）も同様の手順。
+Bucket名・公開/署名付きURLどちらにするか・保持期間（初期案2週間）はチーム確認後に決める
+（§5参照）。
+
+### 6.5 Cloud Tasks
+
+```bash
+gcloud services enable cloudtasks.googleapis.com
+
+gcloud tasks queues create omoi-artwork-generate \
+  --location=asia-northeast1 \
+  --max-attempts=3 \
+  --max-concurrent-dispatches=5
+```
+
+`--max-attempts`はCloud Tasks自体のQueue設定だが、実際に「3回で確定的にfailedへ倒す」
+判定は`app/api/internal/jobs.py`が`X-CloudTasks-TaskRetryCount`を見て行う
+（`JOB_MAX_ATTEMPTS`環境変数、既定3）。Queue側の`--max-attempts`はそれより大きめに
+設定して、Backend側の判定が先に効くようにしておくと安全（例: Queue側5、
+`JOB_MAX_ATTEMPTS=3`）。
+
+Cloud TasksがWorker Endpointを呼ぶ用のService Account（OIDC token発行用）:
+
+```bash
+gcloud iam service-accounts create omoi-task-invoker \
+  --display-name="omoi Cloud Tasks invoker"
+
+gcloud run services add-iam-policy-binding omoi-backend \
+  --region=asia-northeast1 \
+  --member="serviceAccount:omoi-task-invoker@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
+```
+
+### 6.6 Worker Endpointの認証Token
+
+`POST /internal/jobs/{jobId}/run`はCloud Tasks以外から叩かれないよう、
+共有Secret（`X-Omoi-Task-Token`ヘッダ）で簡易的に守っている。OIDC tokenの検証までは
+やっていない（Bucket名同様、より堅い方式へ後から差し替え可能。Job Contractへは影響しない）。
+
+```bash
+openssl rand -hex 32 | gcloud secrets create task-worker-token --data-file=-
+
+gcloud secrets add-iam-policy-binding task-worker-token \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### 6.7 Deploy（非同期・Real AI・Cloud Tasks経路の例）
+
+3.3の警告どおり、必要な環境変数は1回の`--set-env-vars`にすべてまとめる。
+
+```bash
+gcloud run deploy omoi-backend \
+  --source . \
+  --region asia-northeast1 \
+  --allow-unauthenticated \
+  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest,TASK_WORKER_TOKEN=task-worker-token:latest" \
+  --set-env-vars="^|^APP_ENV=deployed|MOCK_AI=false|CORS_ORIGINS=https://omoi-manami-test-77989.web.app|JOB_STORE_BACKEND=firestore|TASK_QUEUE_BACKEND=cloud_tasks|FIRESTORE_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_LOCATION=asia-northeast1|CLOUD_TASKS_WORKER_BASE_URL=$SERVICE_URL|CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=omoi-task-invoker@$PROJECT_ID.iam.gserviceaccount.com|JOB_INPUT_BACKEND=gcs|GCS_BUCKET=$JOB_INPUT_BUCKET"
+```
+
+`CLOUD_TASKS_WORKER_BASE_URL`は初回Deploy時点ではまだ確定しないので
+（`gcloud run services describe`で得るCloud RunのURL自体）、初回は
+`MOCK_AI=true` / `TASK_QUEUE_BACKEND=inline`でDeployしてURLを確定させてから、
+そのURLを使って本設定へ切り替えるのが安全（Deployは何度でもやり直せる）。
+
+### 6.8 確認
+
+```bash
+RESP=$(curl -s -X POST "$SERVICE_URL/api/v1/artworks/generate" \
+  -F "photos=@contracts/assets/source-p1.jpg")
+echo "$RESP"
+JOB_ID=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['jobId'])")
+
+# 2秒間隔でPolling（Frontendのポーリング間隔と同じ）
+watch -n 2 "curl -s $SERVICE_URL/api/v1/jobs/$JOB_ID"
+```
+
+`status`が`completed`になり、`result`が`contracts/generate-success-response.schema.json`
+を満たしていれば成功。`failed`になった場合は`error.code`を見て、Real AI側
+（AI_TIMEOUT/AI_RATE_LIMITED/AI_FAILED）かBackend統合側
+（ARTWORK_VALIDATION_FAILED/ASSET_BUILD_FAILED）かを切り分ける。
