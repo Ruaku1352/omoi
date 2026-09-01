@@ -40,7 +40,16 @@ class JobRunner:
         memory_text: str | None,
         *,
         base_url: str,
+        allow_retry: bool = True,
     ) -> None:
+        """`allow_retry=False`は呼び出し元にRetryできる先が無いことを示す
+        （`InlineTaskQueue`用。ローカル/テストにはCloud Tasksが無いので、
+        Retryable失敗でも即座にfailedへ確定する。Cloud Tasks Worker Endpoint
+        （`app/api/internal/jobs.py`）は既定の`allow_retry=True`のまま呼び、
+        Retryable失敗はそちらで`X-CloudTasks-TaskRetryCount`を見て
+        Retryするか確定させるかを判断する）。
+        """
+
         await self._job_store.set_stage(job_id, "analyzing")
 
         async def _on_stage(stage: str) -> None:
@@ -56,16 +65,16 @@ class JobRunner:
                 on_stage=_on_stage,
             )
         except ApiError as exc:
-            if not exc.retryable:
-                await self._job_store.mark_failed(
-                    job_id,
-                    code=str(exc.code),
-                    message=exc.message,
-                    retryable=False,
-                    details=exc.details,
-                )
-                return
-            raise
+            if exc.retryable and allow_retry:
+                raise
+            await self._job_store.mark_failed(
+                job_id,
+                code=str(exc.code),
+                message=exc.message,
+                retryable=exc.retryable,
+                details=exc.details,
+            )
+            return
 
         await self._job_store.mark_completed(
             job_id, response.model_dump(by_alias=True, exclude_none=True)

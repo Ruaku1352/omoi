@@ -46,7 +46,10 @@ class InlineTaskQueue:
         *,
         base_url: str,
     ) -> None:
-        await self._runner.run(job_id, photos, memory_text, base_url=base_url)
+        # allow_retry=False: Cloud Tasksが無いのでRetryable失敗でも即failedへ確定する。
+        # ここで例外を伝播させると、呼び出し元(POST /generate)が202を返した後の
+        # 話であるにもかかわらず、Exceptionとして502/500へ化けてしまう。
+        await self._runner.run(job_id, photos, memory_text, base_url=base_url, allow_retry=False)
 
 
 class CloudTasksQueue:
