@@ -42,7 +42,12 @@ MIME_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
-SUPPORTED_PROFILES = ("baseline", "physical_layer_v1", "physical_layer_v2")
+SUPPORTED_PROFILES = (
+    "baseline",
+    "physical_layer_v1",
+    "physical_layer_v2",
+    "physical_layer_v3_architecture",
+)
 DEFAULT_PROFILES = ("baseline", "physical_layer_v2")
 
 
@@ -60,6 +65,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--photos-dir", type=Path, default=REPO_ROOT / "poc-images")
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "poc-output")
     parser.add_argument("--profile", choices=SUPPORTED_PROFILES, action="append")
+    parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--max-e2e-runs", type=int, default=24)
     parser.add_argument("--preview-width-px", type=int, default=1600)
     return parser.parse_args()
@@ -99,13 +105,23 @@ def load_dataset(path: Path) -> tuple[EvaluationCase, ...]:
 
 
 def build_run_plan(
-    cases: tuple[EvaluationCase, ...], profiles: tuple[str, ...], max_e2e_runs: int
-) -> tuple[tuple[EvaluationCase, str], ...]:
+    cases: tuple[EvaluationCase, ...],
+    profiles: tuple[str, ...],
+    max_e2e_runs: int,
+    repeat: int = 1,
+) -> tuple[tuple[EvaluationCase, str, int], ...]:
     if max_e2e_runs < 1:
         raise ValueError("max-e2e-runsは1以上である必要があります")
+    if repeat < 1:
+        raise ValueError("repeatは1以上である必要があります")
     if any(profile not in SUPPORTED_PROFILES for profile in profiles):
         raise ValueError("未対応のprofileです")
-    runs = tuple((case, profile) for case in cases for profile in profiles)
+    runs = tuple(
+        (case, profile, attempt)
+        for case in cases
+        for profile in profiles
+        for attempt in range(1, repeat + 1)
+    )
     if len(runs) > max_e2e_runs:
         raise ValueError(
             f"計画されたE2E実行数 {len(runs)} が上限 {max_e2e_runs} を超えています"
@@ -127,7 +143,7 @@ def load_photos(case: EvaluationCase, photos_dir: Path) -> list[InputPhoto]:
 async def run(args: argparse.Namespace) -> int:
     cases = load_dataset(args.dataset)
     profiles = tuple(args.profile or DEFAULT_PROFILES)
-    run_plan = build_run_plan(cases, profiles, args.max_e2e_runs)
+    run_plan = build_run_plan(cases, profiles, args.max_e2e_runs, args.repeat)
     if args.preview_width_px <= 0:
         raise ValueError("preview-width-pxは正の値である必要があります")
 
@@ -140,8 +156,8 @@ async def run(args: argparse.Namespace) -> int:
     output = args.output_dir / f"quality-evaluation-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
     output.mkdir(parents=True)
     records: list[dict[str, Any]] = []
-    for ordinal, (case, profile) in enumerate(run_plan, start=1):
-        case_output = output / f"{ordinal:02d}-{case.case_id}-{profile}"
+    for ordinal, (case, profile, attempt) in enumerate(run_plan, start=1):
+        case_output = output / f"{ordinal:02d}-{case.case_id}-{profile}-try{attempt}"
         case_output.mkdir()
         record = await run_case(
             case,
@@ -150,16 +166,19 @@ async def run(args: argparse.Namespace) -> int:
             args.photos_dir,
             base_settings,
             args.preview_width_px,
+            attempt,
         )
         records.append(record)
 
     summary = {
         "runLimit": args.max_e2e_runs,
         "plannedE2eRuns": len(run_plan),
+        "repeat": args.repeat,
         "profiles": list(profiles),
         "successCount": sum(record["success"] for record in records),
         "failureCount": sum(not record["success"] for record in records),
         "runs": records,
+        "aggregate": _aggregate_records(records),
         "notes": (
             "診断値とCodexレビューの比較用。閾値の学習・自動適用・Mock fallbackは行わない。"
         ),
@@ -177,6 +196,7 @@ async def run_case(
     photos_dir: Path,
     base_settings: Settings,
     preview_width_px: int,
+    attempt: int,
 ) -> dict[str, Any]:
     settings = base_settings.model_copy(update={"semantic_profile": profile})
     observer = PocDebugObserver(output / "debug")
@@ -192,6 +212,7 @@ async def run_case(
         record: dict[str, Any] = {
             "caseId": case.case_id,
             "profile": profile,
+            "attempt": attempt,
             "scenarioTags": list(case.scenario_tags),
             "success": True,
             "layerCount": len(artwork.layers),
@@ -212,6 +233,7 @@ async def run_case(
         record = {
             "caseId": case.case_id,
             "profile": profile,
+            "attempt": attempt,
             "scenarioTags": list(case.scenario_tags),
             "success": False,
             "errorType": type(exc).__name__,
@@ -244,6 +266,8 @@ def _write_review_template(path: Path, record: dict[str, Any]) -> None:
                     "label": candidate["label"],
                     "pipelineSuccess": candidate["success"],
                     "failureReason": candidate["failure_reason"],
+                    "semanticRole": candidate["semantic_role"],
+                    "architectureCleanup": candidate["architecture_cleanup"],
                     "diagnostics": {
                         "componentCount": candidate["mask_component_count"],
                         "largestComponentRatio": candidate["mask_largest_component_ratio"],
@@ -259,6 +283,35 @@ def _write_review_template(path: Path, record: dict[str, Any]) -> None:
             ],
         },
     )
+
+
+def _aggregate_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Profile別の比較値だけをprivate summaryへ集約する。"""
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault(record["profile"], []).append(record)
+    return [
+        {
+            "profile": profile,
+            "runCount": len(items),
+            "successCount": sum(item["success"] for item in items),
+            "architecturePrimaryAcceptedCount": sum(
+                candidate["success"]
+                and candidate.get("semantic_role") == "architecture_primary"
+                for item in items
+                for candidate in item["metrics"].get("candidates", [])
+            ),
+            "microIslandCleanupCount": sum(
+                str(candidate.get("architecture_cleanup", "")).startswith(
+                    "removed_micro_islands:"
+                )
+                for item in items
+                for candidate in item["metrics"].get("candidates", [])
+            ),
+        }
+        for profile, items in sorted(grouped.items())
+    ]
 
 
 def _write_json(path: Path, payload: Any) -> None:

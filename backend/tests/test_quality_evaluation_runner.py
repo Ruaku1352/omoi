@@ -57,6 +57,6 @@ def test_run_plan_has_explicit_limit_and_profile_comparison(tmp_path: Path) -> N
 
     plan = module.build_run_plan(cases, ("baseline", "physical_layer_v1"), 2)
 
-    assert [profile for _case, profile in plan] == ["baseline", "physical_layer_v1"]
+    assert [profile for _case, profile, _attempt in plan] == ["baseline", "physical_layer_v1"]
     with pytest.raises(ValueError, match="上限"):
         module.build_run_plan(cases, ("baseline", "physical_layer_v1"), 1)
