@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # physical_layer_v3_architectureだけで使う、主建物Maskの微小孤立成分除去上限。
     # 閾値を超える分離領域は結合せず不採用にする。
     architecture_micro_island_max_area_ratio: float = Field(default=0.001, ge=0, le=1)
+    # physical profileの一般subjectで除去できる微小孤立成分の面積比上限。
+    # 【PoC後FIX】暫定0.5%。主成分以外の合計がこの値を超えるMaskは不採用にする。
+    mask_micro_island_max_area_ratio: float = Field(default=0.005, ge=0, le=1)
     # Quality Gateは校正前は観測のみ。値はPoC後に環境変数で明示設定する。
     quality_gate_mode: str = "observe"
     quality_max_component_count: int | None = Field(default=None, ge=1)

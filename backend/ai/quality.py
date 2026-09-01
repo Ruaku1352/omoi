@@ -36,8 +36,8 @@ class MaskDiagnostics:
 
 
 @dataclass(frozen=True)
-class ArchitectureMaskCleanup:
-    """主建物Maskに対するfull-resolutionの孤立成分判定結果。"""
+class MicroIslandCleanup:
+    """主成分を残すfull-resolutionの微小孤立成分判定結果。"""
 
     mask: np.ndarray
     component_count: int
@@ -179,9 +179,7 @@ def diagnose_mask(mask: np.ndarray, *, max_side: int) -> MaskDiagnostics:
     )
 
 
-def clean_architecture_micro_islands(
-    mask: np.ndarray, *, max_removed_area_ratio: float
-) -> ArchitectureMaskCleanup:
+def clean_micro_islands(mask: np.ndarray, *, max_removed_area_ratio: float) -> MicroIslandCleanup:
     """微小な孤立成分だけを最大成分から除去する。
 
     8近傍でfull-resolutionの連結成分を調べる。閾値超過の分離領域は残して
@@ -192,7 +190,7 @@ def clean_architecture_micro_islands(
     if not 0 <= max_removed_area_ratio <= 1:
         raise ValueError("max_removed_area_ratio must be between 0 and 1")
     if mask.ndim != 2 or not mask.size or not mask.any():
-        return ArchitectureMaskCleanup(mask, 0, 0, 0, False)
+        return MicroIslandCleanup(mask, 0, 0, 0, False)
 
     components = _connected_components(mask)
     foreground = sum(component.shape[0] for component in components)
@@ -200,9 +198,9 @@ def clean_architecture_micro_islands(
     largest_area = largest.shape[0]
     removed_area_ratio = (foreground - largest_area) / foreground
     if len(components) == 1:
-        return ArchitectureMaskCleanup(mask, 1, 1, 0, False)
+        return MicroIslandCleanup(mask, 1, 1, 0, False)
     if removed_area_ratio > max_removed_area_ratio:
-        return ArchitectureMaskCleanup(
+        return MicroIslandCleanup(
             mask,
             len(components),
             largest_area / foreground,
@@ -211,7 +209,7 @@ def clean_architecture_micro_islands(
         )
     cleaned = np.zeros_like(mask, dtype=bool)
     cleaned[largest[:, 0], largest[:, 1]] = True
-    return ArchitectureMaskCleanup(
+    return MicroIslandCleanup(
         cleaned,
         len(components),
         largest_area / foreground,
