@@ -43,3 +43,5 @@ Thumbs.db
 poc-images/
 poc-output/
 backend/.models/
+
+prompt.md

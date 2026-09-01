@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Artwork / 生成成功Response が共通Contractを満たすか検証する。
+"""Artwork / 生成成功Response / Job Status が共通Contractを満たすか検証する。
 
-Artwork単体（`{"schemaVersion": ...}`）と、生成成功Response
-（`{"artwork": ..., "assetManifest": ...}`）のどちらを渡してもよい。
-形は中身から自動判定する。
+Artwork単体（`{"schemaVersion": ...}`）、生成成功Response
+（`{"artwork": ..., "assetManifest": ...}`）、非同期のJob Status
+（`{"jobId": ..., "status": ...}`）のどれを渡してもよい。形は中身から自動判定する。
 
 JSON Schema だけでは表現できない規則もここで検証する:
   - layerIndex が 0..N-1 の重複なし連番であること
@@ -13,14 +13,16 @@ JSON Schema だけでは表現できない規則もここで検証する:
   - Layer Asset が RGBA PNG であること（背景範囲Cropは不透明RGBAを許容）
   - rotation を持ち込んでいないこと（P0では持たせない【FIX】）
   - 生成成功Responseでは、Artworkが参照する全AssetをAsset Manifestが解決できること
-  - 共通Mock同士（artwork.json / asset-manifest.json / generate-success-response.json）が
-    ずれていないこと
+  - Job Status が completed のとき、result が生成成功Responseとして成立していること
+  - 共通Mock同士（artwork.json / asset-manifest.json / generate-success-response.json /
+    job-status-*.json）がずれていないこと
 
 usage:
-  python scripts/validate_contracts.py                       # 共通Mock一式を検証
-  python scripts/validate_contracts.py path/to/artwork.json  # 任意のArtworkを検証
-  python scripts/validate_contracts.py path/to/response.json # 生成成功Responseを検証
-  python scripts/validate_contracts.py a.json --assets dir/  # Asset置き場を指定
+  python scripts/validate_contracts.py                        # 共通Mock一式を検証
+  python scripts/validate_contracts.py path/to/artwork.json   # 任意のArtworkを検証
+  python scripts/validate_contracts.py path/to/response.json  # 生成成功Responseを検証
+  python scripts/validate_contracts.py path/to/job-status.json # Job Statusを検証
+  python scripts/validate_contracts.py a.json --assets dir/   # Asset置き場を指定
 
 Real生成結果も同じSchemaを満たすことを接続確認条件とする。CIでもここを叩く。
 """
@@ -40,10 +42,19 @@ DEFAULT_ASSETS = CONTRACTS / "assets"
 ARTWORK_SCHEMA = "artwork.schema.json"
 MANIFEST_SCHEMA = "asset-manifest.schema.json"
 RESPONSE_SCHEMA = "generate-success-response.schema.json"
+ACCEPTED_SCHEMA = "generate-accepted-response.schema.json"
+JOB_STATUS_SCHEMA = "job-status-response.schema.json"
 
-# generate-success-response.schema.json は他2つを $ref する。
+# 各Schemaは他のSchemaを $ref する（generate-success-response → artwork / asset-manifest、
+# job-status-response → generate-success-response / artwork の $defs）。
 # Networkへ取りに行かせず、Local Fileだけで解決する。
-SCHEMA_FILES = (ARTWORK_SCHEMA, MANIFEST_SCHEMA, RESPONSE_SCHEMA)
+SCHEMA_FILES = (
+    ARTWORK_SCHEMA,
+    MANIFEST_SCHEMA,
+    RESPONSE_SCHEMA,
+    ACCEPTED_SCHEMA,
+    JOB_STATUS_SCHEMA,
+)
 
 EXT = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
@@ -220,6 +231,28 @@ def validate_response(
     return errors
 
 
+def validate_job_status(
+    job: dict, assets_dir: pathlib.Path, skip_assets: bool
+) -> list[str]:
+    """非同期のJob Statusを検証する。
+
+    completed のときの result は生成成功Responseそのものなので、
+    Schemaだけでなく Artwork の規則・Asset実体・Manifest解決まで同じ検証を通す。
+    同期 / 非同期で最終成功Resultの解釈を分けないため（AGENTS.md §4）。
+    """
+
+    errors = check_schema(job, JOB_STATUS_SCHEMA)
+    if errors:
+        return errors
+    if job["status"] == "completed":
+        result = job["result"]
+        errors += check_rules(result["artwork"])
+        errors += check_manifest_covers_artwork(result["artwork"], result["assetManifest"])
+        if not skip_assets:
+            errors += check_assets(result["artwork"], assets_dir)
+    return errors
+
+
 def check_mock_consistency() -> list[str]:
     """共通Mock同士がずれていないことを見る。
 
@@ -242,6 +275,21 @@ def check_mock_consistency() -> list[str]:
 
     errs += check_mock_fixture_rules(artwork)
 
+    # Job Status Mock。completed の result は生成成功Mockをそのまま束ねたものなので、
+    # ここでも内容一致を担保する（JSONは $ref を持てない）。
+    jobs = {
+        name: json.loads((MOCK / f"job-status-{name}.json").read_text(encoding="utf-8"))
+        for name in ("processing", "completed", "failed")
+    }
+    if jobs["completed"]["result"] != response:
+        errs.append(
+            "mock: job-status-completed.json の result が "
+            "generate-success-response.json と一致しない"
+        )
+    job_ids = {name: doc["jobId"] for name, doc in jobs.items()}
+    if len(set(job_ids.values())) != 1:
+        errs.append(f"mock: job-status-*.json の jobId が揃っていない: {job_ids}")
+
     # 共通Mockは全担当のFixtureなので、参照とManifestを過不足なく一致させておく。
     # （Real Responseには課さない。上の check_manifest_covers_artwork のコメント参照）
     referenced = {ref["assetId"] for _, ref, _is_layer_asset in _iter_asset_refs(artwork)}
@@ -253,14 +301,35 @@ def check_mock_consistency() -> list[str]:
     return errs
 
 
-def _describe(document: dict, is_response: bool) -> str:
-    artwork = document["artwork"] if is_response else document
+def _kind(document: dict) -> str:
+    """中身から Artwork / 生成成功Response / Job Status を判定する。"""
+
+    if "jobId" in document and "status" in document:
+        return "job"
+    if "artwork" in document and "assetManifest" in document:
+        return "response"
+    return "artwork"
+
+
+def _describe(document: dict) -> str:
+    kind = _kind(document)
+    if kind == "job":
+        summary = f"jobId={document['jobId']} status={document['status']}"
+        if "stage" in document:
+            summary += f" stage={document['stage']}"
+        if document["status"] == "completed":
+            summary += " / result: " + _describe(document["result"])
+        elif document["status"] == "failed":
+            summary += f" error={document['error']['code']}"
+        return summary
+
+    artwork = document["artwork"] if kind == "response" else document
     summary = (
         f"schemaVersion={artwork['schemaVersion']} "
         f"photos={len(artwork['sourcePhotos'])} layers={len(artwork['layers'])} "
         f"aspectRatio={artwork['canvas']['aspectRatio']}"
     )
-    if is_response:
+    if kind == "response":
         summary += f" manifestAssets={len(document['assetManifest']['assets'])}"
     return summary
 
@@ -302,21 +371,26 @@ def main() -> int:
         for name, validate in (
             ("artwork.json", validate_artwork),
             ("generate-success-response.json", validate_response),
+            ("job-status-processing.json", validate_job_status),
+            ("job-status-completed.json", validate_job_status),
+            ("job-status-failed.json", validate_job_status),
         ):
             path = MOCK / name
             document = json.loads(path.read_text(encoding="utf-8"))
             errors = validate(document, assets_dir, args.skip_assets)
-            status |= _report(path, errors, _describe(document, validate is validate_response))
+            status |= _report(path, errors, _describe(document))
         status |= _report("mock consistency", check_mock_consistency())
         return status
 
     path = pathlib.Path(args.document)
     document = json.loads(path.read_text(encoding="utf-8"))
-    # 生成成功Response か Artwork単体かを中身から判定する。
-    is_response = "artwork" in document and "assetManifest" in document
-    validate = validate_response if is_response else validate_artwork
+    validate = {
+        "job": validate_job_status,
+        "response": validate_response,
+        "artwork": validate_artwork,
+    }[_kind(document)]
     errors = validate(document, assets_dir, args.skip_assets)
-    return _report(path, errors, "" if errors else _describe(document, is_response))
+    return _report(path, errors, "" if errors else _describe(document))
 
 
 if __name__ == "__main__":

@@ -85,6 +85,9 @@ Build時に `contracts/` の中身をPythonパッケージのリソースとし�
   `PORT` は環境変数から受け取り、`8000` に固定していない。最終`default` targetは
   Model Artifactを含まないMock用、`real-ai` targetだけがEfficientSAM ONNXを含む
 - `.dockerignore` — `frontend/`、ローカル生成物、Secret類を除外
+- `.gcloudignore` — `gcloud builds submit` 用。**無いと `.gitignore` が代用され、
+  `backend/.models/` のONNXがBuild Contextから落ちる**（3.5参照）
+- `cloudbuild.real-ai.yaml` — Cloud Runへ載せるReal AI ImageのBuild設定（3.5参照）
 
 ビルド確認（ローカルDockerがあれば）:
 
@@ -110,15 +113,15 @@ docker build --target real-ai -t omoi-backend-real .
 
 ## 3. Cloud Run へのDeploy手順
 
-**リージョン**: `asia-northeast1` / **サービス名**: `omoi-backend`
+**Project**: `omoi-506412` / **リージョン**: `asia-northeast1` / **サービス名**: `omoi-backend`
 
 以下はCloud Shell（またはgcloud CLIがセットアップ済みのローカル環境）から、
-**リポジトリルートで**実行する前提のコマンド。`PROJECT_ID` は各自の値に置き換える。
+**リポジトリルートで**実行する前提のコマンド。
 
 ### 3.1 事前準備（初回のみ）
 
 ```bash
-export PROJECT_ID=<your-gcp-project-id>
+export PROJECT_ID=omoi-506412
 export REGION=asia-northeast1
 export SERVICE=omoi-backend
 
@@ -131,11 +134,25 @@ gcloud services enable \
   secretmanager.googleapis.com
 ```
 
+Real AI Imageを置く Artifact Registry のリポジトリを作る（Real AIを使う場合のみ・初回のみ）。
+
+```bash
+gcloud artifacts repositories create omoi \
+  --repository-format=docker \
+  --location="$REGION"
+```
+
+Imageは `asia-northeast1-docker.pkg.dev/omoi-506412/omoi/omoi-backend-real:latest` になる。
+
 ### 3.2 Real AIのSecret要件
 
 Real AI Runtimeは `GEMINI_API_KEY` 環境変数を必要とする。Secret値はRepository・Docker Build
-Context・資料へ置かない。どのSecret resource / Versionをbindするか、どのRuntime Service
-AccountへAccessorを付与するかは、Backend/GCP担当の運用判断とする。
+Context・資料へ置かない。
+
+**採用した構成**: Secret Manager の `GEMINI_API_KEY` を `:latest` でbindする。
+Deployコマンドの `--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest` がそれにあたる。
+Runtime Service Accountは既定のCompute Service Accountを使い、
+そこへ `roles/secretmanager.secretAccessor` を付与しておく。
 
 ### 3.3 共通の環境変数ルール
 
@@ -202,24 +219,114 @@ gcloud run deploy "$SERVICE" \
 
 **その場合も `CORS_ORIGINS` は省略しない。**
 
-### 3.5 Real AIのRuntime / Packaging要件
+### 3.5 Real AI Deploy（Model Artifactあり）
 
-`gcloud run deploy --source .` の通常経路はDockerfile最終の`default` targetを使うため、
-Model Artifactを含むReal AI ImageのDeploy手順としては使わない。Real AIでは、
-`backend/.models/efficientsam_ti.onnx` を含む`real-ai` targetを明示的にBuildする必要がある。
+#### Runtime / Packaging要件（AI側の要求）
 
 `real-ai` targetはONNX artifactを`/srv/models/efficientsam_ti.onnx`へCOPYし、
 `EFFICIENTSAM_MODEL_PATH` を設定する。Runtime中のModel Downloadは禁止し、PyTorchを
-Runtime必須依存にしない。`GEMINI_MODEL` はSemantic Planning / Composition用の環境変数で、
-具体Model IDは未FIX。`GEMINI_SEGMENTATION_MODEL` は設定しない。
+Runtime必須依存にしない。`GEMINI_MODEL` はSemantic Planning / Composition用の環境変数。
+`GEMINI_SEGMENTATION_MODEL` は設定しない。
 
-targetを選択するBuild方式、Container Registry、Cloud RunへのDeploy、Secret resource / Version、
-Runtime Service Account / IAMはBackend/GCP担当が決定する。AI側は上記Runtime / Packaging条件を
-満たすことだけを要求する。
+#### 手順
 
-同期Real AI E2Eは数分規模である。Cloud Run実測では十分なtimeoutを設定する必要があり、
-**600 secは初回測定候補であってFIX値ではない**。CPU・Memory・Concurrency・Minimum instancesの
-初回測定条件は`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`を正本とする。
+Cloud Shellからリポジトリルートで実行する。`export` は3.1のもの。
+
+**1. Model Artifactを取得する**（初回、またはCloud Shellがリセットされた後）
+
+```bash
+uv --directory backend run python ../scripts/fetch_efficientsam_onnx.py \
+  --sha256 143c3198a7b2a15f23c21cdb723432fb3fbcdbabbdad3483cf3babd8b95c1397
+```
+
+`backend/.models/efficientsam_ti.onnx` へ置かれる。Git管理しない（`.gitignore` で除外）。
+
+**2. Cloud Build で `real-ai` target をBuildしてpushする**
+
+```bash
+gcloud builds submit --config cloudbuild.real-ai.yaml .
+```
+
+Build設定はリポジトリルートの [`cloudbuild.real-ai.yaml`](../cloudbuild.real-ai.yaml)。
+生成されるImageは次の1つ。
+
+```
+asia-northeast1-docker.pkg.dev/omoi-506412/omoi/omoi-backend-real:latest
+```
+
+**3. Deployする**
+
+```bash
+gcloud run deploy "$SERVICE" \
+  --image asia-northeast1-docker.pkg.dev/$PROJECT_ID/omoi/omoi-backend-real:latest \
+  --region "$REGION" \
+  --no-allow-unauthenticated \
+  --cpu=1 --memory=2Gi --concurrency=1 \
+  --min-instances=0 --max-instances=1 --timeout=600 \
+  --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest \
+  "--set-env-vars=^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=gemini-3.5-flash-lite|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app"
+```
+
+`--set-env-vars` は1回だけ。`^|^` は `CORS_ORIGINS` のカンマを守るため必須（3.3参照）。
+
+#### ⚠ `--source .` は使えない
+
+`gcloud run deploy --source .` はDockerfileの**最終stage**（`default` target）をBuildする。
+`--source` に**targetを指定する仕組みが無い**ため、ONNX artifactを含む `real-ai` target が
+選ばれない。Real AIでは上記のCloud Build経由が必須。
+
+#### ⚠ `.gcloudignore` が無いとONNXがBuild Contextに入らない
+
+`gcloud builds submit` は `.gcloudignore` が無いと **`.gitignore` を代用する**。
+`backend/.models/` は `.gitignore` で除外しているため、モデルがアップロードされず
+`real-ai` target の `COPY` が失敗する。実際に1回失敗した。
+
+```
+COPY failed: file not found in build context or excluded by
+.dockerignore: stat backend/.models/efficientsam_ti.onnx: file does not exist
+```
+
+リポジトリルートの `.gcloudignore` がこれを防いでいる（commit `d604636`）。**消さないこと。**
+
+**確認方法**: `gcloud builds submit` のアップロードサイズが **40MB超**ならモデルが
+含まれている。**1MB未満なら `.gcloudignore` が効いていない。**
+
+#### ⚠ Real AI実行時は公開を閉じる
+
+`--allow-unauthenticated` のまま `MOCK_AI=false` にすると、**誰でも叩けるURLで
+Gemini課金が発生する**。上記Deployコマンドが `--no-allow-unauthenticated` なのはこのため。
+
+実測前に `allUsers` の `roles/run.invoker` を外し、実行するアカウントにのみ付与する。
+**このIAM変更にはOwner権限が必要**で、Editor権限では実行できない。
+Deploy自体はEditorでできるが `Setting IAM policy failed` の警告が出る
+（既存のIAM設定は保持されるので実害はない）。
+
+実測後は `MOCK_AI=true` へ戻してから公開を開ける。
+
+#### ⚠ Cloud Runのリクエストサイズ上限は32MB（拡張不可）
+
+元サイズの写真5枚だと超えることがある（実測で34MB → `413`）。
+**Frontend側でリサイズしてから送る前提。**
+
+#### Deploy設定の根拠
+
+- CPU 1 / Memory 2GiB / Concurrency 1 / Min instances 0 は
+  [`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`](ai/09_CLOUD_RUN_CONSTRAINTS.md) が正本
+- `--timeout=600` は**初回測定候補であってFIX値ではない**。同期Real AI E2Eは数分規模
+
+#### 実測値
+
+2026-08-31 時点。写真5枚（合計12MB）、`gemini-3.5-flash-lite`。
+
+| 項目 | 時間 |
+|---|---|
+| **実測（Request全体）** | **4分10秒** |
+| `ai.total` | 234.5秒 |
+| ONNX inference（×11） | 114.4秒（1回あたり10.4秒） |
+| `rgba_layer_build`（×5） | 53.4秒 |
+| `mask_quality_check`（×22） | 28.3秒 |
+| Semantic Planning | 27.7秒 |
+| Composition | 6.6秒 |
 
 ### 3.6 確認
 
@@ -254,8 +361,12 @@ curl -s -D - -o /dev/null -X OPTIONS "$SERVICE_URL/api/v1/artworks/generate" \
 
 ### 3.7 再Deploy
 
-Mockは3.4を再実行する。Real AIのBuild / Registry / Deploy方式はBackend/GCP担当が決定し、
-3.5のRuntime / Packaging要件を満たすことを確認する。
+Mockは3.4を再実行する。
+
+Real AIはコード変更があれば3.5の手順2（`gcloud builds submit`）から、
+環境変数だけの変更なら手順3（`gcloud run deploy --image ...`）から再実行する。
+Model Artifactは `backend/.models/` に残っていれば手順1をやり直す必要はない
+（Cloud Shellがリセットされた場合は再取得する）。
 
 **環境変数を1つだけ変えたいときも、各Deployコマンドから変数を削らないこと。**
 必要な変数だけを書いた短縮版を作ると、書かなかった変数が消える（3.3の警告）。
