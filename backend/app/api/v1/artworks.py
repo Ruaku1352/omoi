@@ -1,29 +1,30 @@
 """POST /api/v1/artworks/generate
 
-P0で作るEndpointはこれだけ【FIX】。
-取得 / 更新 / finalize / bundle / jobs は必要性が確定するまで作らない（AGENTS.md §4）。
+P0で作るEndpointはこれと `GET /api/v1/jobs/{jobId}` の2つ【FIX】。
+取得 / 更新 / finalize / bundle Endpointは必要性が確定するまで作らない（AGENTS.md §4）。
 
-同期 / 非同期どちらで返すかは【PoC後FIX】。まずは同期で実装し、
-代表ケースの実測時間を計測して判断する。Job Store / Pollingを先回りで作らない。
+正式なFrontend ↔ Backend Contractは非同期一本【FIX：方針】。
+写真5枚の実測でAI処理だけで234秒かかることが確認されたため
+（ブラウザが4分固まる）、同期のままでは公開Contractとして成立しない。
+`ASYNC_MODE`等の環境変数でこのEndpointの公開Response Contractを
+切り替えることはしない。同期処理は `app/api/internal/artworks.py` に
+ローカルデバッグ / Cloud Run実測 / 障害切り分け用の内部経路として残す。
 """
 
 from __future__ import annotations
 
 import logging
-import time
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from pydantic import ValidationError
 
-from ai.errors import AiError, AiRateLimitedError, AiTimeoutError
-from ai.types import ArtworkGenerator, InputPhoto
+from ai.types import InputPhoto
 from app.config import Settings
 from app.errors import ApiError, ErrorCode
-from app.models.api import GenerateSuccessResponse
-from app.models.artwork import Artwork
-from app.services.asset_store import AssetStore
-from app.services.validation import check_artwork_rules, check_assets_present
+from app.models.job import JobAccepted
+from app.services.job_store import JobStore
+from app.services.task_queue import TaskQueue
 
 logger = logging.getLogger(__name__)
 
@@ -32,30 +33,27 @@ router = APIRouter(prefix="/artworks", tags=["artworks"])
 ACCEPTED_PHOTO_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 """JPEG / PNG / WebP を基準とする。HEIC / HEIF は実機確認後【PoC後FIX】。"""
 
-_GENERIC_AI_MESSAGE = "作品の生成に失敗しました。もう一度お試しください。"
-
-
-def get_generator(request: Request) -> ArtworkGenerator:
-    return request.app.state.generator
-
-
-def get_asset_store(request: Request) -> AssetStore:
-    return request.app.state.asset_store
-
 
 def get_settings_dep(request: Request) -> Settings:
     """`app.state.settings`（`create_app()`へ渡されたSettings）を返す。
 
     `app.config.get_settings()` を直接Dependしないのは、Requestごとに
-    `app.state.generator` / `app.state.asset_store` を作った時のSettingsと
-    別のSettingsを見てしまう食い違いを避けるため（テスト時にSettingsを
-    差し替えても反映されない不具合になる）。
+    `app.state.*`を作った時のSettingsと別のSettingsを見てしまう食い違いを
+    避けるため（テスト時にSettingsを差し替えても反映されない不具合になる）。
     """
 
     return request.app.state.settings
 
 
-def _public_base_url(request: Request, settings: Settings) -> str:
+def get_task_queue(request: Request) -> TaskQueue:
+    return request.app.state.task_queue
+
+
+def get_job_store(request: Request) -> JobStore:
+    return request.app.state.job_store
+
+
+def public_base_url(request: Request, settings: Settings) -> str:
     """Asset ManifestのURLに使うBase URL。
 
     Cloud RunはTLSをFrontendで終端するため、Container内から見たRequestは常にhttp。
@@ -71,7 +69,7 @@ def _public_base_url(request: Request, settings: Settings) -> str:
     return base_url
 
 
-async def _read_photos(photos: list[UploadFile], settings: Settings) -> list[InputPhoto]:
+async def read_photos(photos: list[UploadFile], settings: Settings) -> list[InputPhoto]:
     if not photos:
         raise ApiError(ErrorCode.INVALID_INPUT, "写真を1枚以上選んでください。")
     if len(photos) > settings.max_photos:
@@ -105,82 +103,33 @@ async def _read_photos(photos: list[UploadFile], settings: Settings) -> list[Inp
     return result
 
 
-@router.post("/generate",
-    response_model=GenerateSuccessResponse,
-    response_model_by_alias=True,
-    # physicalOutput は optional。未設定時は null ではなくキーごと省略する。
-    # contracts/artwork.schema.json は object のみ許容し null を認めない。
-    response_model_exclude_none=True)
+@router.post("/generate", response_model=JobAccepted, status_code=202)
 async def generate_artwork(
     request: Request,
     photos: Annotated[list[UploadFile], File(description="複数画像。固定5枚ではない。")],
     settings: Annotated[Settings, Depends(get_settings_dep)],
-    generator: Annotated[ArtworkGenerator, Depends(get_generator)],
-    asset_store: Annotated[AssetStore, Depends(get_asset_store)],
+    task_queue: Annotated[TaskQueue, Depends(get_task_queue)],
+    job_store: Annotated[JobStore, Depends(get_job_store)],
     memory_text: Annotated[str | None, Form(alias="memoryText")] = None,
-) -> GenerateSuccessResponse:
-    # 同期/非同期の判断(【PoC後FIX】)には代表ケースの実測が要る。
-    # ResponseへはTimingを含めず(Contractを変えない)、Server Logだけに残す。
-    request_started_at = time.perf_counter()
-    input_photos = await _read_photos(photos, settings)
+) -> JobAccepted:
+    input_photos = await read_photos(photos, settings)
 
-    ai_started_at = time.perf_counter()
+    job_id = uuid.uuid4().hex
+    base_url = public_base_url(request, settings)
+
+    # Job作成・Task投入が失敗したら202を返さず素直にErrorにする
+    # （非同期化方針Doc §3: GCS保存・Firestore Job作成・Cloud Tasks enqueue成功後に202）。
     try:
-        result = await generator.generate(input_photos, memory_text)
-    except AiTimeoutError as exc:
-        raise ApiError(ErrorCode.AI_TIMEOUT, _GENERIC_AI_MESSAGE, log_message=str(exc)) from exc
-    except AiRateLimitedError as exc:
-        raise ApiError(
-            ErrorCode.AI_RATE_LIMITED,
-            "混み合っています。少し時間をおいてもう一度お試しください。",
-            log_message=str(exc),
-        ) from exc
-    except AiError as exc:
-        # AI失敗をMockで埋め合わせない。失敗はそのままErrorとして返す。
-        raise ApiError(ErrorCode.AI_FAILED, _GENERIC_AI_MESSAGE, log_message=str(exc)) from exc
-    finally:
-        logger.info(
-            "ai_generate elapsed=%.3fs mock_ai=%s photos=%d",
-            time.perf_counter() - ai_started_at,
-            settings.mock_ai,
-            len(input_photos),
-        )
-
-    # AI Moduleの結果をそのまま信用せず、必ず契約へ通す。
-    try:
-        artwork = Artwork.model_validate(result.artwork)
-    except ValidationError as exc:
-        raise ApiError(
-            ErrorCode.ARTWORK_VALIDATION_FAILED,
-            _GENERIC_AI_MESSAGE,
-            log_message=f"artwork schema violation: {exc.error_count()} error(s)",
-        ) from exc
-
-    rule_errors = check_artwork_rules(artwork) + check_assets_present(artwork, result.assets)
-    if rule_errors:
-        raise ApiError(
-            ErrorCode.ARTWORK_VALIDATION_FAILED,
-            _GENERIC_AI_MESSAGE,
-            log_message="; ".join(rule_errors),
-        )
-
-    try:
-        manifest = asset_store.publish(
-            artwork.artwork_id, result.assets, _public_base_url(request, settings)
-        )
+        await job_store.create(job_id, memory_text=memory_text)
+        await task_queue.enqueue(job_id, input_photos, memory_text, base_url=base_url)
     except Exception as exc:
         raise ApiError(
-            ErrorCode.ASSET_BUILD_FAILED,
-            _GENERIC_AI_MESSAGE,
-            log_message=f"asset publish failed: {type(exc).__name__}",
+            ErrorCode.INTERNAL_ERROR,
+            "作品の生成に失敗しました。もう一度お試しください。",
+            log_message=f"job enqueue failed: {type(exc).__name__}: {exc}",
         ) from exc
 
     logger.info(
-        "generate_artwork elapsed=%.3fs mock_ai=%s photos=%d layers=%d assets=%d",
-        time.perf_counter() - request_started_at,
-        settings.mock_ai,
-        len(input_photos),
-        len(artwork.layers),
-        len(manifest.assets),
+        "job_enqueued job_id=%s mock_ai=%s photos=%d", job_id, settings.mock_ai, len(input_photos)
     )
-    return GenerateSuccessResponse(artwork=artwork, asset_manifest=manifest)
+    return JobAccepted(job_id=job_id)

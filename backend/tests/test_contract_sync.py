@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from tests.conftest import CONTRACTS_DIR
+from tests.conftest import CONTRACTS_DIR, generate_and_wait
 
 SCHEMA_FILES = (
     "artwork.schema.json",
@@ -39,10 +39,12 @@ def _validator(name: str) -> jsonschema.Draft202012Validator:
 
 
 def test_response_satisfies_contract_schemas(client: TestClient, photo_upload) -> None:
-    body = client.post("/api/v1/artworks/generate", files=[photo_upload]).json()
+    body = generate_and_wait(client, files=[photo_upload]).json()
 
-    # 生成成功Responseの正本Schemaへ丸ごと掛ける（内側は $ref で検証される）
-    _validator("generate-success-response.schema.json").validate(body)
+    # completed時のresultは既存generate-success-responseの正本Schemaと同じ形
+    # （非同期化方針Doc: 新しい形を作らずそのまま同梱する）。
+    assert body["status"] == "completed"
+    _validator("generate-success-response.schema.json").validate(body["result"])
 
 
 def test_mock_mode_matches_shared_mock_response(client: TestClient, photo_upload) -> None:
@@ -51,7 +53,7 @@ def test_mock_mode_matches_shared_mock_response(client: TestClient, photo_upload
     url は Runtime依存なので比較対象から外す。Artworkは完全一致を要求する。
     """
 
-    body = client.post("/api/v1/artworks/generate", files=[photo_upload]).json()
+    body = generate_and_wait(client, files=[photo_upload]).json()["result"]
     expected = json.loads(
         (CONTRACTS_DIR / "mock" / "generate-success-response.json").read_text(encoding="utf-8")
     )
