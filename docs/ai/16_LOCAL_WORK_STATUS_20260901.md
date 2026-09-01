@@ -22,21 +22,25 @@
 
 ### ブランチの重要な注意
 
-`feat/ai-general-micro-island-cleanup` は `origin/main` と比べて **30 commits behind / 3 commits ahead**
-である。このままPRを作ると、main側の無関係な差分を含み、競合やレビュー負荷が増える。
+`feat/ai-general-micro-island-cleanup` は、計測時点で `origin/main` より**30 commits behind**である。
+未PRのdocs / feature commitを積んでいるためahead数は更新ごとに増えるが、このままPRを作ると、
+main側の無関係な差分を含み、競合やレビュー負荷が増える。
 
 PR前に、最新`origin/main`を起点に変更を積み直す（rebaseまたは新branchへcherry-pick）必要がある。
 その際、各commitの責務を分離する。
 
-## 2. 完了済み（main反映を確認）
+## 2. main反映済みだが、PR未作成のため未完了として扱うもの
 
 | 項目 | 根拠 | 状態 |
 | --- | --- | --- |
-| architecture Layer抽出改善 | `43b0e4f` は `origin/main` のancestor | main反映済み |
+| physical-ready Layer生成 | `cedb1a6` は `origin/main` のancestor。ただしPR #1〜#3のcommit一覧に含まれない。 | コードはmain反映済みだが、**PR未作成のため未完了** |
+| architecture Layer抽出改善 | `43b0e4f` は `origin/main` のancestor。ただしPR #1〜#3のcommit一覧に含まれない。 | コードはmain反映済みだが、**PR未作成のため未完了** |
 | architecture A/B比較 | 親 `cedb1a6` と比較し、architecture 3ケースで改善、非architectureで明確な回帰なしを確認済み | 検証完了 |
 
 Architectureの改善内容は、建築本体を優先候補として残し、微小な孤立成分だけを安全に除去するもの。
-この項目に対して新しいPRを作る必要はない。
+しかし、PR提出を完了条件とする以上、この履歴はプロセス上未完了である。すでにmainにコードが
+あるため、新PRで同じ変更を再提出するのではなく、PRなしでmainへ入った経緯の扱いを公開チャンネルで
+整理する必要がある。
 
 ## 3. PR提出済みだが、状態確認・整理が必要なもの
 
