@@ -53,10 +53,11 @@ AIの挙動を変えた場合を除きこの台帳の対象外とする。
 | Semantic Planning | 27.7秒 | 入力準備18.5秒がGemini API 9.2秒を上回る。 |
 | Composition / decode | 6.6秒 / 1.1秒 | 主因ではない。 |
 
-速度改善の判定は「4分を短くする」だけでは行わない。candidate数、Quality Gate、Semantic Prompt、
-Segmentation条件を変える場合は、同じ入力条件・固定datasetで最終作品を人手A/B/C評価し、品質回帰が
-ないことを確認する。元画像を縮小してもBackend内部で最大辺1536pxへ解析用縮小するため、AI時間には
-大きく効かない。Frontend resizeは、5枚合計34 MBで32 MB上限を超えた413を防ぐために必要である。
+速度改善の判定は「4分を短くする」だけでは行わない。**品質改善・品質ベースラインの確定を先に行い、
+速度改善はその後に行う。** candidate数、Quality Gate、Semantic Prompt、Segmentation条件を変える
+場合は、同じ入力条件・固定datasetで最終作品を人手A/B/C評価し、品質回帰がないことを確認する。
+元画像を縮小してもBackend内部で最大辺1536pxへ解析用縮小するため、AI時間には大きく効かない。
+Frontend resizeは、5枚合計34 MBで32 MB上限を超えた413を防ぐために必要である。
 
 ## 4. 飛び地・背景・浮遊量の実装ログ
 
@@ -129,6 +130,11 @@ union後に大きな分離成分が残る
 | `chore/ai-ruff-hygiene` / `21e3938` | originなし | なし | local only | **未完了** |
 | `feat/ai-general-micro-island-cleanup` / `4189159` + docs | originなし | なし | local only。`origin/main`より30 commits behind（台帳作成時点） | **未完了** |
 
+通常のAI作業場所はRepository rootの`feat/ai-general-micro-island-cleanup`であり、登録済みworktreeは
+ここだけである。比較用`tmp/ab-*`は登録解除済みで、`tmp/ab-parent`の古いファイルcopyだけが
+`.pytest_cache`のロックのため残っている。これは作業場所・PR差分として使わず、削除はロック解除後に
+明示pathへ限定して行う。詳細は[ローカル作業状況](16_LOCAL_WORK_STATUS_20260901.md)を正とする。
+
 ## 8. 未完了事項と次アクション
 
 | Priority | 項目 | 完了条件 | 現在の阻害要因 |
@@ -137,13 +143,14 @@ union後に大きな分離成分が残る
 | P0 | Ruff整形の扱い決定 | 単独PRとして提出、または明示的に採用しない | local only |
 | P0 | 0.5%微小island PR | main最新から最小差分を積み直し、test / lint / format / contract /固定評価後にPR作成 | branchがmainより遅れ、未push・未PR |
 | P0 | architecture A/B再評価 | 現行Cloud Run条件・固定dataset・人手A/B/Cで品質向上と非architecture回帰なしを確認 | 既存A/Bは示唆段階 |
-| P0 | CPU 1 → CPU 2実測 | ONNX inference短縮量と総時間・品質を同一条件で比較 | CPU増量の効果未測定 |
-| P0 | RGBA Layerばらつき調査 | 1.9〜10.0秒の原因をstage / asset特性別に説明 | 原因未調査 |
-| P0 | Semantic入力準備の内訳 | 18.5秒をthumbnail / PNG変換等へ分解 | 詳細未観測 |
-| P1 | rejected candidate早期終了 | 固定datasetの品質を落とさず未採用33秒を短縮できるかA/B | 品質とのトレードオフ |
+| P0 | 微小island品質評価 | 人物・小物・料理を含む固定datasetで0.5%処理の主成分保持・背景混入・4 Layer到達率を確認 | `4189159`は未PR |
+| P0 | 背景 / 浮遊Layer評価 | 背景あり/なしとAsset外接矩形gapの見た目を固定datasetで評価 | `background_missing`と0.30は暫定 |
+| P0 | `coherent_group` PoC | 料理＋器等で必須componentを保持し、非architectureも回帰しない | 設計のみ、未実装 |
+| P1 | CPU 1 → CPU 2実測 | ONNX inference短縮量と総時間を同一品質条件で比較 | CPU増量の効果未測定 |
+| P1 | RGBA Layerばらつき調査 | 1.9〜10.0秒の原因をstage / asset特性別に説明 | 原因未調査 |
+| P1 | Semantic入力準備の内訳 | 18.5秒をthumbnail / PNG変換等へ分解 | 詳細未観測 |
+| P1 | rejected candidate早期終了 | P0品質datasetの回帰なしを満たし、未採用33秒を短縮できるかA/B | 品質とのトレードオフ |
 | P1 | candidate数削減 | 4 Layer到達率・作品A/B/Cを維持できるかA/B | 品質とのトレードオフ |
-| P1 | 背景 / 浮遊Layer評価 | 背景あり/なしとAsset外接矩形gapの見た目を固定datasetで評価 | `background_missing`と0.30は暫定 |
-| P1 | `coherent_group` PoC | 料理＋器等で必須componentを保持し、非architectureも回帰しない | 設計のみ、未実装 |
 
 ## 9. 非同期化と責任境界
 
