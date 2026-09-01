@@ -1,0 +1,10 @@
+{
+  "jobId": "job-mock-001",
+  "status": "failed",
+  "error": {
+    "code": "AI_TIMEOUT",
+    "message": "作品の生成に失敗しました。もう一度お試しください。",
+    "retryable": true,
+    "details": null
+  }
+}
