@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable, Sequence
 
 from pydantic import ValidationError
 
-from ai.errors import AiError, AiRateLimitedError, AiTimeoutError
+from ai.errors import AiError, AiNotConfiguredError, AiRateLimitedError, AiTimeoutError
 from ai.types import ArtworkGenerator, InputPhoto
 from app.errors import ApiError, ErrorCode
 from app.models.api import GenerateSuccessResponse
@@ -54,6 +54,16 @@ async def generate_and_publish(
         raise ApiError(
             ErrorCode.AI_RATE_LIMITED,
             "混み合っています。少し時間をおいてもう一度お試しください。",
+            log_message=str(exc),
+        ) from exc
+    except AiNotConfiguredError as exc:
+        # 設定ミス（API Key / モデル未設定等）はRetryしても改善しない
+        # （非同期化方針Doc §6: 認証・権限エラー・実装バグ等はRetry対象外）。
+        # AiErrorのSubclassなので下のexcept AiErrorより先に置く必要がある。
+        raise ApiError(
+            ErrorCode.AI_FAILED,
+            _GENERIC_AI_MESSAGE,
+            retryable=False,
             log_message=str(exc),
         ) from exc
     except AiError as exc:
