@@ -16,7 +16,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 
 from app.errors import ApiError, ErrorCode
-from app.models.job import JobActiveStatus, JobCompletedStatus, JobErrorBody, JobFailedStatus
+from app.models.job import (
+    JobCompletedStatus,
+    JobErrorBody,
+    JobFailedStatus,
+    JobPendingStatus,
+    JobProcessingStatus,
+    JobStatusResponse,
+)
 from app.services.job_store import JobStore
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -26,11 +33,11 @@ def get_job_store(request: Request) -> JobStore:
     return request.app.state.job_store
 
 
-@router.get("/{job_id}", response_model=JobActiveStatus | JobCompletedStatus | JobFailedStatus)
+@router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job(
     job_id: str,
     job_store: Annotated[JobStore, Depends(get_job_store)],
-) -> JobActiveStatus | JobCompletedStatus | JobFailedStatus:
+) -> JobStatusResponse:
     job = await job_store.get(job_id)
     if job is None:
         raise ApiError(
@@ -51,4 +58,8 @@ async def get_job(
             error=JobErrorBody.model_validate(job.error),
         )
 
-    return JobActiveStatus(job_id=job_id, status=job.status, stage=job.stage)
+    if job.status == "pending":
+        return JobPendingStatus(job_id=job_id, status="pending")
+
+    assert job.stage is not None  # processingはJobRunner.run()が必ずstageとセットで進める
+    return JobProcessingStatus(job_id=job_id, status="processing", stage=job.stage)

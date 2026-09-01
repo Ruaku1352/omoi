@@ -1,13 +1,16 @@
 """非同期化のJob状態Model。
 
-正本Schema化（`contracts/`配下への追加）は横断支援担当（だいちゃん）が行う。
-ここはBackend実装が実際に返す形を、依頼された契約どおりに定義したもの
-（jobId / status / stage / result / error）。`result` は既存の
-`GenerateSuccessResponse` とまったく同じ形をそのまま同梱する（新しい形を作らない）。
+正本Schemaは `contracts/job-status-response.schema.json` /
+`contracts/generate-accepted-response.schema.json`（横断支援担当・だいちゃんが追加）。
+ここはその写像であって別の正本ではない。
 
 status: pending / processing / completed / failed
 stage:  analyzing / extracting / composing / finalizing
         （Retry中も直前に到達していたstageを保持する。"retrying"は公開Statusに追加しない）
+
+正本Schemaは `status=pending` のとき `stage` を持つことを禁止している
+（受付済みだがWorkerがまだ着手していない状態なので、直前の到達段階も無い）。
+そのため`pending`と`processing`を同じModelにせず分ける。
 """
 
 from __future__ import annotations
@@ -26,11 +29,18 @@ class JobAccepted(ContractModel):
     job_id: OpaqueId
 
 
-class JobActiveStatus(ContractModel):
-    """status: pending / processing のときのGET /api/v1/jobs/{jobId}。"""
+class JobPendingStatus(ContractModel):
+    """status: pending。Task投入済み・Worker着手前。stageを持たない。"""
 
     job_id: OpaqueId
-    status: Literal["pending", "processing"]
+    status: Literal["pending"]
+
+
+class JobProcessingStatus(ContractModel):
+    """status: processing。stageは必須（Workerが着手した時点で必ず値が入る）。"""
+
+    job_id: OpaqueId
+    status: Literal["processing"]
     stage: JobStage
 
 
@@ -54,4 +64,4 @@ class JobFailedStatus(ContractModel):
     error: JobErrorBody
 
 
-JobStatusResponse = JobActiveStatus | JobCompletedStatus | JobFailedStatus
+JobStatusResponse = JobPendingStatus | JobProcessingStatus | JobCompletedStatus | JobFailedStatus
