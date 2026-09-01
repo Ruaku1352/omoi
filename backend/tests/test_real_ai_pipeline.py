@@ -16,7 +16,7 @@ from ai.internal_models import CompositionPlan, SemanticPlan
 from ai.quality import (
     QualityPolicy,
     assess_mask,
-    clean_architecture_micro_islands,
+    clean_micro_islands,
     diagnose_mask,
 )
 from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult
@@ -283,12 +283,12 @@ def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
         QualityPolicy(mode="enforce")
 
 
-def test_architecture_cleanup_removes_only_micro_islands_at_full_resolution() -> None:
+def test_micro_island_cleanup_removes_only_micro_islands_at_full_resolution() -> None:
     mask = np.zeros((100, 100), dtype=bool)
     mask[10:50, 10:50] = True
     mask[90, 90] = True
 
-    cleaned = clean_architecture_micro_islands(mask, max_removed_area_ratio=0.001)
+    cleaned = clean_micro_islands(mask, max_removed_area_ratio=0.001)
 
     assert cleaned.component_count == 2
     assert cleaned.applied
@@ -298,7 +298,7 @@ def test_architecture_cleanup_removes_only_micro_islands_at_full_resolution() ->
 
     detached = np.array(mask, copy=True)
     detached[90:92, 90:92] = True
-    rejected = clean_architecture_micro_islands(detached, max_removed_area_ratio=0.001)
+    rejected = clean_micro_islands(detached, max_removed_area_ratio=0.001)
     assert rejected.component_count == 2
     assert not rejected.applied
     assert rejected.removed_area_ratio > 0.001
@@ -578,6 +578,35 @@ async def test_physical_v2_rejects_fragmented_subject_without_bridge() -> None:
 
 
 @pytest.mark.anyio
+async def test_physical_v2_keeps_subject_and_cleans_micro_island() -> None:
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=MicroIslandFirstSegmenter(),
+        candidate_count=4,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v2",
+        semantic_planner=FakePlanner(candidate_count=4),
+        composer=FakeComposer(),
+    )
+
+    result = await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    assert len(result.artwork["layers"]) == 4
+    first = generator.last_metrics.candidates[0]
+    assert first.success
+    assert first.mask_cleanup.startswith("removed_micro_islands:")
+
+
+@pytest.mark.anyio
 async def test_architecture_profile_keeps_primary_building_and_cleans_micro_island() -> None:
     generator = GeminiArtworkGenerator(
         api_key="test-key",
@@ -603,6 +632,6 @@ async def test_architecture_profile_keeps_primary_building_and_cleans_micro_isla
     assert len(result.artwork["layers"]) == 4
     primary = generator.last_metrics.candidates[0]
     assert primary.semantic_role == "architecture_primary"
-    assert primary.architecture_cleanup.startswith("removed_micro_islands:")
+    assert primary.mask_cleanup.startswith("removed_micro_islands:")
     assert primary.success
     assert any(layer["label"] == "main historic building" for layer in result.artwork["layers"])
