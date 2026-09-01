@@ -45,7 +45,7 @@ from ai.quality import (
     MaskQuality,
     QualityPolicy,
     assess_mask,
-    clean_architecture_micro_islands,
+    clean_micro_islands,
 )
 from ai.segmentation import SegmentationResult, Segmenter
 from ai.types import AssetBlob, GenerationResult, InputPhoto
@@ -88,7 +88,7 @@ class CandidateMetric:
     candidate_kind: str = "subject"
     semantic_role: str = "general"
     layer_build_mode: str = "segmented_mask"
-    architecture_cleanup: str = "not_applicable"
+    mask_cleanup: str = "not_applicable"
 
 
 @dataclass(frozen=True)
@@ -316,6 +316,7 @@ class GeminiArtworkGenerator:
         physical_scene_anchor_min_scale: float = 0.60,
         physical_max_bottom_gap: float = 0.30,
         architecture_micro_island_max_area_ratio: float = 0.001,
+        mask_micro_island_max_area_ratio: float = 0.005,
         semantic_planner: SemanticPlanner | None = None,
         composer: Composer | None = None,
         observer: GenerationObserver | None = None,
@@ -332,6 +333,8 @@ class GeminiArtworkGenerator:
             raise AiNotConfiguredError("Layer浮遊量の設定が不正です")
         if not 0 <= architecture_micro_island_max_area_ratio <= 1:
             raise AiNotConfiguredError("建造物Maskの微小孤立成分設定が不正です")
+        if not 0 <= mask_micro_island_max_area_ratio <= 1:
+            raise AiNotConfiguredError("Maskの微小孤立成分設定が不正です")
         self._segmenter = segmenter
         self._candidate_count = candidate_count
         self._target_layer_min = target_layer_min
@@ -352,6 +355,7 @@ class GeminiArtworkGenerator:
         self._physical_scene_anchor_min_scale = physical_scene_anchor_min_scale
         self._physical_max_bottom_gap = physical_max_bottom_gap
         self._architecture_micro_island_max_area_ratio = architecture_micro_island_max_area_ratio
+        self._mask_micro_island_max_area_ratio = mask_micro_island_max_area_ratio
         self._observer = observer
         self._api_key = api_key
         self._model = model
@@ -829,18 +833,21 @@ class GeminiArtworkGenerator:
             candidate_id=candidate.candidate_id,
             phase="combined",
         )
-        architecture_cleanup = "not_applicable"
+        cleanup_limit = self._mask_micro_island_max_area_ratio
+        cleanup_started = time.perf_counter()
         if self._architecture_ready and candidate.semantic_role in {
             "architecture_primary",
             "architecture_detail",
         }:
-            cleanup_started = time.perf_counter()
-            cleanup = clean_architecture_micro_islands(
+            cleanup_limit = self._architecture_micro_island_max_area_ratio
+        mask_cleanup = "not_needed"
+        if self._physical_ready:
+            cleanup = clean_micro_islands(
                 combined_mask,
-                max_removed_area_ratio=self._architecture_micro_island_max_area_ratio,
+                max_removed_area_ratio=cleanup_limit,
             )
             _log_performance(
-                "candidate.architecture_cleanup",
+                "candidate.micro_island_cleanup",
                 _elapsed_ms(cleanup_started),
                 candidate_id=candidate.candidate_id,
                 outcome="applied" if cleanup.applied else "not_applied",
@@ -855,7 +862,7 @@ class GeminiArtworkGenerator:
                     failure_reason="not_single_component",
                     bbox_coverage=min(item.bbox_coverage for item in component_qualities),
                     border_touch=any(item.border_touch for item in component_qualities),
-                    architecture_cleanup=(f"rejected_detached:{cleanup.removed_area_ratio:.6f}"),
+                    mask_cleanup=f"rejected_detached:{cleanup.removed_area_ratio:.6f}",
                 )
             if cleanup.applied:
                 combined_mask = cleanup.mask
@@ -870,11 +877,11 @@ class GeminiArtworkGenerator:
                     "candidate.mask_quality_check",
                     _elapsed_ms(combined_quality_started),
                     candidate_id=candidate.candidate_id,
-                    phase="post_architecture_cleanup",
+                    phase="post_micro_island_cleanup",
                 )
-                architecture_cleanup = f"removed_micro_islands:{cleanup.removed_area_ratio:.6f}"
+                mask_cleanup = f"removed_micro_islands:{cleanup.removed_area_ratio:.6f}"
             elif cleanup.component_count == 1:
-                architecture_cleanup = "already_single_component"
+                mask_cleanup = "already_single_component"
         if (
             self._physical_ready
             and combined_quality.diagnostics is not None
@@ -889,7 +896,7 @@ class GeminiArtworkGenerator:
                 failure_reason="not_single_component",
                 bbox_coverage=min(item.bbox_coverage for item in component_qualities),
                 border_touch=any(item.border_touch for item in component_qualities),
-                architecture_cleanup=architecture_cleanup,
+                mask_cleanup=mask_cleanup,
             )
         rejection_reason = self._quality_policy.rejection_reason(
             combined_quality.diagnostics,
@@ -906,6 +913,7 @@ class GeminiArtworkGenerator:
                 failure_reason=rejection_reason,
                 bbox_coverage=min(item.bbox_coverage for item in component_qualities),
                 border_touch=any(item.border_touch for item in component_qualities),
+                mask_cleanup=mask_cleanup,
             )
 
         layer_started = time.perf_counter()
@@ -946,7 +954,7 @@ class GeminiArtworkGenerator:
                 failure_reason=None,
                 bbox_coverage=min(item.bbox_coverage for item in component_qualities),
                 border_touch=any(item.border_touch for item in component_qualities),
-                architecture_cleanup=architecture_cleanup,
+                mask_cleanup=mask_cleanup,
             ),
         )
 
@@ -1098,7 +1106,7 @@ def _candidate_metric(
     bbox_coverage: float,
     border_touch: bool,
     layer_build_mode: str = "segmented_mask",
-    architecture_cleanup: str = "not_applicable",
+    mask_cleanup: str = "not_applicable",
 ) -> CandidateMetric:
     diagnostics = quality.diagnostics
     return CandidateMetric(
@@ -1124,7 +1132,7 @@ def _candidate_metric(
         candidate_kind=candidate.kind,
         semantic_role=candidate.semantic_role,
         layer_build_mode=layer_build_mode,
-        architecture_cleanup=architecture_cleanup,
+        mask_cleanup=mask_cleanup,
     )
 
 

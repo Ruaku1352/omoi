@@ -90,14 +90,20 @@ def load_dataset(path: Path) -> tuple[EvaluationCase, ...]:
         memory_text = item.get("memoryText")
         tags = item.get("scenarioTags", [])
         if not isinstance(case_id, str) or not case_id or case_id in seen_ids:
-            raise ValueError("dataset case idは重複しない非空stringである必要があります")
-        if not isinstance(photos, list) or len(photos) != 5 or not all(
-            isinstance(photo, str) and photo for photo in photos
+            raise ValueError(
+                "dataset case idは重複しない非空stringである必要があります"
+            )
+        if (
+            not isinstance(photos, list)
+            or len(photos) != 5
+            or not all(isinstance(photo, str) and photo for photo in photos)
         ):
             raise ValueError(f"{case_id}: MVP評価は正確に5枚のphotosを必要とします")
         if not isinstance(memory_text, str) or not memory_text.strip():
             raise ValueError(f"{case_id}: 非空memoryTextが必要です")
-        if not isinstance(tags, list) or not all(isinstance(tag, str) and tag for tag in tags):
+        if not isinstance(tags, list) or not all(
+            isinstance(tag, str) and tag for tag in tags
+        ):
             raise ValueError(f"{case_id}: scenarioTagsはstring配列である必要があります")
         seen_ids.add(case_id)
         cases.append(EvaluationCase(case_id, tuple(photos), memory_text, tuple(tags)))
@@ -135,7 +141,9 @@ def load_photos(case: EvaluationCase, photos_dir: Path) -> list[InputPhoto]:
         path = photos_dir / filename
         mime_type = MIME_TYPES.get(path.suffix.lower())
         if mime_type is None or not path.is_file():
-            raise ValueError(f"{case.case_id}: 画像が無い、またはP0形式外です: {filename}")
+            raise ValueError(
+                f"{case.case_id}: 画像が無い、またはP0形式外です: {filename}"
+            )
         photos.append(InputPhoto(filename, mime_type, path.read_bytes()))
     return photos
 
@@ -153,7 +161,10 @@ async def run(args: argparse.Namespace) -> int:
     if not base_settings.gemini_api_key or not base_settings.efficientsam_model_path:
         raise ValueError("GEMINI_API_KEYとEFFICIENTSAM_MODEL_PATHが必要です")
 
-    output = args.output_dir / f"quality-evaluation-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
+    output = (
+        args.output_dir
+        / f"quality-evaluation-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
+    )
     output.mkdir(parents=True)
     records: list[dict[str, Any]] = []
     for ordinal, (case, profile, attempt) in enumerate(run_plan, start=1):
@@ -204,9 +215,13 @@ async def run_case(
     if not isinstance(generator, GeminiArtworkGenerator):
         raise TypeError("MOCK_AI=falseのReal generatorを構成できません")
     try:
-        result = await generator.generate(load_photos(case, photos_dir), case.memory_text)
+        result = await generator.generate(
+            load_photos(case, photos_dir), case.memory_text
+        )
         artwork = Artwork.model_validate(result.artwork)
-        errors = check_artwork_rules(artwork) + check_assets_present(artwork, result.assets)
+        errors = check_artwork_rules(artwork) + check_assets_present(
+            artwork, result.assets
+        )
         if errors:
             raise RuntimeError("artwork_or_assets_invalid")
         record: dict[str, Any] = {
@@ -267,10 +282,12 @@ def _write_review_template(path: Path, record: dict[str, Any]) -> None:
                     "pipelineSuccess": candidate["success"],
                     "failureReason": candidate["failure_reason"],
                     "semanticRole": candidate["semantic_role"],
-                    "architectureCleanup": candidate["architecture_cleanup"],
+                    "maskCleanup": candidate["mask_cleanup"],
                     "diagnostics": {
                         "componentCount": candidate["mask_component_count"],
-                        "largestComponentRatio": candidate["mask_largest_component_ratio"],
+                        "largestComponentRatio": candidate[
+                            "mask_largest_component_ratio"
+                        ],
                         "bboxCoverage": candidate["mask_bbox_coverage"],
                         "borderTouch": candidate["mask_border_touch"],
                     },
@@ -303,7 +320,7 @@ def _aggregate_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 for candidate in item["metrics"].get("candidates", [])
             ),
             "microIslandCleanupCount": sum(
-                str(candidate.get("architecture_cleanup", "")).startswith(
+                str(candidate.get("mask_cleanup", "")).startswith(
                     "removed_micro_islands:"
                 )
                 for item in items
