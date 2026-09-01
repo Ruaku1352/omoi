@@ -48,9 +48,9 @@ early reject・candidate数削減・Quality Gate変更を行わない。品質�
 
 | Worktree | Branch / HEAD | 状態 |
 | --- | --- | --- |
-| Repository root | `chore/ai-performance-timing` / `7695698` | clean。remote trackingあり。 |
-| `tmp/ab-candidate` | `feat/ai-general-micro-island-cleanup` / `a8234f1` | clean。PR未作成。 |
-| `tmp/ab-parent` | `cedb1a6` detached | A/B比較用。変更しない。 |
+| Repository root | `feat/ai-general-micro-island-cleanup` | **唯一の登録worktree**。以後のAI作業はこのDirectoryで行う。PR未作成。 |
+| `tmp/ab-candidate` | なし | worktree登録・Directoryとも解消済み。 |
+| `tmp/ab-parent` | なし | worktree登録は解消済み。`.pytest_cache`のアクセス拒否により、古い比較用ファイルコピーが残留している。作業には使わない。 |
 
 作業ツリーに未commitのソース変更はない。`poc-images/`、`poc-output/`、`tmp/` 配下の写真・
 生成artifact・比較worktreeはprivateな評価材料であり、commit対象ではない。
@@ -59,10 +59,18 @@ early reject・candidate数削減・Quality Gate変更を行わない。品質�
 
 `feat/ai-general-micro-island-cleanup` は、計測時点で `origin/main` より**30 commits behind**である。
 未PRのdocs / feature commitを積んでいるためahead数は更新ごとに増えるが、このままPRを作ると、
-main側の無関係な差分を含み、競合やレビュー負荷が増える。
+main側の無関係な差分を含み、競合やレビュー負荷が増える。rootを通常作業場所に戻したことは、
+この古い混在branchをそのままPRにすることを意味しない。
 
-PR前に、最新`origin/main`を起点に変更を積み直す（rebaseまたは新branchへcherry-pick）必要がある。
-その際、各commitの責務を分離する。
+PR前には最新`origin/main`を起点に、root上で責務ごとの新branchを作り、必要なcommitだけを
+cherry-pickする。順序はdocs、format、微小island品質改善、以後の品質PoCの順とし、速度変更は
+品質評価が終わるまで別branchへ置く。
+
+### 2.1 tmp残留copyの扱い
+
+`tmp/ab-parent`は既にGit worktreeではない。Directory削除は`.pytest_cache`へのアクセス拒否で停止した。
+中身を再利用せず、root作業に影響しないことを確認済みである。テスト関連processを終了できる時点で、
+この**明示的な絶対pathだけ**を削除する。`tmp/`全体や評価artifactは削除しない。
 
 ## 3. main反映済みだが、PR未作成のため未完了として扱うもの
 
@@ -204,28 +212,55 @@ Profileで品質とlatencyを比較する。3.7と3.5を、異なる処理内容
 
 ## 9. 推奨する実施順序
 
-### P0 — 速度変更の前に品質を確認する
+### P0 — 品質改善を先に完了する
 
-1. `43b0e4f`のarchitecture改善を、現行Cloud Run条件・固定dataset・人手A/B/Cで再評価する。
-2. CPU 1 → CPU 2でONNX inferenceがどこまで短縮するかを同条件で実測する。
-3. RGBA Layer生成が1.9〜10.0秒とばらつく原因をstage / asset特性ごとに調べる。
-4. Semantic Planning入力準備18.5秒の内訳を調べる。
-5. rejected candidateを安全に早期終了できるか、固定品質datasetでA/Bする。
-6. candidate数を減らしても品質を維持できるか、固定品質datasetでA/Bする。
+1. **評価基準を固定する**: architecture 3ケース以上、非architecture 3ケース以上、料理/器・人物・
+   背景あり/なしを含むprivate datasetを固定する。各caseで残す対象・除外背景・A/B/C rubricを
+   実行前に記録する。
+2. **architectureを再評価する**: `cedb1a6`と`43b0e4f`を、現行Cloud Runの5写真・4 Layer・
+   3.5 Flash Lite条件で比較する。Semantic / Source / BBox / Mask / Layer / Compositionを匿名化して
+   人手評価し、建築改善と非architecture回帰なしを確認する。
+3. **微小island改善を評価する**: `4189159`は閾値に合わせた採用ではなく、人物・小物・料理を
+   含む固定datasetで主成分保持・背景混入・4 Layer到達率を比較する。品質が確認できた場合だけ
+   main最新から独立PRにする。
+4. **料理/器の課題をPoC化する**: `coherent_group`は、まずSemantic Planのcomponent関係を
+   人手レビューし、その後bbox別Mask unionをA/Bする。料理専用後処理や大きな飛び地の強制結合はしない。
+5. **背景・浮遊Layerを品質評価する**: 背景なしが許容される場合と、`scene_anchor`を選ぶべき場合を
+   作品として評価する。0.30 gapは物理強度ではなく構図制約として扱う。
 
-5・6は、速度だけを理由に採用しない。Semantic Prompt、Segmentation条件、Quality Gate、
-candidate数を変更する場合は、同じ入力条件で最終作品を人手A/B/C評価する。
+この段階ではcandidate数、Quality Gate、Semantic Prompt、Segmentation条件を速度目的で変更しない。
+品質を変える実験は必ず同じ入力条件で最終作品を人手A/B/C評価する。
+
+### P1 — 品質変更をPR単位へ分離する
+
+1. root上で最新`origin/main`からdocs-only branchを作り、設計・台帳資料をPRにする。
+2. `21e3938`のformatはdocs・品質変更から分け、単独`chore` PRとして扱う。
+3. P0の評価を通過した`4189159`だけを新branchへcherry-pickし、test / lint / format / Contract validation /
+   fixed dataset evidenceを添えてPRにする。
+4. `coherent_group`など次の品質PoCは、前のPRの採否後に新branchで始める。
 
 ### 運用P0 — PRとブランチを整理する
 
 1. PR #3のopen状態とmain反映済みcommitの関係を解消する。
-2. `21e3938` を単独のformat PRにするか明示的に廃棄するか決める。
-3. 最新`origin/main`から、`4189159` を最小差分で積み直す。
-4. Backend tests、ruff、format、Contract validation、固定金沢ケースを再実行する。
-5. 微小飛び地修正のPRを作成する。速度改善の試行を混ぜない。
-6. `a8234f1` の資料は、必要ならdocs-only PRとして独立提出する。
+2. root以外の比較worktreeを新たに作らない。比較が必要な場合も、rootでbranchを切り替えるか、
+   事前にartifactを出してから一時worktreeを明示的に作成・解消する。
+3. `tmp/ab-parent`の残留copyは、ロック解除後に明示pathだけを削除する。
 
-### P1 — 非同期化の責任境界を維持する
+### P2 — 速度改善を品質ベースラインの後に行う
+
+1. **CPU 1 → CPU 2**: ONNX inferenceの短縮量を同一入力・同一candidate数・同一Profileで測る。
+   AIの選定・Mask・Quality Gateを変えないため、最初に試す速度改善候補とする。
+2. **RGBA Layerばらつき**: 1.9〜10.0秒の差をasset寸法、alpha面積、crop、PNG encode等に分解して
+   観測する。原因を確認するまで最適化しない。
+3. **Semantic入力準備**: 18.5秒をthumbnail / PNG変換等へ分解して観測する。元写真resizeは
+   Request Size上限対策として維持し、AI速度改善と混同しない。
+4. **rejected candidate / candidate数**: 約33秒の未採用処理を短縮できる可能性があるが、P0の
+   固定品質datasetで回帰なしを確認した後だけearly reject・候補数変更をA/Bする。
+
+P2でも、速度だけを理由にcandidate数、Quality Gate、Semantic Prompt、Segmentation条件を変更しない。
+技術指標と最終作品の人手A/B/Cを両方満たしたものだけをPRにする。
+
+### 並行事項 — 非同期化の責任境界を維持する
 
 4分規模の公開処理を同期HTTPで待たせない方針である。Backend担当が次の候補を検討中であり、
 AI担当は既存の生成Function境界・最終Artwork Contract・詳細stage logを維持する。
@@ -236,13 +271,6 @@ AI担当は既存の生成Function境界・最終Artwork Contract・詳細stage 
 | 進捗取得 | Frontendがjobをpolling | Frontend / Backend領域。 |
 | Job実行 | Firestore、Cloud Tasks + 同一Cloud Run worker Endpoint候補 | Backend / GCP領域。AI担当は独自workerやqueueを先回りで作らない。 |
 | Asset保存 | GCS候補 | Backend領域。AIは`GenerationResult`のassetを返す境界を維持する。 |
-
-### P2 — 共通Layer抽出をPoCする
-
-1. 料理・人物・建築・小物を含む固定datasetと、必須要素/除外背景の評価ラベルを用意する。
-2. Semantic Planのみで`coherent_group`のcomponent計画をレビューする。
-3. component別Mask unionを既存方式とA/B比較する。
-4. 回帰がないことを確認してから、限定Verification / 再計画を検討する。
 
 ## 10. 今回行わないこと
 
