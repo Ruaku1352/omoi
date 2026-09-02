@@ -1,7 +1,7 @@
 .app {
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: 2.5rem 1.5rem 4rem;
+  max-width: none;
+  margin: 0;
+  padding: 0;   
 }
 
 .app h1 {
@@ -12,19 +12,6 @@
 .app h2 {
   font-size: 1.1rem;
   margin: 2.5rem 0 0.75rem;
-}
-
-.section-heading,
-.bundle-loader {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.section-heading h2,
-.bundle-loader h2 {
-  margin-top: 0;
 }
 
 .tagline {
@@ -61,122 +48,6 @@
 code {
   font-family: ui-monospace, monospace;
   font-size: 0.85em;
-}
-
-.bundle-loader,
-.print-panel {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: 8px;
-}
-
-.loader-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: flex-end;
-}
-
-.primary-button,
-.secondary-button,
-.file-button {
-  min-height: 2.5rem;
-  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-  border-radius: 8px;
-  padding: 0.45rem 0.85rem;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
-}
-
-.primary-button {
-  color: #ffffff;
-  background: #136f63;
-  border-color: #136f63;
-}
-
-.primary-button:disabled {
-  cursor: progress;
-  opacity: 0.65;
-}
-
-.file-button {
-  display: inline-flex;
-  align-items: center;
-  position: relative;
-  overflow: hidden;
-}
-
-.file-button input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.print-rules {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.print-rules span {
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  font-size: 0.85rem;
-}
-
-.print-report {
-  margin-top: 1rem;
-}
-
-.print-report dl {
-  display: grid;
-  grid-template-columns: repeat(3, max-content 1fr);
-  gap: 0.15rem 0.65rem;
-  margin: 0;
-}
-
-.print-report dt {
-  opacity: 0.6;
-  font-size: 0.85rem;
-}
-
-.print-report dd {
-  margin: 0;
-}
-
-.print-report ul {
-  margin: 0.75rem 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0.35rem;
-}
-
-.print-report li {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
-  border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-  padding-top: 0.35rem;
-}
-
-.print-report li span {
-  opacity: 0.68;
-  font-size: 0.85rem;
-  text-align: right;
-}
-
-.error-text {
-  color: #b42318;
-}
-
-.warning-text {
-  color: #8a5a00;
 }
 
 .layers {
@@ -235,24 +106,13 @@ code {
 footer {
   margin-top: 3rem;
 }
-
-@media (max-width: 760px) {
-  .section-heading,
-  .bundle-loader,
-  .layer,
-  .print-report li {
-    flex-direction: column;
-  }
-
-  .loader-actions {
-    justify-content: flex-start;
-  }
-
-  .print-report dl {
-    grid-template-columns: max-content 1fr;
-  }
-
-  .print-report li span {
-    text-align: left;
-  }
+.app-error {
+  max-width: 1120px;
+  margin: 8px auto 0;
+  padding: 12px 16px;
+  background: #fdeaea;
+  border: 1px solid #c00;
+  border-radius: 8px;
+  color: #c00;
+  font-size: 14px;
 }

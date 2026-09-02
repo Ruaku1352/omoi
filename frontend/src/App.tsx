@@ -1,28 +1,15 @@
+import { useState } from 'react'
 import './App.css'
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
-import { buildAssetIndex, resolveAssetUrl } from './artwork/assetIndex'
-import { layerHeightRatio } from './artwork/geometry'
-import { sortByLayerIndex } from './artwork/layerOrder'
-import { apiBaseUrl } from './config/env'
+import { buildAssetIndex } from './artwork/assetIndex'
 import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
-import { loadLocalPrintDataset } from './print/localBundle'
-import { PrintExportPanel } from './print/PrintExportPanel'
-import type { Artwork } from './types/artwork'
-import type { AssetManifest } from './types/assetManifest'
-
-interface ActiveDataset {
-  name: string
-  artwork: Artwork
-  assetManifest: AssetManifest
-  notes: string[]
-}
-
-const mockDataset: ActiveDataset = {
-  name: 'contracts/mock',
-  artwork: mockArtwork,
-  assetManifest: buildMockAssetManifest(mockArtwork),
-  notes: [],
-}
+import PhotoSelect from './screens/PhotoSelect'
+import Navbar from './components/Navbar'
+import Breadcrumb from './components/Breadcrumb'
+import PreviewScreen from './screens/PreviewScreen'
+import EditScreen from './screens/EditScreen'
+import GeneratingScreen from './screens/GeneratingScreen'
+import DoneScreen from './screens/DoneScreen'
+export type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
 
 /**
  * 共通Mockの `layers[]` を **layerIndex 昇順（0が最背面）** で並べて確認するページ。
@@ -31,55 +18,67 @@ const mockDataset: ActiveDataset = {
  * それらは Frontend担当が `skills/frontend/SKILL.md` の実装順で積む。
  */
 export default function App() {
-  const [dataset, setDataset] = useState<ActiveDataset>(mockDataset)
-  const [objectUrls, setObjectUrls] = useState<string[]>([])
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const artwork = dataset.artwork
+const [artwork, setArtwork] = useState(mockArtwork)
+const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
+const [screen, setScreen] = useState<Screen>('select')
+const [error, setError] = useState<string | null>(null) 
   // `layers[]` の配列位置は奥行き順ではない。必ず layerIndex で並べ替える。
-  const layers = useMemo(() => sortByLayerIndex(artwork.layers), [artwork.layers])
-  const assets = useMemo(() => buildAssetIndex(dataset.assetManifest), [dataset.assetManifest])
-
-  useEffect(() => {
-    return () => {
-      for (const url of objectUrls) URL.revokeObjectURL(url)
-    }
-  }, [objectUrls])
-
-  const handleLocalFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget
-    const files = input.files
-    if (!files || files.length === 0) return
-    try {
-      const loaded = await loadLocalPrintDataset(files)
-      setDataset({
-        name: loaded.name,
-        artwork: loaded.artwork,
-        assetManifest: loaded.assetManifest,
-        notes: loaded.notes,
-      })
-      setObjectUrls(loaded.objectUrls)
-      setLoadError(null)
-    } catch (caught) {
-      setLoadError(caught instanceof Error ? caught.message : '読み込みに失敗しました')
-    } finally {
-      input.value = ''
-    }
-  }
-
-  const resetToMock = () => {
-    setObjectUrls([])
-    setDataset(mockDataset)
-    setLoadError(null)
-  }
+  const assets = buildAssetIndex(manifest)
 
   return (
     <main className="app">
-      <header>
-        <h1>omoi</h1>
-        <p className="tagline">Our Memories, One Image — Preview / Print Handoff</p>
-      </header>
-
-      <section className="meta">
+      <Navbar />
+      {error && <p className="app-error">{error}</p>}
+{(screen === 'select' || screen === 'generating') && <Breadcrumb current={screen} />}
+      <button
+  type="button"
+  onClick={async () => {
+    const base = 'http://localhost:8000'
+    const res = await fetch(`${base}/generate-success-response.bundle.json`)
+    const data = await res.json()
+    const manifest = {
+      assets: data.assetManifest.assets.map((a: { url: string }) => ({
+        ...a,
+        url: `${base}/${a.url}`,
+      })),
+    }
+    setArtwork(data.artwork)
+    setManifest(manifest)
+    setScreen('preview')
+  }}
+>
+  実データを読む（デバッグ用）
+</button>
+      {screen ==='select' &&(
+       <PhotoSelect
+        onGenerated={(nextArtwork, nextManifest) => {
+          setArtwork(nextArtwork)
+          setManifest(nextManifest)
+          setScreen('preview') 
+        }}
+         onStart={() => { setError(null); setScreen('generating') }}
+  onFailed={(message) => setError(message)}
+      />)}
+      {screen === 'generating' && <GeneratingScreen />}
+{screen === 'preview' && (
+  <PreviewScreen
+    artwork={artwork}
+    assets={assets}
+    onSelectScreen={setScreen}
+  />
+)}
+{screen === 'edit' && (
+  <EditScreen
+    artwork={artwork}
+    assets={assets}
+    onChange={setArtwork}
+    onSelectScreen={setScreen}
+  />
+)}
+{screen === 'done' && (
+  <DoneScreen artwork={artwork} assets={assets} onSelectScreen={setScreen} />
+)}
+      {/* <section className="meta">
         <dl>
           <dt>Source</dt>
           <dd>
@@ -104,39 +103,9 @@ export default function App() {
             <code>{apiBaseUrl === '' ? '(未設定 / 同一Origin相対)' : apiBaseUrl}</code>
           </dd>
         </dl>
-      </section>
+      </section> */}
 
-      <section className="bundle-loader">
-        <div>
-          <h2>入力データ</h2>
-          <p className="muted">
-            Driveで受け取ったResponse JSONとassets画像をまとめて選ぶと、この画面の入力を差し替えられる。
-          </p>
-        </div>
-        <div className="loader-actions">
-          <label className="file-button">
-            JSONとassetsを選択
-            <input type="file" multiple onChange={handleLocalFiles} />
-          </label>
-          <label className="file-button">
-            展開Bundleフォルダ
-            <input type="file" multiple {...{ webkitdirectory: '' }} onChange={handleLocalFiles} />
-          </label>
-          <button className="secondary-button" type="button" onClick={resetToMock}>
-            Mockに戻す
-          </button>
-        </div>
-        {loadError && <p className="error-text">{loadError}</p>}
-        {dataset.notes.length > 0 && <p className="warning-text">{dataset.notes.join(' / ')}</p>}
-      </section>
-
-      <PrintExportPanel
-        artwork={artwork}
-        assetManifest={dataset.assetManifest}
-        datasetName={dataset.name}
-      />
-
-      <section>
+      {/* <section>
         <h2>
           layers <span className="muted">— layerIndex 昇順（0が最背面）／{layers.length} 層</span>
         </h2>
@@ -188,11 +157,11 @@ export default function App() {
             </li>
           ))}
         </ol>
-      </section>
+      </section> */}
 
-      <footer className="muted">
+      {/*<footer className="muted">
         Artwork Data はURLを持たない。画像は Asset Manifest 経由で <code>assetId</code> を解決している。
-      </footer>
+      </footer>*/}
     </main>
   )
 }

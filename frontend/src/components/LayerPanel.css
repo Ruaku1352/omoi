@@ -1,0 +1,122 @@
+.lp {
+ flex: 1 1 0;
+  min-width: 220px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-left: 0.5px solid var(--omoi-gray);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.lp-head {
+  padding: 32px 44px;
+  text-align: center;
+}
+.lp-title {
+  margin: 0 0 8px;
+  font-weight: 500;
+  font-size: 20px;
+  color: #000;
+}
+.lp-lead {
+  margin: 0;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--omoi-gray);
+}
+
+.lp-list {
+  flex: 1;
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.lp-sep {
+  display: block;
+  width: 100%;
+  max-width: 271px;
+  margin: 0 auto 16px;
+}
+
+.lp-row {
+  width: 100%;
+  max-width: 281px;
+  min-height: 80px; 
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0.5px solid var(--omoi-gray);
+  border-radius: 16px;
+  background: #fff;
+}
+.lp-row.is-selected {
+  background: var(--omoi-bg);
+  border: none;
+  border-left: 2px solid var(--omoi-orange);
+}
+
+.lp-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.lp-arrows button {
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  border: 0.5px solid var(--omoi-gray);
+  border-radius: 4px;
+  background: #fff;
+  font-size: 10px;
+  color: var(--omoi-gray);
+  cursor: pointer;
+}
+.lp-arrows button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.lp-pill { cursor: pointer; background: #fff; }
+.lp-chip { width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0; }
+.lp-label { flex: 1; font-size: 15px; color: #000; min-width: 0;
+ }
+
+.lp-pill {
+  padding: 8px 16px;
+  border: 1px solid var(--omoi-orange);
+  border-radius: 24px;
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 500;
+  font-size: 10px;
+  color: var(--omoi-orange);
+  white-space: nowrap;
+}
+
+.lp-hint { padding: 16px; }
+.lp-hint-card {
+  width: 100%;
+  max-width: 280px;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: var(--omoi-bg);
+  border: 0.5px solid var(--omoi-accent);
+  border-radius: 16px;
+}
+.lp-hint-card img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.lp-hint-card p { margin: 0; font-size: 12px; line-height: 1.5; flex: 1;
+  min-width: 0;
+  color: #000; }

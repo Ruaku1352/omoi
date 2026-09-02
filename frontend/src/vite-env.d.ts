@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_MIN_SCALE?: string
   readonly VITE_MAX_SCALE?: string
   readonly VITE_PREVIEW_DEPTH_STEP?: string
+  readonly VITE_PREVIEW_LAYER_THICKNESS?: string 
 }
 
 interface ImportMeta {
