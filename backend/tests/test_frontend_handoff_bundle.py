@@ -207,10 +207,15 @@ def test_debug_observer_writes_real_bbox_and_mask_previews(tmp_path: Path) -> No
     assert (tmp_path / "debug" / "bbox" / "source-01-bbox.png").is_file()
     assert (tmp_path / "debug" / "bbox" / "index.json").is_file()
     assert (tmp_path / "debug" / "masks" / "mask-001.png").is_file()
+    assert (tmp_path / "debug" / "masks" / "mask-001-preview.png").is_file()
     assert (tmp_path / "debug" / "masks" / "index.json").is_file()
     index_path = tmp_path / "debug" / "masks" / "index.json"
     attempts = json.loads(index_path.read_text(encoding="utf-8"))["attempts"]
     assert attempts[0]["diagnostics"]["componentCount"] == 1
+    assert attempts[0]["file"] == "mask-001.png"
+    assert attempts[0]["previewFile"] == "mask-001-preview.png"
+    with Image.open(tmp_path / "debug" / "masks" / attempts[0]["file"]) as saved_mask:
+        assert saved_mask.size == (100, 80)
     assert "memoryTextと一致" in (tmp_path / "debug" / "summary.md").read_text(encoding="utf-8")
 
 

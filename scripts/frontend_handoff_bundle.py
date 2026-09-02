@@ -111,10 +111,15 @@ class PocDebugObserver(GenerationObserver):
         del image
         sequence = len(self._mask_records) + 1
         filename = f"mask-{sequence:03d}.png"
+        preview_filename = f"mask-{sequence:03d}-preview.png"
         mask_image = Image.fromarray(result.mask.astype(np.uint8) * 255, mode="L")
-        _thumbnail(mask_image, 1200).save(self._masks_dir / filename)
+        # 段階分離評価では元解像度の連結成分面積を再計算する必要がある。
+        # 目視用縮小PNGと同じ名前にしない。
+        mask_image.save(self._masks_dir / filename)
+        _thumbnail(mask_image, 1200).save(self._masks_dir / preview_filename)
         record = {
                 "file": filename,
+                "previewFile": preview_filename,
                 "candidateId": candidate.candidate_id,
                 "candidateLabel": candidate.label,
                 "candidateKind": candidate.kind,
@@ -136,6 +141,8 @@ class PocDebugObserver(GenerationObserver):
                 "largestComponentRatio": quality.diagnostics.largest_component_ratio,
                 "topComponentAreaRatios": list(quality.diagnostics.top_component_area_ratios),
                 "tailComponentAreaRatio": quality.diagnostics.tail_component_area_ratio,
+                "interiorHoleCount": quality.diagnostics.interior_hole_count,
+                "interiorHoleAreaRatio": quality.diagnostics.interior_hole_area_ratio,
                 "analysisScale": quality.diagnostics.analysis_scale,
             }
         self._mask_records.append(record)

@@ -52,8 +52,10 @@ early reject・candidate数削減・Quality Gate変更を行わない。品質�
 | `tmp/ab-candidate` | なし | worktree登録・Directoryとも解消済み。 |
 | `tmp/ab-parent` | なし | worktree登録は解消済み。`.pytest_cache`のアクセス拒否により、古い比較用ファイルコピーが残留している。作業には使わない。 |
 
-作業ツリーに未commitのソース変更はない。`poc-images/`、`poc-output/`、`tmp/` 配下の写真・
-生成artifact・比較worktreeはprivateな評価材料であり、commit対象ではない。
+作業ツリーには、`coherent_group`のPlanning / Mask union PoC、細いMask gap閉鎖のPoC、
+Composition PromptのRule A試行、評価資料の未commit変更がある。いずれもこの古い混在branchから
+直接PRにしない。`poc-images/`、`poc-output/`、`tmp/` 配下の写真・生成artifact・比較worktreeは
+privateな評価材料であり、commit対象ではない。
 
 ### ブランチの重要な注意
 
@@ -78,7 +80,7 @@ cherry-pickする。順序はdocs、format、微小island品質改善、以後�
 | --- | --- | --- |
 | physical-ready Layer生成 | `cedb1a6` は `origin/main` のancestor。ただしPR #1〜#3のcommit一覧に含まれない。 | コードはmain反映済みだが、**PR未作成のため未完了** |
 | architecture Layer抽出改善 | `43b0e4f` は `origin/main` のancestor。ただしPR #1〜#3のcommit一覧に含まれない。 | コードはmain反映済みだが、**PR未作成のため未完了** |
-| architecture A/B比較 | 既存private A/Bには改善の示唆がある。現行Cloud Run・固定dataset・人手評価を含む再確認は未了。 | **再評価がP0** |
+| architecture A/B比較 | 既存private A/Bには改善の示唆がある。Locked regression-6から36件のprivate実行台帳を生成済み。現行Cloud Run・固定dataset・人手評価を含む再確認は未了。 | **再評価がP0** |
 
 Architectureの改善内容は、建築本体を優先候補として残し、微小な孤立成分だけを安全に除去するもの。
 しかし、PR提出を完了条件とする以上、この履歴はプロセス上未完了である。すでにmainにコードが
@@ -107,7 +109,7 @@ PR #3は「PR未作成」ではない。ただしopenのままなので、レビ
 
 | Commit | 内容 | 検証済み | 未完了理由 |
 | --- | --- | --- | --- |
-| `4189159 feat(ai): retain masks with micro islands` | `single_form`相当のsubjectで、主成分以外の合計が暫定0.5%以下なら削除して採用する。設定は `MASK_MICRO_ISLAND_MAX_AREA_RATIO`。 | Backend tests 51 passed、Backend ruff check / format check、Contract validation。金沢で人物候補の飛び地0.4788%を除去して採用。 | PR未作成。main最新への積み直しと再検証が必要。 |
+| `4189159 feat(ai): retain masks with micro islands` | `single_form`相当のsubjectで、主成分以外の合計が暫定0.5%以下なら削除して採用する。設定は `MASK_MICRO_ISLAND_MAX_AREA_RATIO`。 | Backend tests 51 passed、Backend ruff check / format check、Contract validation。金沢で人物候補の飛び地0.4788%を除去して採用。 | 同等の最小差分`cbe3958`が最新main起点の[PR #6](https://github.com/Ruaku1352/omoi/pull/6)としてOPEN。レビュー・マージ待ち。 |
 
 この変更は、元写真にない画素の生成・Maskの橋渡し・物理出力の判断を行わない。3%以上の意味ある
 分離候補を無条件に採用する変更でもない。
@@ -130,7 +132,8 @@ API、Physical Outputの製造条件は変更していない。
 | --- | --- | --- | --- |
 | 建築向けSemantic処理 | `physical_layer_v3_architecture` は、明確な歴史的建築がある場合に `architecture_primary` として建築本体全体を候補化し、選定時に優先する。`architecture_detail` は分離した非重複の細部だけに限定する。 | `SEMANTIC_PROFILE=physical_layer_v3_architecture` のみ | **main反映済み**。既定Profileは`physical_layer_v2`のため、通常実行で常に有効ではない。建築固有のSegmentation ModelやMask合成はない。 |
 | 建築の微小飛び地 | v3の建築roleは、主成分外の合計が0.1%以下なら最大成分だけを残す。 | v3の`architecture_primary` / `architecture_detail` | **main反映済み**。閾値超過の成分を結合・補正しない。 |
-| 一般subjectの微小飛び地 | 主成分外の合計が0.5%以下なら削除する。 | `physical_layer_v2` / v3の一般subject | **ローカルcommitのみ、PR未作成**（`4189159`）。mainの既定挙動ではない。 |
+| 一般subjectの微小飛び地 | 主成分外の合計が0.5%以下なら削除する。 | `physical_layer_v2` / v3の一般subject | `cbe3958`を含む[PR #6](https://github.com/Ruaku1352/omoi/pull/6)がOPEN。mainの既定挙動ではない。 |
+| 閉鎖穴の充填 | 画像端の外側背景へ8方向で到達できない透明領域をforegroundへ変える。component直後・union直後・`coherent_group`のgap closing直後に適用する。 | subject Layer。`scene_anchor`の矩形Cropは対象外。 | **作業ツリー実装・PR未作成**。窓・建築開口部、器の内側、腕を同じ規則で扱う。外部へ開いた隙間や離れたcomponentを橋渡ししない。人物・料理/器・建築の段階分離証跡と全Backendテストは成功済み。 |
 | 大きな飛び地 / 意味ある分離 | 閾値を超えた分離成分は残したまま候補を`not_single_component`で不採用にする。 | mainのv2/v3、および未PRの0.5%案 | **「修正」機能は未実装**。Maskを橋渡しせず、無関係な物体を寄せ集めない安全側の挙動。4 Layerに届かなければ生成自体を失敗として返す。 |
 | 背景Layer | Geminiは`scene_anchor`を最大2候補まで計画できる。最重要の1件だけを選び、単一bboxの矩形Cropを背景Layerとして使う。 | `physical_layer_v2` / v3 | **main反映済み・既定v2で有効**。幅がCanvasの0.60未満になる候補は不採用。背景が無い場合はprivate診断`background_missing=true`を残すだけで、背景を自動生成・代替しない。 |
 | 浮遊Layer管理 | 各Layerの表示矩形下端からCanvas下端までのgapを測る。0.30を超えた場合、Geminiへ1回だけ再構図を要求し、まだ超えるものだけを決定論的に下方へclampする。 | `physical_layer_v2` / v3 | **main反映済み・既定v2で有効**。支柱・土台・接続部を作らず、物理強度も判定しない。透明Alpha形状ではなく、Layer Assetの表示矩形に基づく制約である。 |
@@ -165,13 +168,20 @@ Planning / Layer Selection上の優先処理**である。既存private A/Bに�
 ### 6.3 背景と浮遊量の未解決点
 
 背景は、`scene_anchor`が計画・選定できた場合だけ設定される。`background_missing`は公開Response
-へ出ず、現状は作品生成を失敗にも再計画にもしていない。「背景らしいLayerがなければ無しでもよい」
-という許容を持つ一方、背景を必ず成立させる保証はない。
+へ出ず、現状は作品生成を失敗にも再計画にもしていない。既存private artifactの目視では、料理・工芸の
+静物は背景なしでも一まとまりに読めた一方、ノートルダムの塔・彫像・バラ窓が分かれた例はまとまりが弱かった。
+したがって、背景の有無だけで合否を決めず、最終previewの関係性を評価する必要がある。背景を必ず成立させる
+保証も、背景なしを意図的に選ぶ規則もまだない。
 
 浮遊量の0.30は【PoC後FIX】のAI構図上の暫定値で、物理的に許容できるgapを表すmm値ではない。
 下方clampにより画像上の位置は修正できるが、Layer間の実接続、支柱の必要性、印刷後に立つかどうかは
 Physical Outputの責務である。さらに現在のgapはAsset外接矩形で測るため、Alpha形状の実際の下端との
 ずれは未評価である。
+
+前景subjectどうしの過度な重なりは、2026-09-02に評価者が「一方の大きな部分を隠す配置を避ける」方針を
+承認した。`scene_anchor`が背面にあること、または同じ人物を複数時点で表すことは、この方針だけでは
+不合格にしない。Composition PromptへのPoC追加を金沢ケースで1回確認したが、明確な改善差はまだなく、
+通常Profileへの採用・PRは保留である。
 
 ### 6.4 この領域の残タスク
 
@@ -197,18 +207,23 @@ Profileで品質とlatencyを比較する。3.7と3.5を、異なる処理内容
 再現性を上げる改善対象である。ただし、これはCloud Runで確認済みの3.5 Flash Lite・4 Layer成功を
 否定するものではない。
 
-## 8. 未実装の設計改善
+## 8. 共通Layer抽出設計の実装状況
 
-`15_COMMON_LAYER_EXTRACTION_DESIGN.md` は提案であり、以下はまだコード化していない。
+`15_COMMON_LAYER_EXTRACTION_DESIGN.md` は提案である。ただし、2026-09-01の現在作業ツリーには、
+次の`coherent_group` PoC実装がある。いずれも公開Artwork Contractには出さず、PRもまだ作成していない。
 
-1. 内部Semantic Planの `extraction_intent` とcomponent関係。
-2. `coherent_group` のcomponent別bbox → Mask → union。
-3. 必須component保持・背景混入を確認する共通Quality Check。
-4. GeminiによるLayer内容Verificationと、上限1回のcomponent再計画。
-5. 多様な固定datasetでの匿名A/B評価。
+| 項目 | 実装状態 | 検証状態 |
+| --- | --- | --- |
+| 内部Semantic Planの`extraction_intent`とcomponent関係 | 実装済み。`single_form` / `coherent_group` / `scene_anchor`、primaryとの関係を内部Modelで検証する。 | basketballの`c4`・`c9`を人手承認。 |
+| `coherent_group`のcomponent別bbox → Mask → union | PoC実装済み。明示されたcomponentを別々にSegmentationし、Maskをunionする。微小island cleanupは行わない。 | `c4`・`c9`で、人＋ボールを必要componentとして保持することを確認。 |
+| `coherent_group` union直後の細いgap閉鎖 | PoC実装済み。二値Maskのmorphological closingを明示設定時だけ適用する。通常Profileの既定値は0。 | モンブラン＋皿、人物＋ボール2件で2 pxを比較。建築を含む通常Profile採用の判断は未了。 |
+| 必須component保持・背景混入の共通Quality Check | 未実装。 | 別PoCが必要。 |
+| GeminiによるLayer内容Verificationと上限1回の再計画 | 未実装。 | 別PoCが必要。 |
+| 多様な固定datasetでの匿名A/B評価 | 未実施。 | 現在はCodex上の画像確認と人手目視でPoCする。 |
 
-料理の「皿だけが残り、料理が抜ける」問題は、この未実装の`coherent_group`で解く対象である。
-一般subjectの0.5%微小飛び地除去だけでは解決しない。
+料理の「皿だけが残り、料理が抜ける」問題は、`coherent_group`で検証を続ける対象である。
+一般subjectの0.5%微小飛び地除去だけでは解決しない。PoC実装を製品挙動として採用するかは、
+必須component保持と非architecture回帰を確認してから決める。
 
 ## 9. 推奨する実施順序
 

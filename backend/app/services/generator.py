@@ -18,6 +18,8 @@ from app.services.mock_generator import MockArtworkGenerator
 def build_generator(
     settings: Settings,
     observer: GenerationObserver | None = None,
+    *,
+    subject_overlap_diagnostics: bool = False,
 ) -> ArtworkGenerator:
     if settings.mock_ai:
         return MockArtworkGenerator(settings.contracts_dir)
@@ -53,5 +55,6 @@ def build_generator(
         physical_max_bottom_gap=settings.physical_max_bottom_gap,
         architecture_micro_island_max_area_ratio=settings.architecture_micro_island_max_area_ratio,
         mask_micro_island_max_area_ratio=settings.mask_micro_island_max_area_ratio,
+        subject_overlap_diagnostics=subject_overlap_diagnostics,
         observer=observer,
     )
