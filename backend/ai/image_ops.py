@@ -73,6 +73,50 @@ def union_masks(masks: list[np.ndarray]) -> np.ndarray:
     return np.logical_or.reduce(masks).astype(bool, copy=False)
 
 
+def fill_closed_mask_holes(mask: np.ndarray) -> np.ndarray:
+    """外側の背景とつながらないMask内の透明な穴をすべて埋める。
+
+    窓や建築の開口部を含め、画像端の背景へ到達できない透明領域だけを
+    foregroundへ変える。外部に開いた隙間やMask間の空間は変えないため、
+    対象同士を橋渡しして結合する処理ではない。
+    """
+
+    if mask.ndim != 2:
+        raise AiError("Maskは2次元である必要があります")
+    result = np.asarray(mask, dtype=bool)
+    if not result.size:
+        return result
+
+    height, width = result.shape
+    exterior = np.zeros_like(result, dtype=bool)
+    pending: list[int] = []
+
+    def mark_exterior(y: int, x: int) -> None:
+        if not result[y, x] and not exterior[y, x]:
+            exterior[y, x] = True
+            pending.append(y * width + x)
+
+    for x in range(width):
+        mark_exterior(0, x)
+        mark_exterior(height - 1, x)
+    for y in range(1, height - 1):
+        mark_exterior(y, 0)
+        mark_exterior(y, width - 1)
+
+    while pending:
+        y, x = divmod(pending.pop(), width)
+        for delta_y in (-1, 0, 1):
+            for delta_x in (-1, 0, 1):
+                if delta_y == 0 and delta_x == 0:
+                    continue
+                next_y = y + delta_y
+                next_x = x + delta_x
+                if 0 <= next_y < height and 0 <= next_x < width:
+                    mark_exterior(next_y, next_x)
+
+    return np.logical_or(result, ~exterior)
+
+
 def mask_to_rgba_png(
     image: Image.Image,
     mask: np.ndarray,
