@@ -12,7 +12,7 @@ from PIL import Image
 from ai.assembly import AcceptedLayer, normalize_composition
 from ai.errors import AiError, AiNotConfiguredError
 from ai.gemini import GeminiArtworkGenerator, _semantic_plan_schema
-from ai.image_ops import gemini_box_to_px, mask_to_rgba_png, union_masks
+from ai.image_ops import fill_closed_mask_holes, gemini_box_to_px, mask_to_rgba_png, union_masks
 from ai.internal_models import CompositionPlan, SemanticPlan
 from ai.quality import (
     QualityPolicy,
@@ -159,6 +159,19 @@ class FakeSegmenter:
         return SegmentationResult(mask=mask, score=0.9, prompt_box_px=box_px)
 
 
+class PerforatedSegmenter(FakeSegmenter):
+    def segment(self, image: Image.Image, box_px) -> SegmentationResult:
+        result = super().segment(image, box_px)
+        mask = result.mask.copy()
+        x0, y0, x1, y1 = box_px
+        hole_x0 = x0 + (x1 - x0) // 3
+        hole_x1 = x0 + (x1 - x0) * 2 // 3
+        hole_y0 = y0 + (y1 - y0) // 3
+        hole_y1 = y0 + (y1 - y0) * 2 // 3
+        mask[hole_y0:hole_y1, hole_x0:hole_x1] = False
+        return SegmentationResult(mask=mask, score=result.score, prompt_box_px=box_px)
+
+
 class RejectFirstSegmenter(FakeSegmenter):
     def __init__(self) -> None:
         self.calls = 0
@@ -268,6 +281,26 @@ def test_bbox_mask_union_and_rgba_png() -> None:
     with Image.open(BytesIO(png)) as output:
         assert output.mode == "RGBA"
         assert output.getchannel("A").getextrema() == (0, 255)
+
+
+def test_fill_closed_mask_holes_fills_windows_but_preserves_openings() -> None:
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[1:9, 1:9] = True
+    mask[3:5, 3:5] = False
+    mask[6:8, 6:8] = False
+
+    filled = fill_closed_mask_holes(mask)
+
+    assert filled[4, 4]
+    assert filled[7, 7]
+    assert not filled[0, 0]
+    assert filled.sum() == mask.sum() + 8
+
+    open_mask = mask.copy()
+    open_mask[1:4, 4] = False
+    preserved = fill_closed_mask_holes(open_mask)
+    assert not preserved[4, 4]
+    assert not preserved[0, 4]
 
 
 def test_quality_gate_rejects_empty_and_full_masks() -> None:
@@ -390,7 +423,7 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
     generator = GeminiArtworkGenerator(
         api_key="test-key",
         model="test-model",
-        segmenter=FakeSegmenter(),
+        segmenter=PerforatedSegmenter(),
         candidate_count=8,
         target_layer_min=4,
         target_layer_max=4,
@@ -427,7 +460,9 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
         if asset.asset_id.startswith("layer-"):
             with Image.open(BytesIO(asset.data)) as image:
                 assert image.mode == "RGBA"
-                assert image.getchannel("A").getextrema()[0] == 0
+                alpha = np.asarray(image.getchannel("A"), dtype=np.uint8) > 0
+                assert alpha.any()
+                assert np.array_equal(alpha, fill_closed_mask_holes(alpha))
     assert generator.last_metrics.semantic_planning_elapsed_ms >= 0
     assert all(metric.success for metric in generator.last_metrics.candidates)
 

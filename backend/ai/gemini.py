@@ -30,6 +30,7 @@ from ai.image_ops import (
     crop_to_rgba_png,
     decode_photo,
     expand_box,
+    fill_closed_mask_holes,
     gemini_box_to_px,
     mask_to_rgba_png,
     thumbnail,
@@ -738,6 +739,12 @@ class GeminiArtworkGenerator:
                         outcome="error",
                     )
                     raise
+                result = SegmentationResult(
+                    mask=fill_closed_mask_holes(result.mask),
+                    score=result.score,
+                    prompt_box_px=result.prompt_box_px,
+                    timings=result.timings,
+                )
                 _log_segmentation_timings(
                     result,
                     candidate_id=candidate.candidate_id,
