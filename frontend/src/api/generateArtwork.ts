@@ -10,16 +10,19 @@
 
 import { apiBaseUrl } from '../config/env'
 import type { GenerateSuccessResponse } from '../types/generateResponse'
+import type { JobStatusResponse } from '../types/job'
 import { ApiError, toApiError } from './errors'
 
 export type { GenerateSuccessResponse }
 
 export interface GenerateArtworkInput {
-  /** 可変長。固定5枚ではない（AGENTS.md §4）。 */
   photos: readonly File[]
-  /** 任意。未入力可。 */
   memoryText?: string
   signal?: AbortSignal
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export async function generateArtwork(
@@ -33,24 +36,47 @@ export async function generateArtwork(
     form.append('memoryText', input.memoryText)
   }
 
-  const response = await fetch(`${apiBaseUrl}/api/v1/artworks/generate`, {
+  // ① まず生成を「予約」する。返ってくるのは jobId だけ
+  const startResponse = await fetch(`${apiBaseUrl}/api/v1/artworks/generate`, {
     method: 'POST',
     body: form,
     signal: input.signal,
   })
 
-  if (!response.ok) {
-    throw await toApiError(response)
+  if (!startResponse.ok) {
+    throw await toApiError(startResponse)
   }
 
-  const result = (await response.json()) as GenerateSuccessResponse
-  if (!result?.artwork || !result?.assetManifest) {
-    throw new ApiError({
-      code: 'INTERNAL_ERROR',
-      message: '作品の生成に失敗しました。もう一度お試しください。',
-      retryable: true,
-      status: response.status,
+  const { jobId } = (await startResponse.json()) as { jobId: string }
+
+  // ② 完了か失敗になるまで、2秒おきに様子を見に行く
+  while (true) {
+    await sleep(2000)
+
+    const jobResponse = await fetch(`${apiBaseUrl}/api/v1/jobs/${jobId}`, {
+      signal: input.signal,
     })
+
+    if (!jobResponse.ok) {
+      throw await toApiError(jobResponse)
+    }
+
+    const data = (await jobResponse.json()) as JobStatusResponse
+
+    if (data.status === 'completed') {
+      return data.result
+    }
+
+    if (data.status === 'failed') {
+      throw new ApiError({
+        code: data.error.code,
+        message: data.error.message,
+        retryable: data.error.retryable,
+        status: jobResponse.status,
+        details: data.error.details,
+      })
+    }
+
+    // ここに来たら「まだ処理中」。ループの先頭に戻ってもう一度待つ
   }
-  return result
 }
