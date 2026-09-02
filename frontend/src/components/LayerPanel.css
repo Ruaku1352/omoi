@@ -1,6 +1,7 @@
 .lp {
-  width: 309px;
-  flex-shrink: 0;
+ flex: 1 1 0;
+  min-width: 220px;
+  max-width: 400px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -38,13 +39,15 @@
 
 .lp-sep {
   display: block;
-  width: 271px;
+  width: 100%;
+  max-width: 271px;
   margin: 0 auto 16px;
 }
 
 .lp-row {
-  width: 281px;
-  height: 80px;
+  width: 100%;
+  max-width: 281px;
+  min-height: 80px; 
   padding: 8px;
   display: flex;
   align-items: center;
@@ -82,7 +85,8 @@
 }
 .lp-pill { cursor: pointer; background: #fff; }
 .lp-chip { width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0; }
-.lp-label { flex: 1; font-size: 15px; color: #000; }
+.lp-label { flex: 1; font-size: 15px; color: #000; min-width: 0;
+ }
 
 .lp-pill {
   padding: 8px 16px;
@@ -97,8 +101,9 @@
 
 .lp-hint { padding: 16px; }
 .lp-hint-card {
-  width: 280px;
-  height: 80px;
+  width: 100%;
+  max-width: 280px;
+  min-height: 80px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -107,5 +112,11 @@
   border: 0.5px solid var(--omoi-accent);
   border-radius: 16px;
 }
-.lp-hint-card img { width: 24px; height: 24px; flex-shrink: 0; }
-.lp-hint-card p { margin: 0; font-size: 12px; line-height: 1.5; color: #000; }
+.lp-hint-card img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.lp-hint-card p { margin: 0; font-size: 12px; line-height: 1.5; flex: 1;
+  min-width: 0;
+  color: #000; }

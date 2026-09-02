@@ -4,10 +4,10 @@ import { Stage, Layer, Image as KonvaImage, Transformer } from 'react-konva'
 import { resolveAssetUrl, type AssetIndex } from '../artwork/assetIndex'
 import { fromLayerRectPx, toLayerRectPx } from '../artwork/geometry'
 import { sortByLayerIndex } from '../artwork/layerOrder'
-import { clampScale } from '../config/artworkEditing'
+import { clampScale, minScale, maxScale } from '../config/artworkEditing'
 import type { Artwork, Layer as ArtworkLayer } from '../types/artwork'
 
-const STAGE_WIDTH = 600
+const DEFAULT_STAGE_WIDTH = 600
 
 /** URLから画像を読み込む。読み込みが終わるまでは null を返す。 */
 function useImage(url: string) {
@@ -95,13 +95,21 @@ function LayerImage({
       />
 
       {isSelected && (
-        <Transformer
-          ref={trRef}
-          rotateEnabled={false}
-          keepRatio
-          enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
-        />
-      )}
+  <Transformer
+    ref={trRef}
+    rotateEnabled={false}
+    keepRatio
+    enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
+    boundBoxFunc={(oldBox, newBox) => {
+      const minWidthPx = minScale * stageWidth
+      const maxWidthPx = maxScale * stageWidth
+      if (newBox.width < minWidthPx || newBox.width > maxWidthPx) {
+        return oldBox
+      }
+      return newBox
+    }}
+  />
+)}
     </>
   )
 }
@@ -115,11 +123,22 @@ export default function ArtworkEditor({
   onChange: (next: Artwork) => void
   assets: AssetIndex
 }) {
-  const layers = sortByLayerIndex(artwork.layers)
-  const stageWidth = STAGE_WIDTH
-  const stageHeight = STAGE_WIDTH / artwork.canvas.aspectRatio
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+const layers = sortByLayerIndex(artwork.layers)
+const containerRef = useRef<HTMLDivElement>(null)
+const [stageWidth, setStageWidth] = useState(DEFAULT_STAGE_WIDTH)
+const stageHeight = stageWidth / artwork.canvas.aspectRatio
+const [selectedId, setSelectedId] = useState<string | null>(null)
 
+useEffect(() => {
+  const el = containerRef.current
+  if (!el) return
+
+  const observer = new ResizeObserver((entries) => {
+    setStageWidth(entries[0].contentRect.width)
+  })
+  observer.observe(el)
+  return () => observer.disconnect()
+}, [])
   const updateLayer = (layerId: string, next: Partial<ArtworkLayer>) => {
     onChange({
       ...artwork,
@@ -132,8 +151,8 @@ export default function ArtworkEditor({
     
 
   return (
-    <div style={{ background: 'var(--editor-bg)', display: 'inline-block' }}>
-      <Stage
+<div ref={containerRef} style={{ background: 'var(--editor-bg)', width: '100%', maxWidth: DEFAULT_STAGE_WIDTH }}>
+    <Stage
         width={stageWidth}
         height={stageHeight}
         onMouseDown={(e) => {
