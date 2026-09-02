@@ -20,6 +20,7 @@ export default function PhotoSelect({
 }) {
   const [photos, setPhotos] = useState<File[]>([])
   const [memoryText, setMemoryText] = useState('')
+  const [isDragOver, setIsDragOver] = useState(false)
 
   const previews = useMemo(() => photos.map((file) => URL.createObjectURL(file)), [photos])
 
@@ -31,6 +32,11 @@ export default function PhotoSelect({
 
   const removePhoto = (index: number) => {
     setPhotos(photos.filter((_, i) => i !== index))
+  }
+
+  const addPhotos = (files: FileList | File[]) => {
+    const added = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    setPhotos((prev) => [...prev, ...added].slice(0, 10))
   }
 
   const handleGenerate = async () => {
@@ -48,7 +54,19 @@ export default function PhotoSelect({
   return (
     <>
       <section className="s01">
-        <div className="s01-drop">
+        <div
+          className={`s01-drop${isDragOver ? ' s01-drop-over' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setIsDragOver(true)
+          }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setIsDragOver(false)
+            addPhotos(e.dataTransfer.files)
+          }}
+        >
           {hasPhotos ? (
             <div className="s01-grid">
               {photos.map((file, i) => (
@@ -82,8 +100,7 @@ export default function PhotoSelect({
             multiple
             hidden
             onChange={(e) => {
-              const added = Array.from(e.target.files ?? [])
-              setPhotos([...photos, ...added].slice(0, 10))
+              addPhotos(e.target.files ?? [])
               e.target.value = ''
             }}
           />

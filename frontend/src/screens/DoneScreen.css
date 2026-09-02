@@ -10,6 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 24px;
   padding: 32px;
   border: 1px solid #000;
@@ -34,7 +35,8 @@
 
 /* ---- 左（プレビュー） ---- */
 .done-left {
-  width: 928px;
+  flex: 2 1 420px;
+  max-width: 928px;
   padding: 32px 24px;
   display: flex;
   flex-direction: column;
@@ -78,9 +80,10 @@
 }
 
 /* ---- 右（確定パネル） ---- */
+/* ---- 右（確定パネル） ---- */
 .done-right {
-  width: 390px;
-  height: 708px;
+  flex: 1 1 280px;
+  max-width: 900px;
   padding: 32px 24px;
   display: flex;
   flex-direction: column;
@@ -89,7 +92,6 @@
 }
 .done-panel {
   width: 100%;
-  height: 626px;
   background: #fff;
   border-radius: 16px;
   display: flex;
@@ -99,13 +101,13 @@
 }
 
 .done-panel-top {
-  height: 400px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 16px;
   text-align: center;
+  padding: 32px 0;
 }
 .done-title { margin: 0; font-weight: 700; font-size: 32px; color: #000; }
 .done-lead { margin: 0; font-weight: 500; font-size: 20px; line-height: 1.5; color: #000; }
@@ -113,9 +115,11 @@
 
 .done-panel-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 32px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 24px;
   padding: 16px 24px;
 }
 
