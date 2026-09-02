@@ -356,6 +356,16 @@ layerHeightMm  = layerWidthMm * asset.heightPx / asset.widthPx
 - API Key を Slack / Docs / AGENTS.md / Screenshot へ平文記載しない
 - Frontendの公開可能な設定のみ `VITE_` Prefix で持つ
 
+### Private PoC入力の送信承認【ローカル運用・2026-09-01】
+
+- `poc-images/` 配下の画像と対応する`memoryText`は、AI品質PoCのためGemini Developer APIへ
+  送信してよい。ケースごとの送信確認は不要。
+- 画像、memoryText本文、API Key、PoC出力は引き続きGitへcommitしない。
+
+### PR本文【FIX】
+
+- Pull Requestのタイトル・本文・レビュー依頼・コメントは日本語で記述する。
+
 ---
 
 ## 11. Agentへの禁止事項（まとめ）

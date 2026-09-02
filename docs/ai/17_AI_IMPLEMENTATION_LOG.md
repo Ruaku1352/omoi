@@ -85,7 +85,8 @@ union後に大きな分離成分が残る
 
 「大きな飛び地を修正して採用する」実装はない。無関係な背景片と、器＋料理・人物＋手持ち物の
 ような意味ある複数要素を、面積だけで区別できないためである。後者は`15_COMMON_LAYER_EXTRACTION_DESIGN.md`
-の`coherent_group`として未実装の検証対象である。
+の`coherent_group`として、通常Profileへは未実装である。現在の作業ツリーにはprivate PoCだけがあり、
+製品挙動としては採用していない。
 
 ## 5. コード実装の時系列
 
@@ -102,7 +103,9 @@ union後に大きな分離成分が残る
 | 2026-08-31 | `43b0e4f` | `physical_layer_v3_architecture`。建築本体優先、建築微小island 0.1%除去、architecture A/B評価の記録を追加。 | main反映・PR未確認 → **未完了** |
 | 2026-08-31 | `7695698` | Semantic / Segmentation attempt / ONNX inference / Mask quality / Composition / AI totalの詳細performance timing logを追加。Cloud Runで上記234.5秒のstage別実測を取得。 | remote push済み、[PR #3](https://github.com/Ruaku1352/omoi/pull/3) OPEN。commit自体は`origin/main`のancestorで、PRの状態整理が必要。 |
 | 2026-08-31 | `21e3938` | Backend AI sourceのRuff formatのみ。挙動変更なし。 | **ローカルのみ・未push・PRなし** |
-| 2026-09-01 | `4189159` | 一般subjectへ0.5%以下の微小island除去を拡張。`mask_cleanup`診断を追加。 | **ローカルのみ・未push・PRなし** |
+| 2026-09-01 | `cbe3958` | 一般subjectへ0.5%以下の微小island除去を拡張。`mask_cleanup`診断を追加。最新`origin/main`から最小差分としてcherry-pickした。 | push済み、[PR #6](https://github.com/Ruaku1352/omoi/pull/6) OPEN。 |
+| 2026-09-01 | 作業ツリー（未commit） | private PoC bundleのMask証跡を、原寸Maskと目視用サムネイルへ分離。原寸Maskの再計算が`mask_cleanup` metricsと一致することを確認した。 | **ローカルのみ・PRなし** |
+| 2026-09-02 | 作業ツリー（未commit） | `coherent_group`のcomponent関係、component別Mask union、union直後だけの細いgap closing、Rule AのComposition Prompt PoCを追加。前景subjectのAlpha重なりとE2E failure stageもprivate診断へ追加した。加えて、画像端の背景とつながらない閉鎖穴を、component・union後のMaskで機械的に埋める処理を追加した。公開Contractは変更していない。 | **ローカルのみ・PRなし・品質確認前** |
 
 ## 6. AI資料・評価資料の時系列
 
@@ -111,12 +114,15 @@ union後に大きな分離成分が残る
 | 日付 | Commit / Artifact | 内容 | PR / Push状態 |
 | --- | --- | --- | --- |
 | 2026-08-24〜27 | `d500cd7`, `93f0883`, `fac2ef3` | Model選定、Cloud Run制約、作品品質Gap、評価workflowを`docs/ai/`へ追加。 | main反映済み |
-| 2026-08-31 | `poc-output/architecture-ab-*` | 親`cedb1a6`と`43b0e4f`の固定6ケースA/B。改善の示唆を得た。現行Cloud Run条件・人手A/B/Cでの再確認はP0。 | private検証、PR対象外 |
+| 2026-08-31 | `poc-output/architecture-ab-*` | 親`cedb1a6`と`43b0e4f`の固定6ケースA/B。architectureは親1/3、candidate 3/3が4 Layerへ到達し、非architectureは両variant 3/3が到達した。各ケース1回のローカル試行で、実効Model記録もないため改善の示唆に留める。現行Cloud Run条件・Codex上の画像確認・人手目視での再確認はP0。 | private検証、PR対象外 |
 | 2026-08-31 | `poc-output/user-evaluation-*` | 匿名化した候補・source・bbox・mask・Layer・構図を人手評価できるpackage。 | private検証、PR対象外 |
 | 2026-09-01 | `poc-output/kanazawa-micro-island-evaluation-*` | 金沢5枚、3.7 Flash設定で人物Maskの飛び地0.4788%を削除して4 Layer生成、Contract validation成功。 | private検証。実装`4189159`は未PR |
 | 2026-09-01 | `a8234f1` | 共通Layer抽出設計案。`single_form` / `coherent_group` / `scene_anchor`を提案。 | **ローカルのみ・未push・PRなし** |
 | 2026-09-01 | `699fbd3`, `a6e38c2` | local作業状況、PR未作成=未完了、建築/背景/浮遊量/飛び地の状態を記録。 | **ローカルのみ・未push・PRなし** |
 | 2026-09-01 | `poc-output/kanazawa-model-evaluation-*` | ローカルでの`gemini-3.5-flash-lite`試行。Semantic Planning成功後、E2E artifactが不完全に終了。 | private検証、ローカルrunnerのfailure記録改善課題 |
+| 2026-09-01 | 現在作業ツリーの`coherent_group` PoC | 内部`extraction_intent`・component関係、component別Mask unionを追加。basketballの人＋ボール2ケースでunion結果を人手承認。細い穴・隙間の補正は保留。 | local only・PRなし・製品採用前 |
+| 2026-09-02 | `poc-output/locked-regression-6-20260901/architecture-ab-run-sheet.json` | Locked regression-6からbaseline/candidate各3回、計36件のCloud Run実行台帳を生成。写真・memoryText本文・secretは含めない。 | private検証。Cloud Run実行はBackend/GCP担当待ち |
+| 2026-09-01 | `scripts/replay_micro_island_cleanup.py` | 保存済み原寸Maskへ同じcleanupを再適用し、実行時`mask_cleanup` metricsと照合するprivate評価補助script。3ケース・8適用候補で一致を確認。 | local only・PRなし・品質採用前 |
 | 最新Cloud Run実測 | 詳細Performance Log有効、`gemini-3.5-flash-lite`で5写真→4 Layer・Contract validation成功。 | Runtime検証済み。品質/速度変更の比較基準 |
 
 ## 7. PR・push状態の一覧
@@ -128,7 +134,7 @@ union後に大きな分離成分が残る
 | `cedb1a6`, `43b0e4f` / physical-ready・architecture | branchはoriginあり | 対応PRなし（PR #1〜#3のcommit一覧で確認） | codeはmain ancestor | **未完了（PR未作成）** |
 | `chore/ai-performance-timing` / `7695698` | originあり | PR #3 OPEN、base=`feat/ai-mvp-5photos-4layers` | commitはmain ancestorだがPRはopen | PR提出済み、状態整理待ち |
 | `chore/ai-ruff-hygiene` / `21e3938` | originなし | なし | local only | **未完了** |
-| `feat/ai-general-micro-island-cleanup` / `4189159` + docs | originなし | なし | local only。`origin/main`より30 commits behind（台帳作成時点） | **未完了** |
+| `feat/ai-general-micro-island-cleanup` / `4189159` + docs | originなし | なし | rootの古い混在branchはlocal only。品質変更の最小差分`cbe3958`は別branchで[PR #6](https://github.com/Ruaku1352/omoi/pull/6) OPEN。 | root branch自体は**未完了**。PR #6はレビュー・マージ待ち。 |
 
 通常のAI作業場所はRepository rootの`feat/ai-general-micro-island-cleanup`であり、登録済みworktreeは
 ここだけである。比較用`tmp/ab-*`は登録解除済みで、`tmp/ab-parent`の古いファイルcopyだけが
@@ -141,11 +147,11 @@ union後に大きな分離成分が残る
 | --- | --- | --- | --- |
 | P0 | PR #3の状態整理 | PRをmerge/closeしてmainとの状態を一致させる | open PRがmain ancestorと不整合 |
 | P0 | Ruff整形の扱い決定 | 単独PRとして提出、または明示的に採用しない | local only |
-| P0 | 0.5%微小island PR | main最新から最小差分を積み直し、test / lint / format / contract /固定評価後にPR作成 | branchがmainより遅れ、未push・未PR |
-| P0 | architecture A/B再評価 | 現行Cloud Run条件・固定dataset・人手A/B/Cで品質向上と非architecture回帰なしを確認 | 既存A/Bは示唆段階 |
-| P0 | 微小island品質評価 | 人物・小物・料理を含む固定datasetで0.5%処理の主成分保持・背景混入・4 Layer到達率を確認 | `4189159`は未PR |
+| P0 | 0.5%微小island PR | [PR #6](https://github.com/Ruaku1352/omoi/pull/6)のレビュー・マージを完了する。追加のSemantic / Composition変更は混ぜない。 | PR #6はOPEN・MERGEABLE。status check / review decisionは未記録。 |
+| P0 | architecture A/B再評価 | 現行Cloud Run条件・固定dataset・人手A/B/Cで品質向上と非architecture回帰なしを確認 | 36件のprivate実行台帳は生成済み。Cloud Run実行、revision / fingerprint / artifact記録がBackend/GCP担当待ち。 |
+| P0 | 微小island品質評価 | 人物・小物・料理を含む固定datasetで0.5%処理の主成分保持・背景混入・4 Layer到達率を確認 | private段階分離・3ケースE2E・評価者目視を記録済み。PR #6のレビュー待ち。 |
 | P0 | 背景 / 浮遊Layer評価 | 背景あり/なしとAsset外接矩形gapの見た目を固定datasetで評価 | `background_missing`と0.30は暫定 |
-| P0 | `coherent_group` PoC | 料理＋器等で必須componentを保持し、非architectureも回帰しない | 設計のみ、未実装 |
+| P0 | `coherent_group` PoC | 料理＋器等で必須componentを保持し、非architectureも回帰しない | Planning・component別Mask union・2 px gap closingはprivate PoC実装済み。背景混入・大きな欠損の共通Quality Checkと最終previewの評価者承認が未了。 |
 | P1 | CPU 1 → CPU 2実測 | ONNX inference短縮量と総時間を同一品質条件で比較 | CPU増量の効果未測定 |
 | P1 | RGBA Layerばらつき調査 | 1.9〜10.0秒の原因をstage / asset特性別に説明 | 原因未調査 |
 | P1 | Semantic入力準備の内訳 | 18.5秒をthumbnail / PNG変換等へ分解 | 詳細未観測 |

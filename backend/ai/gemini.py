@@ -23,13 +23,16 @@ from ai.assembly import (
     assemble_artwork,
     bottom_gaps,
     clamp_bottom_gaps,
+    diagnose_subject_overlaps,
     normalize_composition,
 )
 from ai.errors import AiError, AiNotConfiguredError, AiRateLimitedError, AiTimeoutError
 from ai.image_ops import (
+    close_narrow_mask_gaps,
     crop_to_rgba_png,
     decode_photo,
     expand_box,
+    fill_closed_mask_holes,
     gemini_box_to_px,
     mask_to_rgba_png,
     thumbnail,
@@ -67,9 +70,14 @@ class CandidateMetric:
     mask_largest_component_ratio: float | None = None
     mask_top_component_area_ratios: tuple[float, ...] | None = None
     mask_tail_component_area_ratio: float | None = None
+    mask_interior_hole_count: int | None = None
+    mask_interior_hole_area_ratio: float | None = None
     mask_diagnostics_analysis_scale: int | None = None
     mask_bbox_coverage: float | None = None
     mask_border_touch: bool | None = None
+    coherent_group_required_component_count: int | None = None
+    coherent_group_required_component_accepted_count: int | None = None
+    coherent_group_component_exclusive_area_ratios: tuple[tuple[str, float], ...] | None = None
     candidate_kind: str = "subject"
     semantic_role: str = "general"
     layer_build_mode: str = "segmented_mask"
@@ -86,6 +94,7 @@ class PhysicalReadyDiagnostics:
     recomposed: bool
     final_bottom_gaps: tuple[tuple[str, float], ...]
     y_corrections: tuple[tuple[str, float], ...]
+    subject_overlap_pairs: tuple[dict[str, object], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -176,7 +185,8 @@ class GeminiSemanticPlanner:
             [prompt, *photo_parts],
             SemanticPlan,
             _semantic_plan_schema(
-                require_semantic_role=self._semantic_profile == "physical_layer_v3_architecture"
+                require_semantic_role=self._semantic_profile == "physical_layer_v3_architecture",
+                require_extraction_plan=self._semantic_profile == "coherent_group_planning",
             ),
             self._request_timeout_ms,
         )
@@ -213,6 +223,9 @@ class GeminiComposer:
             "Return exactly one placement for every candidate_id. x and y are centers in 0..1; "
             "scale is layer width divided by canvas width; order is back-to-front. "
             "Compose a balanced keepsake, not literal scene depth. "
+            "Keep foreground subject layers visually distinct: avoid excessive overlap that hides "
+            "a substantial part of one subject behind another. A scene anchor may sit behind "
+            "foreground subjects, but do not use foreground-overlap merely to fill the canvas. "
             "Do not add commentary outside the schema.\n\nLayers:"
         ]
         if max_bottom_gap is not None:
@@ -266,6 +279,8 @@ class GeminiArtworkGenerator:
         physical_max_bottom_gap: float = 0.30,
         architecture_micro_island_max_area_ratio: float = 0.001,
         mask_micro_island_max_area_ratio: float = 0.005,
+        coherent_group_gap_closure_px: int = 0,
+        subject_overlap_diagnostics: bool = False,
         semantic_planner: SemanticPlanner | None = None,
         composer: Composer | None = None,
         observer: GenerationObserver | None = None,
@@ -284,6 +299,8 @@ class GeminiArtworkGenerator:
             raise AiNotConfiguredError("建造物Maskの微小孤立成分設定が不正です")
         if not 0 <= mask_micro_island_max_area_ratio <= 1:
             raise AiNotConfiguredError("Maskの微小孤立成分設定が不正です")
+        if coherent_group_gap_closure_px < 0:
+            raise AiNotConfiguredError("coherent_groupのgap閉鎖設定が不正です")
         self._segmenter = segmenter
         self._candidate_count = candidate_count
         self._target_layer_min = target_layer_min
@@ -305,6 +322,8 @@ class GeminiArtworkGenerator:
         self._physical_max_bottom_gap = physical_max_bottom_gap
         self._architecture_micro_island_max_area_ratio = architecture_micro_island_max_area_ratio
         self._mask_micro_island_max_area_ratio = mask_micro_island_max_area_ratio
+        self._coherent_group_gap_closure_px = coherent_group_gap_closure_px
+        self._subject_overlap_diagnostics = subject_overlap_diagnostics
         self._observer = observer
         self._api_key = api_key
         self._model = model
@@ -506,6 +525,18 @@ class GeminiArtworkGenerator:
                     )
                 ),
                 y_corrections=tuple(sorted(corrections.items())),
+                subject_overlap_pairs=(
+                    tuple(
+                        diagnostic.__dict__
+                        for diagnostic in diagnose_subject_overlaps(
+                            accepted,
+                            layout,
+                            canvas_aspect_ratio=self._canvas_aspect_ratio,
+                        )
+                    )
+                    if self._subject_overlap_diagnostics
+                    else ()
+                ),
             )
             if self._physical_ready
             else None
@@ -584,6 +615,7 @@ class GeminiArtworkGenerator:
             return self._build_scene_anchor(candidate, image)
         segmentation_started = time.perf_counter()
         masks = []
+        accepted_components = []
         scores: list[float] = []
         component_qualities: list[MaskQuality] = []
         diagnostics_max_side = (
@@ -602,6 +634,11 @@ class GeminiArtworkGenerator:
             for attempt in range(self._segmentation_max_retries + 1):
                 current_box = prompt_box if attempt == 0 else expand_box(prompt_box, image.size)
                 result = await asyncio.to_thread(self._segmenter.segment, image, current_box)
+                result = SegmentationResult(
+                    mask=fill_closed_mask_holes(result.mask),
+                    score=result.score,
+                    prompt_box_px=result.prompt_box_px,
+                )
                 quality = assess_mask(
                     result.mask,
                     current_box,
@@ -644,6 +681,7 @@ class GeminiArtworkGenerator:
                     )
                 continue
             masks.append(result.mask)
+            accepted_components.append(component)
             component_qualities.append(quality)
             if result.score is not None:
                 scores.append(result.score)
@@ -660,6 +698,23 @@ class GeminiArtworkGenerator:
                 "no_accepted_components",
             )
         combined_mask = union_masks(masks)
+        is_coherent_group = candidate.extraction_intent == "coherent_group"
+        coherent_group_metrics = (
+            _coherent_group_component_metrics(candidate, accepted_components, masks)
+            if is_coherent_group
+            else None
+        )
+        # component単位では開いていた領域が、union後に閉じることがある。
+        # その場合も窓・開口部と同じく、外部とつながらない穴として埋める。
+        combined_mask = fill_closed_mask_holes(combined_mask)
+        if is_coherent_group and self._coherent_group_gap_closure_px:
+            combined_mask = close_narrow_mask_gaps(
+                combined_mask,
+                max_gap_px=self._coherent_group_gap_closure_px,
+            )
+            # closingが外部へ通じる細い通路を閉じると、新しい閉鎖穴が生じ得る。
+            # 最終Layerの穴を残さないため、形状変更後にも同じ規則を適用する。
+            combined_mask = fill_closed_mask_holes(combined_mask)
         combined_quality = assess_mask(
             combined_mask,
             (0, 0, image.width, image.height),
@@ -673,7 +728,7 @@ class GeminiArtworkGenerator:
         }:
             cleanup_limit = self._architecture_micro_island_max_area_ratio
         mask_cleanup = "not_needed"
-        if self._physical_ready:
+        if self._physical_ready and not is_coherent_group:
             cleanup = clean_micro_islands(
                 combined_mask,
                 max_removed_area_ratio=cleanup_limit,
@@ -701,8 +756,18 @@ class GeminiArtworkGenerator:
                 mask_cleanup = f"removed_micro_islands:{cleanup.removed_area_ratio:.6f}"
             elif cleanup.component_count == 1:
                 mask_cleanup = "already_single_component"
+        elif self._physical_ready:
+            # coherent_groupで指定されたrequired componentは、離れていても意味を構成する。
+            # 微小island cleanupで付属物を削除したり、橋を描いて連結したりはしない。
+            mask_cleanup = (
+                f"closed_narrow_gaps:{self._coherent_group_gap_closure_px};"
+                f"retained_coherent_group:{len(masks)}"
+                if self._coherent_group_gap_closure_px
+                else f"retained_coherent_group:{len(masks)}"
+            )
         if (
             self._physical_ready
+            and not is_coherent_group
             and combined_quality.diagnostics is not None
             and combined_quality.diagnostics.component_count != 1
         ):
@@ -721,6 +786,7 @@ class GeminiArtworkGenerator:
             combined_quality.diagnostics,
             bbox_coverage=min(item.bbox_coverage for item in component_qualities),
             border_touch=any(item.border_touch for item in component_qualities),
+            expected_multiple_components=is_coherent_group,
         )
         if rejection_reason is not None:
             return None, _candidate_metric(
@@ -768,6 +834,7 @@ class GeminiArtworkGenerator:
                 bbox_coverage=min(item.bbox_coverage for item in component_qualities),
                 border_touch=any(item.border_touch for item in component_qualities),
                 mask_cleanup=mask_cleanup,
+                coherent_group_metrics=coherent_group_metrics,
             ),
         )
 
@@ -875,6 +942,7 @@ def _candidate_metric(
     border_touch: bool,
     layer_build_mode: str = "segmented_mask",
     mask_cleanup: str = "not_applicable",
+    coherent_group_metrics: tuple[int, int, tuple[tuple[str, float], ...]] | None = None,
 ) -> CandidateMetric:
     diagnostics = quality.diagnostics
     return CandidateMetric(
@@ -894,13 +962,48 @@ def _candidate_metric(
         mask_tail_component_area_ratio=(
             diagnostics.tail_component_area_ratio if diagnostics else None
         ),
+        mask_interior_hole_count=diagnostics.interior_hole_count if diagnostics else None,
+        mask_interior_hole_area_ratio=(
+            diagnostics.interior_hole_area_ratio if diagnostics else None
+        ),
         mask_diagnostics_analysis_scale=diagnostics.analysis_scale if diagnostics else None,
         mask_bbox_coverage=bbox_coverage,
         mask_border_touch=border_touch,
+        coherent_group_required_component_count=(
+            coherent_group_metrics[0] if coherent_group_metrics else None
+        ),
+        coherent_group_required_component_accepted_count=(
+            coherent_group_metrics[1] if coherent_group_metrics else None
+        ),
+        coherent_group_component_exclusive_area_ratios=(
+            coherent_group_metrics[2] if coherent_group_metrics else None
+        ),
         candidate_kind=candidate.kind,
         semantic_role=candidate.semantic_role,
         layer_build_mode=layer_build_mode,
         mask_cleanup=mask_cleanup,
+    )
+
+
+def _coherent_group_component_metrics(
+    candidate: VisualElementCandidate,
+    accepted_components: list[SegmentationComponent],
+    masks: list[np.ndarray],
+) -> tuple[int, int, tuple[tuple[str, float], ...]]:
+    """component別Maskのunionへの寄与をprivate metricsとして残す。"""
+
+    combined = union_masks(masks)
+    combined_area = int(combined.sum())
+    exclusive_ratios: list[tuple[str, float]] = []
+    for index, (component, mask) in enumerate(zip(accepted_components, masks, strict=True)):
+        other_masks = [item for other_index, item in enumerate(masks) if other_index != index]
+        other_union = union_masks(other_masks) if other_masks else np.zeros_like(mask)
+        exclusive_area = int(np.logical_and(mask, np.logical_not(other_union)).sum())
+        exclusive_ratios.append((component.component_id, exclusive_area / combined_area))
+    return (
+        sum(component.required for component in candidate.components),
+        sum(component.required for component in accepted_components),
+        tuple(exclusive_ratios),
     )
 
 
@@ -938,6 +1041,20 @@ def _semantic_profile_instruction(profile: str) -> str:
             "resolve to one connected visible shape after segmentation; never combine separated "
             "objects merely to fill a layer. Avoid candidates that would need to float high above "
             "the canvas. "
+        )
+    if profile == "coherent_group_planning":
+        return (
+            "Classify every candidate with kind subject or scene_anchor and with extraction_intent "
+            "single_form, coherent_group, or scene_anchor. Use coherent_group only when two or "
+            "more visible components are all necessary for one meaningful memory element, such as "
+            "a dish with its food or a person with a held object. A coherent_group must have at "
+            "least two tight component bboxes in the same source photo, exactly one required "
+            "primary component, and every other component must state whether it is contained, "
+            "supported_by, or attached to that primary component. Do not group unrelated objects "
+            "just to fill a layer. Use single_form when one independent visible shape is enough. "
+            "Use scene_anchor only for one broad rectangular background range with exactly one "
+            "component. This profile plans component relationships only; it does not decide Mask "
+            "union, physical support, or final Layer acceptance. "
         )
     raise AiNotConfiguredError("未対応のSEMANTIC_PROFILEです")
 
@@ -977,7 +1094,9 @@ async def _generate_structured(
     return result_model.model_validate(parsed)
 
 
-def _semantic_plan_schema(*, require_semantic_role: bool = False) -> dict[str, Any]:
+def _semantic_plan_schema(
+    *, require_semantic_role: bool = False, require_extraction_plan: bool = False
+) -> dict[str, Any]:
     box = {
         "type": "object",
         "properties": {name: {"type": "integer"} for name in ("y_min", "x_min", "y_max", "x_max")},
@@ -1020,6 +1139,17 @@ def _semantic_plan_schema(*, require_semantic_role: bool = False) -> dict[str, A
     }
     if require_semantic_role:
         candidate["required"].append("semantic_role")
+    if require_extraction_plan:
+        candidate["properties"]["extraction_intent"] = {
+            "type": "string",
+            "enum": ["single_form", "coherent_group", "scene_anchor"],
+        }
+        component["properties"]["relation_to_primary"] = {
+            "type": "string",
+            "enum": ["primary", "contained", "supported_by", "attached"],
+        }
+        candidate["required"].append("extraction_intent")
+        component["required"].append("relation_to_primary")
     return {
         "type": "object",
         "properties": {

@@ -60,3 +60,91 @@ def test_run_plan_has_explicit_limit_and_profile_comparison(tmp_path: Path) -> N
     assert [profile for _case, profile, _attempt in plan] == ["baseline", "physical_layer_v1"]
     with pytest.raises(ValueError, match="上限"):
         module.build_run_plan(cases, ("baseline", "physical_layer_v1"), 1)
+
+
+def test_failure_stage_records_the_last_reached_pipeline_stage() -> None:
+    module = _module()
+
+    assert (
+        module._failure_stage(
+            {"semantic_planning_elapsed_ms": 12, "composition_elapsed_ms": 0, "candidates": []},
+            "AiError",
+        )
+        == "semantic"
+    )
+    assert (
+        module._failure_stage(
+            {"semantic_planning_elapsed_ms": 0, "composition_elapsed_ms": 0, "candidates": []},
+            "ValueError",
+        )
+        == "source"
+    )
+    assert (
+        module._failure_stage(
+            {
+                "semantic_planning_elapsed_ms": 12,
+                "composition_elapsed_ms": 0,
+                "candidates": [{"success": False}],
+            },
+            "AiError",
+        )
+        == "mask"
+    )
+    assert (
+        module._failure_stage(
+            {
+                "semantic_planning_elapsed_ms": 12,
+                "composition_elapsed_ms": 20,
+                "candidates": [{"success": True}],
+            },
+            "RuntimeError",
+        )
+        == "contract"
+    )
+
+
+def test_review_template_includes_coherent_group_component_evidence(tmp_path: Path) -> None:
+    module = _module()
+    path = tmp_path / "quality-review.json"
+    record = {
+        "caseId": "food",
+        "profile": "coherent_group_planning",
+        "attempt": 1,
+        "scenarioTags": ["food", "coherent_group"],
+        "failureStage": None,
+        "metrics": {
+            "candidates": [
+                {
+                    "candidate_id": "montblanc-and-plate",
+                    "label": "モンブランと皿",
+                    "success": True,
+                    "failure_reason": None,
+                    "semantic_role": "general",
+                    "mask_cleanup": "retained_coherent_group:2",
+                    "mask_component_count": 2,
+                    "mask_largest_component_ratio": 0.7,
+                    "mask_interior_hole_count": 0,
+                    "mask_interior_hole_area_ratio": 0,
+                    "mask_bbox_coverage": 0.8,
+                    "mask_border_touch": False,
+                    "coherent_group_required_component_count": 2,
+                    "coherent_group_required_component_accepted_count": 2,
+                    "coherent_group_component_exclusive_area_ratios": [
+                        ("plate", 0.7),
+                        ("montblanc", 0.3),
+                    ],
+                }
+            ]
+        },
+    }
+
+    module._write_review_template(path, record)
+
+    candidate = json.loads(path.read_text(encoding="utf-8"))["candidates"][0]
+    diagnostics = candidate["diagnostics"]
+    assert diagnostics["requiredComponentCount"] == 2
+    assert diagnostics["requiredComponentAcceptedCount"] == 2
+    assert diagnostics["componentExclusiveAreaRatios"] == [
+        {"componentId": "plate", "ratio": 0.7},
+        {"componentId": "montblanc", "ratio": 0.3},
+    ]

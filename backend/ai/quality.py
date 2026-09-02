@@ -32,6 +32,8 @@ class MaskDiagnostics:
     largest_component_ratio: float
     top_component_area_ratios: tuple[float, ...]
     tail_component_area_ratio: float
+    interior_hole_count: int
+    interior_hole_area_ratio: float
     analysis_scale: int
 
 
@@ -84,18 +86,21 @@ class QualityPolicy:
         *,
         bbox_coverage: float,
         border_touch: bool,
+        expected_multiple_components: bool = False,
     ) -> str | None:
         if self.mode != "enforce":
             return None
         if diagnostics is None:
             raise ValueError("enforced quality policy requires mask diagnostics")
         if (
-            self.max_component_count is not None
+            not expected_multiple_components
+            and self.max_component_count is not None
             and diagnostics.component_count > self.max_component_count
         ):
             return "quality_fragmented"
         if (
-            self.min_largest_component_ratio is not None
+            not expected_multiple_components
+            and self.min_largest_component_ratio is not None
             and diagnostics.largest_component_ratio < self.min_largest_component_ratio
         ):
             return "quality_no_dominant_component"
@@ -161,7 +166,7 @@ def diagnose_mask(mask: np.ndarray, *, max_side: int) -> MaskDiagnostics:
     """
 
     if mask.ndim != 2 or not mask.size or not mask.any():
-        return MaskDiagnostics(0, 0, (), 0, 1)
+        return MaskDiagnostics(0, 0, (), 0, 0, 0, 1)
     if max_side < 1:
         raise ValueError("max_side must be positive")
     scale = max(1, (max(mask.shape) + max_side - 1) // max_side)
@@ -170,11 +175,15 @@ def diagnose_mask(mask: np.ndarray, *, max_side: int) -> MaskDiagnostics:
     foreground = sum(areas)
     ratios = tuple(sorted((area / foreground for area in areas), reverse=True))
     top = ratios[:5]
+    holes = _interior_holes(sampled)
+    hole_pixels = sum(hole.shape[0] for hole in holes)
     return MaskDiagnostics(
         component_count=len(ratios),
         largest_component_ratio=top[0] if top else 0,
         top_component_area_ratios=top,
         tail_component_area_ratio=float(sum(ratios[5:])),
+        interior_hole_count=len(holes),
+        interior_hole_area_ratio=hole_pixels / foreground,
         analysis_scale=scale,
     )
 
@@ -222,6 +231,27 @@ def _component_areas(mask: np.ndarray) -> list[int]:
     """PoC診断だけで使うdependency-freeな8近傍連結成分の面積集計。"""
 
     return [component.shape[0] for component in _connected_components(mask)]
+
+
+def _interior_holes(mask: np.ndarray) -> list[np.ndarray]:
+    """外周と接続していない透明領域を返す。
+
+    これは縮小Maskの観測である。窓・アーチ等の意図的な開口部との区別はしないため、
+    この値だけでMaskを埋めたり候補を不合格にしたりしない。
+    """
+
+    background = _connected_components(np.logical_not(mask))
+    height, width = mask.shape
+    return [
+        component
+        for component in background
+        if not (
+            (component[:, 0] == 0).any()
+            or (component[:, 0] == height - 1).any()
+            or (component[:, 1] == 0).any()
+            or (component[:, 1] == width - 1).any()
+        )
+    ]
 
 
 def _connected_components(mask: np.ndarray) -> list[np.ndarray]:

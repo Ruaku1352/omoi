@@ -211,7 +211,11 @@ async def run_case(
 ) -> dict[str, Any]:
     settings = base_settings.model_copy(update={"semantic_profile": profile})
     observer = PocDebugObserver(output / "debug")
-    generator = build_generator(settings, observer=observer)
+    generator = build_generator(
+        settings,
+        observer=observer,
+        subject_overlap_diagnostics=True,
+    )
     if not isinstance(generator, GeminiArtworkGenerator):
         raise TypeError("MOCK_AI=falseのReal generatorを構成できません")
     try:
@@ -245,6 +249,7 @@ async def run_case(
         _write_review_template(output / "quality-review.json", record)
         return record
     except Exception as exc:  # noqa: BLE001 - PoCでは失敗種別を問わず記録して次ケースへ進む
+        metrics = asdict(generator.last_metrics)
         record = {
             "caseId": case.case_id,
             "profile": profile,
@@ -252,7 +257,8 @@ async def run_case(
             "scenarioTags": list(case.scenario_tags),
             "success": False,
             "errorType": type(exc).__name__,
-            "metrics": asdict(generator.last_metrics),
+            "failureStage": _failure_stage(metrics, type(exc).__name__),
+            "metrics": metrics,
         }
         _write_json(output / "metrics.json", record)
         return record
@@ -288,8 +294,27 @@ def _write_review_template(path: Path, record: dict[str, Any]) -> None:
                         "largestComponentRatio": candidate[
                             "mask_largest_component_ratio"
                         ],
+                        "interiorHoleCount": candidate["mask_interior_hole_count"],
+                        "interiorHoleAreaRatio": candidate[
+                            "mask_interior_hole_area_ratio"
+                        ],
                         "bboxCoverage": candidate["mask_bbox_coverage"],
                         "borderTouch": candidate["mask_border_touch"],
+                        "requiredComponentCount": candidate[
+                            "coherent_group_required_component_count"
+                        ],
+                        "requiredComponentAcceptedCount": candidate[
+                            "coherent_group_required_component_accepted_count"
+                        ],
+                        "componentExclusiveAreaRatios": [
+                            {"componentId": component_id, "ratio": ratio}
+                            for component_id, ratio in (
+                                candidate[
+                                    "coherent_group_component_exclusive_area_ratios"
+                                ]
+                                or ()
+                            )
+                        ],
                     },
                     "rating": None,
                     "failureStage": None,
@@ -326,9 +351,39 @@ def _aggregate_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 for item in items
                 for candidate in item["metrics"].get("candidates", [])
             ),
+            "failureStages": {
+                stage: sum(item.get("failureStage") == stage for item in items)
+                for stage in sorted(
+                    {
+                        str(item["failureStage"])
+                        for item in items
+                        if item.get("failureStage") is not None
+                    }
+                )
+            },
         }
         for profile, items in sorted(grouped.items())
     ]
+
+
+def _failure_stage(metrics: dict[str, Any], error_type: str) -> str:
+    """例外本文を保存せず、最後に到達したAI stageを評価artifactへ残す。"""
+
+    semantic_elapsed_ms = float(metrics.get("semantic_planning_elapsed_ms") or 0)
+    composition_elapsed_ms = float(metrics.get("composition_elapsed_ms") or 0)
+    candidates = metrics.get("candidates") or []
+    if not candidates:
+        return "semantic" if semantic_elapsed_ms > 0 else "source"
+    if error_type == "RuntimeError" and composition_elapsed_ms > 0:
+        return "contract"
+    failed_candidates = [
+        candidate for candidate in candidates if not candidate.get("success", False)
+    ]
+    if failed_candidates:
+        return "mask"
+    if composition_elapsed_ms == 0:
+        return "layer"
+    return "composition"
 
 
 def _write_json(path: Path, payload: Any) -> None:

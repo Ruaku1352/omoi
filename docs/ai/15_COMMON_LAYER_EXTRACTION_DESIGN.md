@@ -100,9 +100,14 @@ RGBA Layer → Layer Selection → Composition
 別々にsegmentし、既存のmask unionでLayerを作る。これにより、主物体だけを前景にして
 必要な内容物を穴として落とす失敗を避ける。
 
-union後も、元写真に存在しない画素を足したり、離れたMask同士を形態学的に橋渡ししたりしない。
-必要componentが視覚的に分離する場合は、まず画像上の関係とLayerとしての見え方を評価し、
-物理的な支持方式の決定はしない。
+union後も、離れたMask同士を大きく橋渡ししない。2026-09-02の評価者指示により、窓や建築の
+開口部を含め、**画像端の背景とつながらない透明な穴は全て機械的に埋める**。これは意味理解を
+追加せず、Mask形状だけで処理する。外側へ開いた透明領域は残るので、離れたcomponent間を結合する
+処理ではない。
+
+細い透明gapを閉じるmorphological closingは、承認済み`coherent_group`のunion直後だけで比較する
+PoCとして別に維持する。人物＋ボールの2件では2 px closingを比較済みだが、建築での確認は未完了で
+ある。物理的な支持方式・実寸の決定は引き続き対象外である。
 
 ### 5.2 共通Quality Check
 
@@ -111,6 +116,7 @@ Quality Checkは、被写体名ではなく抽出意図に基づく。
 | Check | `single_form` | `coherent_group` | `scene_anchor` |
 | --- | --- | --- | --- |
 | Empty / full / prompt外 | reject | reject | reject |
+| 閉鎖した透明な穴 | 機械的に埋める | componentとunionの双方で機械的に埋める | 対象外 |
 | 微小飛び地 | 主成分外の合計が設定値以下なら除去 | **必須componentは除去しない**。無関係な微小islandだけ除去候補 | 対象外 |
 | 必須対象の保持 | Layer全体で確認 | componentごとに確認 | 範囲として確認 |
 | 背景混入 | Layer全体で確認 | component・union双方で確認 | sceneとして許容範囲を確認 |
@@ -216,7 +222,7 @@ memoryText・Real AI出力は `poc-images/` と `poc-output/` のprivate領域�
 ## 10. 非対象
 
 - `food` / `person` / `architecture` ごとの専用Mask後処理
-- マスクの橋渡し、穴埋め、元写真にない画素の生成
+- マスクの大きな橋渡し、元写真にない対象画素の生成
 - 完成した合成画像の再Segmentation
 - Physical Outputの製造制約をAIのArtwork Dataへ書き込むこと
 - 少数テスト画像だけに合わせた閾値・Prompt調整
