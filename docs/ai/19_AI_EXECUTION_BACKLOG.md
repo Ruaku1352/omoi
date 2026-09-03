@@ -2007,3 +2007,16 @@ Quality Gate、Segmentation quality条件を変える案は、その後に品質
 
 今回作成するPRは品質改善と品質証跡のレビュー用であり、**マージを求めない**。速度改善の実装・計測・追いPRはこのPRを
 baselineとして別に作成する。進捗は品質フェーズ完了の**100%**を維持する。
+
+### 8.67 品質ベースラインPR作成 — マージ保留（2026-09-04）
+
+品質フェーズ完了後、人間の明示許可によりcommit `dae8c0e` を
+`codex/ai-quality-baseline-review`へpushし、PR [#8 AI品質ベースライン確定（マージ保留）](https://github.com/Ruaku1352/omoi/pull/8)
+を`main`向けに作成した。PRはOPENでdraftではない。
+
+PR本文には、採用品、flash-lite固定の品質証跡、local Gemini接続失敗の扱い、backend 79 passed、frontend 11 passed、
+lint / build / Ruff / Contract validation / diff checkと、速度改善を混ぜない方針を記載した。人間の方針どおり、
+このPRはレビューと品質baselineの固定のためだけに使い、**現時点でmergeしない**。
+
+速度改善はこのPRの差分や品質artifactをbaselineとして、別PRでCPU Segmentationのstage別計測と品質を変えない改善から扱う。
+候補数、Semantic Prompt、Quality Gate、Segmentation quality条件を変える場合は、さらに独立した品質比較PoCを伴う。
