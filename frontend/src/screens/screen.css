@@ -8,7 +8,7 @@
 .screen-main {
   flex: 2 1 0;
   min-width: 0;
-  padding: 32px 0 0 32px;
+  padding: 32px 32px 0 32px;  /* 右側にも32px追加 */
   display: flex;
   flex-direction: column;
   gap: 32px;
