@@ -1133,3 +1133,21 @@ poc-output/performance-optimization-YYYYMMDD/
 fingerprintには秘密情報・環境変数を含めない。WMIのbattery raw値は取得したが、AC接続・sleep無効・蓋を閉じない
 ことをbaseline実行直前に満たす必要があるため、ここでは給電状態を合否へ読み替えない。P0-B以降は未実施であり、
 Speed PRは未作成である。
+
+### 24.2 P0-B — stage timingと固定Segmentation benchmark（2026-09-04）
+
+- 旧PR #3 `7695698`から、current `EfficientSamOnnxSegmenter`へ安全に移植した計測値:
+  `resize` / `tensor preparation` / monolithic `ONNX inference` / `mask restore`
+- 計測値は内部`SegmentationResult.timings`だけに保持し、公開Response / Artwork Data / Contractへは出さない。
+- `scripts/run_deterministic_segmentation_benchmark.py`を追加。private Saved Planと写真をCLI引数で渡し、
+  Geminiなし・固定bbox・subject component順のEfficientSAM実行をwarm-up後に指定回数計測する。
+- 出力はprivateな`poc-output/performance-optimization-*/benchmark.json`。各attemptのbinary Mask SHA-256と
+  stage内訳、run total、min / median / max / p95相当を保存する。同一run群と任意reference artifactのMask hash
+  不一致はTier A失敗として停止する。
+- scene anchor crop、quality評価／retry選択、closed-hole fill、micro-island cleanup、RGBA build、Compositionは
+  このraw Segmentation benchmarkから意図的に除外する。候補数、Prompt、bbox、Segmentation解像度、品質規則は未変更。
+- fake ONNX sessionによるtiming regression testを追加。focused backend test **32 passed**、Ruff check / format、
+  `git diff --check`はpassした。
+
+baseline 5回は、AC給電・sleep無効・蓋を閉じない・重い並列作業なしを実行直前に満たしてから開始する。したがって
+この節時点では数値baselineをまだ記録せず、Speed PRも作成しない。
