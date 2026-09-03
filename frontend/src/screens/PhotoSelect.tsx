@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../api/errors'
 import { generateArtwork } from '../api/generateArtwork'
-import { resizeImage } from '../image/resizeImage'   
 import type { Artwork } from '../types/artwork'
 import type { AssetManifest } from '../types/assetManifest'
+import type { JobStage } from '../types/job'
+import { resizeImage } from '../image/resizeImage'
 import iconUpload from '../assets/icon-upload.svg'
 import iconCompose from '../assets/icon-compose.svg'
 import iconLayer from '../assets/icon-layer.svg'
@@ -14,10 +15,12 @@ export default function PhotoSelect({
   onGenerated,
   onStart,
   onFailed,
+  onProgress,
 }: {
   onGenerated: (artwork: Artwork, assetManifest: AssetManifest) => void
   onStart: () => void
   onFailed: (message: string) => void
+  onProgress?: (progress: { status: 'pending' | 'processing'; stage?: JobStage }) => void
 }) {
   const [photos, setPhotos] = useState<File[]>([])
   const [memoryText, setMemoryText] = useState('')
@@ -40,12 +43,9 @@ export default function PhotoSelect({
     setPhotos((prev) => [...prev, ...added].slice(0, 10))
   }
 
-    const handleGenerate = async () => {
+  const handleGenerate = async () => {
     onStart()
     try {
-      // 送信直前に縮小＋JPEG化する。HEIC等もここでJPEGになるので、
-      // Backendの受付形式（JPEG / PNG / WebP）に収まる。
-      // 変換できなかった場合だけ元Fileのまま送り、判定はBackendへ委ねる。
       const uploads = await Promise.all(
         photos.map(async (file) => {
           try {
@@ -55,7 +55,7 @@ export default function PhotoSelect({
           }
         }),
       )
-      const result = await generateArtwork({ photos: uploads, memoryText })
+      const result = await generateArtwork({ photos: uploads, memoryText, onProgress })
       onGenerated(result.artwork, result.assetManifest)
     } catch (e) {
       onFailed(e instanceof ApiError ? e.message : '通信に失敗しました。')

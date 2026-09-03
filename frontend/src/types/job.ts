@@ -1,11 +1,18 @@
+/** processing 中の処理段階。contracts/job-status-response.schema.json が正本。 */
+export type JobStage = 'analyzing' | 'extracting' | 'composing' | 'finalizing'
 export interface JobAccepted {
   jobId: string
+}
+
+export interface JobPending {
+  jobId: string
+  status: 'pending'
 }
 
 export interface JobProcessing {
   jobId: string
   status: 'processing'
-  stage?: 'analyzing' | 'extracting' | 'composing' | 'finalizing'
+  stage?: JobStage
 }
 
 export interface JobCompleted {
@@ -28,4 +35,4 @@ export interface JobFailed {
   }
 }
 
-export type JobStatusResponse = JobProcessing | JobCompleted | JobFailed
+export type JobStatusResponse = JobPending | JobProcessing | JobCompleted | JobFailed
