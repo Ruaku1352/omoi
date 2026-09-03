@@ -797,6 +797,16 @@ uv run ruff check .
 
 結果は成功。Backendの狭いテストは `14 passed`、Ruffも通った。FrontendのPreview追随は別作業ツリーの検証として扱い、今回のBackend移管PRには含めない。
 
+### 支柱根元の補強
+
+2026-09-04に、実出力したパーツで、横レールや支柱からLayer本体へ入る根元がほぼ点接触になり、剥がれや折れのリスクが高いことを確認した。特に丸い皿のような下端が曲線のパーツでは、細い支柱だけを生やすと接触面積が不足しやすい。
+
+このため、支柱が必要なLayerには、支柱本体とは別に `rootPad` を追加する。既定値は `supportRootPadWidthMm: 12.0`、`supportRootPadHeightMm: 5.0`、`supportRootOverlapMm: 2.0` とし、Layer本体の下端へ2mm食い込ませながら、支柱根元を幅広い面で接続する。支柱本体は従来どおり中心からまっすぐ生やすが、根元だけは補強面を重ねて、写真紙を貼る対象の輪郭と支持構造が分離しすぎないようにする。
+
+この補強値はArtwork Dataへは入れない。`FlatPhotoPartConfig` とBackendの `physicalOutputConfig` で調整可能な製造条件として扱う。SVG確認図にもrootPadを描画し、STLで追加された補強範囲を目視確認できるようにする。
+
+Driveテストデータで再生成したところ、支柱が必要な灯籠Layerと丸皿Layerに `rootPad` が付与された。どちらも `12 x 5mm`、Layer本体への食い込みは `2mm` である。検証後、確認用に作成した `tmp\root-pad-check-20260904` は削除した。検証は `python -m py_compile scripts\flat_photo_parts_poc.py`、`uv run pytest tests\test_physical_output_endpoint.py tests\test_no_extra_endpoints.py -q`、`uv run ruff check .`、`git diff --check` で通過した。
+
 ### 2L写真紙PDFの用紙サイズ固定
 
 2026-09-04に、`outputFormat=photoPdf` のPDF MediaBoxがA4相当になっている問題を確認した。ファイル名や物理キャンバス基準は2L寄りでも、PDFページ自体がA4だと、写真店・家庭プリンター側で用紙指定を誤りやすい。

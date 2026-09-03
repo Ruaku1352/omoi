@@ -293,6 +293,8 @@ def _validate_config(config: Any) -> list[str]:
         "part_thickness_mm",
         "grid_cell_mm",
         "vertical_support_width_mm",
+        "support_root_pad_width_mm",
+        "support_root_pad_height_mm",
         "tree_branch_width_mm",
         "rail_body_height_mm",
         "tab_width_mm",
@@ -315,6 +317,7 @@ def _validate_config(config: Any) -> list[str]:
         "part_slot_label_engrave_depth_mm",
         "part_slot_label_offset_y_mm",
         "vertical_support_min_height_mm",
+        "support_root_overlap_mm",
         "tree_support_edge_margin_mm",
         "rail_edge_margin_mm",
     )

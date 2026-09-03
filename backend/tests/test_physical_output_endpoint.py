@@ -101,6 +101,9 @@ def test_physical_output_exports_zip_from_artwork_and_assets(client: TestClient)
         assert report["flatPhotoPartConfig"]["supportMode"] == "rail"
         assert report["flatPhotoPartConfig"]["partSlotLabelEngraveDepthMm"] == 0.35
         assert report["flatPhotoPartConfig"]["verticalSupportWidthMm"] == 4.0
+        assert report["flatPhotoPartConfig"]["supportRootPadWidthMm"] == 12.0
+        assert report["flatPhotoPartConfig"]["supportRootPadHeightMm"] == 5.0
+        assert report["flatPhotoPartConfig"]["supportRootOverlapMm"] == 2.0
         assert report["outputs"]["printLayoutPdf"] is None
         assert report["outputs"]["printLayoutSvg"] is None
         assert all(part["outputStl"].startswith("stl/") for part in report["parts"])
@@ -118,6 +121,20 @@ def test_physical_output_exports_zip_from_artwork_and_assets(client: TestClient)
         assert all(part["verticalSupports"] for part in lifted_parts)
         assert all(
             support["heightMm"] > support["overlapMm"]
+            for part in lifted_parts
+            for support in part["verticalSupports"]
+        )
+        assert all(
+            support["rootPad"]["widthMm"] >= support["widthMm"]
+            and (
+                support["rootPad"]["heightMm"]
+                >= report["flatPhotoPartConfig"]["supportRootPadHeightMm"]
+            )
+            and (
+                support["rootPad"]["overlapIntoImageMm"]
+                == report["flatPhotoPartConfig"]["supportRootOverlapMm"]
+            )
+            and support["rootPad"]["yMm"] < support["yMm"]
             for part in lifted_parts
             for support in part["verticalSupports"]
         )
