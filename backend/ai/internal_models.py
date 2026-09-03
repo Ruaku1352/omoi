@@ -45,30 +45,41 @@ class VisualElementCandidate(BaseModel):
     # Internal semantic-planning metadata. It is intentionally not exported through
     # Artwork Data or the shared API contract.
     kind: Literal["subject", "scene_anchor"] = "subject"
-    # 建造物比較Profile専用の内部意味役割。公開Artwork Dataには出さない。
-    semantic_role: Literal["general", "architecture_primary", "architecture_detail"] = "general"
-    # Layerとして何を切り出すかを表す内部方針。coherent_groupはG1では計画だけを扱う。
-    extraction_intent: Literal["single_form", "coherent_group", "scene_anchor"] = "single_form"
+    # subjectだけが持つ内部意味役割。scene_anchorの種類はkindだけで表す。
+    semantic_role: Literal["general", "architecture_primary", "architecture_detail"] | None = None
+    # subjectだけが持つ抽出方針。scene_anchorはSegmentationしないため持たない。
+    extraction_intent: Literal["single_form", "coherent_group"] | None = None
     components: list[SegmentationComponent] = Field(min_length=1)
 
     @model_validator(mode="before")
     @classmethod
-    def _preserve_legacy_scene_anchor(cls, value: object) -> object:
-        """Keep pre-G1 scene-anchor plans valid when the new field is absent."""
+    def _canonicalize_subject_metadata(cls, value: object) -> object:
+        """旧Saved Planを保ちつつ、kindをscene_anchorの唯一の種別情報にする。"""
         if not isinstance(value, dict):
             return value
-        if value.get("kind") != "scene_anchor" or "extraction_intent" in value:
-            return value
-        return {**value, "extraction_intent": "scene_anchor"}
+        normalized = dict(value)
+        if normalized.get("kind", "subject") == "scene_anchor":
+            # 旧Planではscene_anchorをsemantic_role=general / extraction_intent=scene_anchorで
+            # 二重に記録していた。意味を失わない中立値だけを読み込み時に正規化する。
+            if normalized.get("semantic_role") == "general":
+                normalized.pop("semantic_role")
+            if normalized.get("extraction_intent") == "scene_anchor":
+                normalized.pop("extraction_intent")
+            return normalized
+        normalized.setdefault("semantic_role", "general")
+        normalized.setdefault("extraction_intent", "single_form")
+        return normalized
 
     @model_validator(mode="after")
-    def _validate_extraction_intent(self) -> VisualElementCandidate:
-        if self.extraction_intent == "scene_anchor":
-            if self.kind != "scene_anchor" or len(self.components) != 1:
-                raise ValueError("scene_anchor requires kind=scene_anchor and one component")
-            return self
+    def _validate_subject_metadata(self) -> VisualElementCandidate:
         if self.kind == "scene_anchor":
-            raise ValueError("scene_anchor kind requires extraction_intent=scene_anchor")
+            if self.semantic_role is not None or self.extraction_intent is not None:
+                raise ValueError("scene_anchor must not have subject metadata")
+            if len(self.components) != 1:
+                raise ValueError("scene_anchor requires one component")
+            return self
+        if self.semantic_role is None or self.extraction_intent is None:
+            raise ValueError("subject requires semantic_role and extraction_intent")
         if self.extraction_intent != "coherent_group":
             return self
         if len(self.components) < 2:

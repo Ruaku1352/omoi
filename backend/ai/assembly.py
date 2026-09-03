@@ -14,6 +14,8 @@ from ai.errors import AiError
 from ai.internal_models import CompositionPlan
 from ai.types import AssetBlob
 
+COMPOSITION_BOUND_EPSILON = 1e-9
+
 
 @dataclass(frozen=True)
 class AcceptedLayer:
@@ -25,7 +27,7 @@ class AcceptedLayer:
     importance: float
     kind: str = "subject"
     # Semantic planner内部の選定情報。Artwork Dataへはserializeしない。
-    semantic_role: str = "general"
+    semantic_role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,25 @@ class SubjectOverlapDiagnostic:
     front_overlap_ratio: float
     canvas_width_px: int
     canvas_height_px: int
+
+
+@dataclass(frozen=True)
+class CompositionLayerDiagnostic:
+    """正規化済みLayoutのprivate観測値。採否や補正は決めない。"""
+
+    candidate_id: str
+    kind: str
+    layer_index: int
+    x: float
+    y: float
+    scale: float
+    display_width: float
+    display_height: float
+    left: float
+    top: float
+    right: float
+    bottom: float
+    within_canvas: bool
 
 
 def normalize_composition(
@@ -141,6 +162,57 @@ def bottom_gaps(
         display_height = scale * canvas_aspect_ratio * layer.asset.height_px / layer.asset.width_px
         gaps[candidate_id] = 1 - (float(layout["y"]) + display_height / 2)
     return gaps
+
+
+def diagnose_composition_layers(
+    accepted_layers: list[AcceptedLayer],
+    composition: dict[str, dict[str, float | int]],
+    *,
+    canvas_aspect_ratio: float,
+) -> tuple[CompositionLayerDiagnostic, ...]:
+    """構図の座標・scale・Canvas境界をprivate診断用に集約する。
+
+    ``normalize_composition``後のLayoutを観測するだけであり、overlapの閾値や
+    自動reject・自動補正はここへ持ち込まない。
+    """
+
+    if not math.isfinite(canvas_aspect_ratio) or canvas_aspect_ratio <= 0:
+        raise AiError("Canvas aspect ratioが不正です")
+    accepted_by_id = {layer.candidate_id: layer for layer in accepted_layers}
+    if set(composition) != set(accepted_by_id):
+        raise AiError("Artwork構図とLayerが一致しません")
+    diagnostics: list[CompositionLayerDiagnostic] = []
+    for candidate_id, layout in sorted(
+        composition.items(), key=lambda item: (int(item[1]["layerIndex"]), item[0])
+    ):
+        layer = accepted_by_id[candidate_id]
+        x, y, scale = (float(layout[key]) for key in ("x", "y", "scale"))
+        display_height = scale * canvas_aspect_ratio * layer.asset.height_px / layer.asset.width_px
+        left, top = x - scale / 2, y - display_height / 2
+        right, bottom = x + scale / 2, y + display_height / 2
+        diagnostics.append(
+            CompositionLayerDiagnostic(
+                candidate_id=candidate_id,
+                kind=layer.kind,
+                layer_index=int(layout["layerIndex"]),
+                x=x,
+                y=y,
+                scale=scale,
+                display_width=scale,
+                display_height=display_height,
+                left=left,
+                top=top,
+                right=right,
+                bottom=bottom,
+                within_canvas=(
+                    left >= -COMPOSITION_BOUND_EPSILON
+                    and top >= -COMPOSITION_BOUND_EPSILON
+                    and right <= 1 + COMPOSITION_BOUND_EPSILON
+                    and bottom <= 1 + COMPOSITION_BOUND_EPSILON
+                ),
+            )
+        )
+    return tuple(diagnostics)
 
 
 def clamp_bottom_gaps(

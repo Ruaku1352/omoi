@@ -4,7 +4,11 @@ from io import BytesIO
 
 from PIL import Image
 
-from ai.assembly import AcceptedLayer, diagnose_subject_overlaps
+from ai.assembly import (
+    AcceptedLayer,
+    diagnose_composition_layers,
+    diagnose_subject_overlaps,
+)
 from ai.types import AssetBlob
 
 
@@ -67,3 +71,23 @@ def test_subject_overlap_diagnostics_ignores_scene_anchor() -> None:
     )
 
     assert diagnostics == ()
+
+
+def test_composition_layer_diagnostics_tolerates_floating_point_canvas_edge() -> None:
+    layer = _layer("edge", "red")
+    diagnostics = diagnose_composition_layers(
+        [layer],
+        {
+            "edge": {
+                "x": 0.5 - 5e-10,
+                "y": 0.5 + 5e-10,
+                "scale": 1.0,
+                "layerIndex": 0,
+            }
+        },
+        canvas_aspect_ratio=1,
+    )
+
+    assert diagnostics[0].within_canvas
+    assert diagnostics[0].left < 0
+    assert diagnostics[0].bottom > 1

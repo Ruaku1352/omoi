@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 from io import BytesIO
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from PIL import Image
+from pydantic import BaseModel
 
+import ai.gemini as gemini_module
 from ai.assembly import AcceptedLayer, normalize_composition
 from ai.errors import AiError, AiNotConfiguredError
-from ai.gemini import GeminiArtworkGenerator, _semantic_plan_schema
+from ai.gemini import (
+    GeminiArtworkGenerator,
+    GeminiComposer,
+    _generate_structured,
+    _semantic_plan_schema,
+)
 from ai.image_ops import (
     close_narrow_mask_gaps,
     fill_closed_mask_holes,
@@ -37,6 +45,63 @@ def _photo(color: tuple[int, int, int]) -> InputPhoto:
     output = BytesIO()
     image.save(output, format="PNG")
     return InputPhoto(filename="test.png", mime_type="image/png", data=output.getvalue())
+
+
+@pytest.mark.anyio
+async def test_structured_generation_disables_automatic_function_calling() -> None:
+    captured: dict[str, object] = {}
+
+    class Result(BaseModel):
+        value: str
+
+    class FakeModels:
+        def generate_content(self, **kwargs: object) -> SimpleNamespace:
+            captured.update(kwargs)
+            return SimpleNamespace(parsed={"value": "ok"})
+
+    class FakeClient:
+        models = FakeModels()
+
+    result = await _generate_structured(
+        FakeClient(),  # type: ignore[arg-type]
+        "gemini-3.5-flash-lite",
+        ["prompt"],
+        Result,
+        {"type": "object"},
+        1_234,
+    )
+
+    assert result == Result(value="ok")
+    config = captured["config"]
+    assert config.automatic_function_calling is not None
+    assert config.automatic_function_calling.disable is True
+    assert config.http_options is not None
+    assert config.http_options.timeout == 1_234
+
+
+@pytest.mark.anyio
+async def test_composer_defaults_to_gentle_foreground_bottom_instruction(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_generate(*args, **kwargs):
+        del kwargs
+        captured["parts"] = args[2]
+        return {"layers": [{"candidate_id": "front", "x": 0.5, "y": 0.7, "scale": 0.2, "order": 0}]}
+
+    monkeypatch.setattr(gemini_module, "_generate_structured", fake_generate)
+    composer = GeminiComposer(
+        object(),  # type: ignore[arg-type]
+        "gemini-3.5-flash-lite",
+        1_000,
+        178 / 127,
+    )
+    asset = AssetBlob("layer", "image/png", 80, 60, _photo((1, 2, 3)).data)
+
+    await composer.compose([AcceptedLayer("front", "Front", 0, "source", asset, 1)])
+
+    parts = captured["parts"]
+    assert isinstance(parts, list)
+    assert "gentle compositional cue" in parts[0]
 
 
 class FakePlanner:
@@ -175,6 +240,17 @@ class PerforatedSegmenter(FakeSegmenter):
         hole_y1 = y0 + (y1 - y0) * 2 // 3
         mask[hole_y0:hole_y1, hole_x0:hole_x1] = False
         return SegmentationResult(mask=mask, score=result.score, prompt_box_px=box_px)
+
+
+class CapturingObserver:
+    def __init__(self) -> None:
+        self.records: list[dict[str, object]] = []
+
+    def semantic_plan(self, plan, images) -> None:
+        del plan, images
+
+    def segmentation_attempt(self, **kwargs: object) -> None:
+        self.records.append(kwargs)
 
 
 class RejectFirstSegmenter(FakeSegmenter):
@@ -499,6 +575,74 @@ def test_coherent_group_requires_one_required_primary_component() -> None:
         SemanticPlan.model_validate(invalid)
 
 
+def test_scene_anchor_canonicalizes_legacy_subject_metadata() -> None:
+    payload = {
+        "memory_summary": "庭園の思い出",
+        "candidates": [
+            {
+                "candidate_id": "garden",
+                "label": "garden",
+                "source_photo_index": 0,
+                "importance": 1,
+                "selection_reason": "背景として残す",
+                "kind": "scene_anchor",
+                "semantic_role": "general",
+                "extraction_intent": "scene_anchor",
+                "components": [
+                    {
+                        "component_id": "range",
+                        "label": "garden range",
+                        "box_2d": {"y_min": 0, "x_min": 0, "y_max": 900, "x_max": 900},
+                    }
+                ],
+            }
+        ],
+    }
+
+    candidate = SemanticPlan.model_validate(payload).candidates[0]
+
+    assert candidate.kind == "scene_anchor"
+    assert candidate.semantic_role is None
+    assert candidate.extraction_intent is None
+
+
+@pytest.mark.parametrize(
+    ("semantic_role", "extraction_intent"),
+    [
+        ("architecture_primary", None),
+        (None, "coherent_group"),
+    ],
+)
+def test_scene_anchor_rejects_subject_only_metadata(
+    semantic_role: str | None, extraction_intent: str | None
+) -> None:
+    payload = {
+        "memory_summary": "庭園の思い出",
+        "candidates": [
+            {
+                "candidate_id": "garden",
+                "label": "garden",
+                "source_photo_index": 0,
+                "importance": 1,
+                "selection_reason": "背景として残す",
+                "kind": "scene_anchor",
+                "semantic_role": semantic_role,
+                "extraction_intent": extraction_intent,
+                "components": [
+                    {
+                        "component_id": "range",
+                        "label": "garden range",
+                        "box_2d": {"y_min": 0, "x_min": 0, "y_max": 900, "x_max": 900},
+                    }
+                ],
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="scene_anchor must not have subject metadata"):
+        SemanticPlan.model_validate(payload)
+
+
 def test_layout_normalization_uses_contiguous_layer_indexes() -> None:
     asset = AssetBlob("layer-x", "image/png", 1, 1, b"x")
     accepted = [
@@ -568,6 +712,7 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
         layout_max_scale=1.0,
         canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
+        closed_hole_fill_enabled=False,
         semantic_planner=planner,
         composer=FakeComposer(),
     )
@@ -596,7 +741,7 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
                 assert image.mode == "RGBA"
                 alpha = np.asarray(image.getchannel("A"), dtype=np.uint8) > 0
                 assert alpha.any()
-                assert diagnose_mask(alpha, max_side=80).interior_hole_count == 0
+                assert diagnose_mask(alpha, max_side=80).interior_hole_count == 1
     assert generator.last_metrics.semantic_planning_elapsed_ms >= 0
     assert all(metric.success for metric in generator.last_metrics.candidates)
 
@@ -718,6 +863,9 @@ async def test_physical_v2_uses_rectangular_scene_anchor_and_limits_floating() -
     assert diagnostics.recomposed
     assert len(diagnostics.subject_overlap_pairs) == 3
     assert all(pair["back_obscured_ratio"] == 1 for pair in diagnostics.subject_overlap_pairs)
+    assert [layer["layer_index"] for layer in diagnostics.composition_layers] == [0, 1, 2, 3]
+    assert all(layer["within_canvas"] for layer in diagnostics.composition_layers)
+    assert all(layer["display_height"] > 0 for layer in diagnostics.composition_layers)
     assert composer.compose_calls == 1
     assert composer.recompose_calls == 1
     assert diagnostics.y_corrections
@@ -769,6 +917,43 @@ async def test_physical_v2_rejects_fragmented_subject_without_bridge() -> None:
 
 
 @pytest.mark.anyio
+async def test_observer_receives_raw_and_normalized_masks_without_changing_fill_rule() -> None:
+    observer = CapturingObserver()
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=PerforatedSegmenter(),
+        candidate_count=1,
+        target_layer_min=1,
+        target_layer_max=1,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v2",
+        closed_hole_fill_enabled=True,
+        semantic_planner=FakePlanner(candidate_count=1),
+        composer=FakeComposer(),
+        observer=observer,
+    )
+
+    await generator.generate([_photo((0, 0, 0))], "memory")
+
+    assert [record["stage"] for record in observer.records] == ["raw", "normalized"]
+    raw = observer.records[0]["result"]
+    normalized = observer.records[1]["result"]
+    assert isinstance(raw, SegmentationResult)
+    assert isinstance(normalized, SegmentationResult)
+    assert np.count_nonzero(normalized.mask & ~raw.mask) > 0
+    normalization = observer.records[1]["normalization"]
+    assert isinstance(normalization, dict)
+    assert normalization["closedHoleFillAddedPixels"] > 0
+
+
+@pytest.mark.anyio
 async def test_physical_v2_keeps_subject_and_cleans_micro_island() -> None:
     generator = GeminiArtworkGenerator(
         api_key="test-key",
@@ -785,6 +970,7 @@ async def test_physical_v2_keeps_subject_and_cleans_micro_island() -> None:
         canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
         semantic_profile="physical_layer_v2",
+        micro_island_cleanup_enabled=True,
         semantic_planner=FakePlanner(candidate_count=4),
         composer=FakeComposer(),
     )
@@ -814,6 +1000,7 @@ async def test_physical_v2_retains_approved_coherent_group_without_bridge() -> N
         canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
         semantic_profile="physical_layer_v2",
+        closed_hole_fill_enabled=True,
         semantic_planner=CoherentGroupPlanner(),
         composer=FakeComposer(),
     )
@@ -863,6 +1050,7 @@ async def test_architecture_profile_keeps_primary_building_and_cleans_micro_isla
         canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
         semantic_profile="physical_layer_v3_architecture",
+        micro_island_cleanup_enabled=True,
         semantic_planner=ArchitecturePlanner(candidate_count=4),
         composer=FakeComposer(),
     )

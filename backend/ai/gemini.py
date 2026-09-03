@@ -23,6 +23,7 @@ from ai.assembly import (
     assemble_artwork,
     bottom_gaps,
     clamp_bottom_gaps,
+    diagnose_composition_layers,
     diagnose_subject_overlaps,
     normalize_composition,
 )
@@ -79,7 +80,7 @@ class CandidateMetric:
     coherent_group_required_component_accepted_count: int | None = None
     coherent_group_component_exclusive_area_ratios: tuple[tuple[str, float], ...] | None = None
     candidate_kind: str = "subject"
-    semantic_role: str = "general"
+    semantic_role: str | None = None
     layer_build_mode: str = "segmented_mask"
     mask_cleanup: str = "not_applicable"
 
@@ -95,6 +96,7 @@ class PhysicalReadyDiagnostics:
     final_bottom_gaps: tuple[tuple[str, float], ...]
     y_corrections: tuple[tuple[str, float], ...]
     subject_overlap_pairs: tuple[dict[str, object], ...] = ()
+    composition_layers: tuple[dict[str, object], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,8 @@ class GenerationObserver(Protocol):
         result: SegmentationResult,
         quality: MaskQuality,
         attempt: int,
+        stage: str = "normalized",
+        normalization: dict[str, object] | None = None,
     ) -> None: ...
 
 
@@ -200,11 +204,17 @@ class GeminiComposer:
         model: str,
         request_timeout_ms: int,
         canvas_aspect_ratio: float,
+        composition_overlap_instruction_enabled: bool = False,
+        composition_foreground_bottom_instruction_enabled: bool = True,
     ) -> None:
         self._client = client
         self._model = model
         self._request_timeout_ms = request_timeout_ms
         self._canvas_aspect_ratio = canvas_aspect_ratio
+        self._composition_overlap_instruction_enabled = composition_overlap_instruction_enabled
+        self._composition_foreground_bottom_instruction_enabled = (
+            composition_foreground_bottom_instruction_enabled
+        )
 
     async def compose(self, layers: Sequence[AcceptedLayer]) -> CompositionPlan:
         return await self._compose(layers, max_bottom_gap=None)
@@ -223,10 +233,23 @@ class GeminiComposer:
             "Return exactly one placement for every candidate_id. x and y are centers in 0..1; "
             "scale is layer width divided by canvas width; order is back-to-front. "
             "Compose a balanced keepsake, not literal scene depth. "
-            "Keep foreground subject layers visually distinct: avoid excessive overlap that hides "
-            "a substantial part of one subject behind another. A scene anchor may sit behind "
-            "foreground subjects, but do not use foreground-overlap merely to fill the canvas. "
-            "Do not add commentary outside the schema.\n\nLayers:"
+            + (
+                "Keep foreground subject layers visually distinct: "
+                "avoid excessive overlap that hides "
+                "a substantial part of one subject behind another. A scene anchor may sit behind "
+                "foreground subjects, but do not use foreground-overlap merely to fill the canvas. "
+                if self._composition_overlap_instruction_enabled
+                else ""
+            )
+            + (
+                "Use vertical depth as a gentle compositional cue: when appropriate, "
+                "place subjects intended for the front lower in the canvas than background "
+                "or middle-depth subjects. Preserve each subject's visual identity, keep every "
+                "layer within the canvas, and treat this as a preference rather than a hard rule. "
+                if self._composition_foreground_bottom_instruction_enabled
+                else ""
+            )
+            + "Do not add commentary outside the schema.\n\nLayers:"
         ]
         if max_bottom_gap is not None:
             parts.append(
@@ -279,6 +302,10 @@ class GeminiArtworkGenerator:
         physical_max_bottom_gap: float = 0.30,
         architecture_micro_island_max_area_ratio: float = 0.001,
         mask_micro_island_max_area_ratio: float = 0.005,
+        closed_hole_fill_enabled: bool = False,
+        micro_island_cleanup_enabled: bool = False,
+        composition_overlap_instruction_enabled: bool = False,
+        composition_foreground_bottom_instruction_enabled: bool = True,
         coherent_group_gap_closure_px: int = 0,
         subject_overlap_diagnostics: bool = False,
         semantic_planner: SemanticPlanner | None = None,
@@ -322,6 +349,12 @@ class GeminiArtworkGenerator:
         self._physical_max_bottom_gap = physical_max_bottom_gap
         self._architecture_micro_island_max_area_ratio = architecture_micro_island_max_area_ratio
         self._mask_micro_island_max_area_ratio = mask_micro_island_max_area_ratio
+        self._closed_hole_fill_enabled = closed_hole_fill_enabled
+        self._micro_island_cleanup_enabled = micro_island_cleanup_enabled
+        self._composition_overlap_instruction_enabled = composition_overlap_instruction_enabled
+        self._composition_foreground_bottom_instruction_enabled = (
+            composition_foreground_bottom_instruction_enabled
+        )
         self._coherent_group_gap_closure_px = coherent_group_gap_closure_px
         self._subject_overlap_diagnostics = subject_overlap_diagnostics
         self._observer = observer
@@ -348,6 +381,8 @@ class GeminiArtworkGenerator:
                     model,
                     gemini_request_timeout_ms,
                     canvas_aspect_ratio,
+                    composition_overlap_instruction_enabled,
+                    composition_foreground_bottom_instruction_enabled,
                 )
         else:
             self._planner = semantic_planner
@@ -537,6 +572,14 @@ class GeminiArtworkGenerator:
                     if self._subject_overlap_diagnostics
                     else ()
                 ),
+                composition_layers=tuple(
+                    diagnostic.__dict__
+                    for diagnostic in diagnose_composition_layers(
+                        accepted,
+                        layout,
+                        canvas_aspect_ratio=self._canvas_aspect_ratio,
+                    )
+                ),
             )
             if self._physical_ready
             else None
@@ -633,11 +676,38 @@ class GeminiArtworkGenerator:
             quality: MaskQuality | None = None
             for attempt in range(self._segmentation_max_retries + 1):
                 current_box = prompt_box if attempt == 0 else expand_box(prompt_box, image.size)
-                result = await asyncio.to_thread(self._segmenter.segment, image, current_box)
+                raw_result = await asyncio.to_thread(self._segmenter.segment, image, current_box)
+                raw_quality = assess_mask(
+                    raw_result.mask,
+                    current_box,
+                    raw_result.score,
+                    diagnostics_max_side=diagnostics_max_side,
+                )
+                if self._observer is not None:
+                    self._observer.segmentation_attempt(
+                        candidate=candidate,
+                        component=component,
+                        source_photo_index=candidate.source_photo_index,
+                        image=image,
+                        result=raw_result,
+                        quality=raw_quality,
+                        attempt=attempt,
+                        stage="raw",
+                    )
+                normalized_mask = raw_result.mask
+                normalization: dict[str, object] = {
+                    "closedHoleFillEnabled": self._closed_hole_fill_enabled,
+                    "closedHoleFillAddedPixels": 0,
+                }
+                if self._closed_hole_fill_enabled:
+                    normalized_mask = fill_closed_mask_holes(raw_result.mask)
+                    normalization["closedHoleFillAddedPixels"] = int(
+                        np.count_nonzero(normalized_mask & ~raw_result.mask)
+                    )
                 result = SegmentationResult(
-                    mask=fill_closed_mask_holes(result.mask),
-                    score=result.score,
-                    prompt_box_px=result.prompt_box_px,
+                    mask=normalized_mask,
+                    score=raw_result.score,
+                    prompt_box_px=raw_result.prompt_box_px,
                 )
                 quality = assess_mask(
                     result.mask,
@@ -654,6 +724,8 @@ class GeminiArtworkGenerator:
                         result=result,
                         quality=quality,
                         attempt=attempt,
+                        stage="normalized",
+                        normalization=normalization,
                     )
                 logger.info(
                     "ai.segmentation candidate=%s component=%s elapsed_ms=%.1f score=%s "
@@ -704,17 +776,19 @@ class GeminiArtworkGenerator:
             if is_coherent_group
             else None
         )
-        # component単位では開いていた領域が、union後に閉じることがある。
-        # その場合も窓・開口部と同じく、外部とつながらない穴として埋める。
-        combined_mask = fill_closed_mask_holes(combined_mask)
+        if self._closed_hole_fill_enabled:
+            # component単位では開いていた領域が、union後に閉じることがある。
+            # その場合も窓・開口部と同じく、外部とつながらない穴として埋める。
+            combined_mask = fill_closed_mask_holes(combined_mask)
         if is_coherent_group and self._coherent_group_gap_closure_px:
             combined_mask = close_narrow_mask_gaps(
                 combined_mask,
                 max_gap_px=self._coherent_group_gap_closure_px,
             )
-            # closingが外部へ通じる細い通路を閉じると、新しい閉鎖穴が生じ得る。
-            # 最終Layerの穴を残さないため、形状変更後にも同じ規則を適用する。
-            combined_mask = fill_closed_mask_holes(combined_mask)
+            if self._closed_hole_fill_enabled:
+                # closingが外部へ通じる細い通路を閉じると、新しい閉鎖穴が生じ得る。
+                # 最終Layerの穴を残さないため、形状変更後にも同じ規則を適用する。
+                combined_mask = fill_closed_mask_holes(combined_mask)
         combined_quality = assess_mask(
             combined_mask,
             (0, 0, image.width, image.height),
@@ -728,7 +802,7 @@ class GeminiArtworkGenerator:
         }:
             cleanup_limit = self._architecture_micro_island_max_area_ratio
         mask_cleanup = "not_needed"
-        if self._physical_ready and not is_coherent_group:
+        if self._micro_island_cleanup_enabled and self._physical_ready and not is_coherent_group:
             cleanup = clean_micro_islands(
                 combined_mask,
                 max_removed_area_ratio=cleanup_limit,
@@ -1068,8 +1142,8 @@ async def _generate_structured(
     request_timeout_ms: int,
 ) -> object:
     try:
-        # SDKのAsyncModels direct AFC warningを避ける。同期SDK呼び出しだけをthreadへ退避し、
-        # FastAPI event loopをblockしない。Structured Outputの契約は同一。
+        # Toolを渡さないStructured Outputでは自動function callingを無効化する。
+        # 同期SDK呼び出しだけをthreadへ退避し、FastAPI event loopをblockしない。
         response = await asyncio.to_thread(
             client.models.generate_content,
             model=model,
@@ -1078,6 +1152,7 @@ async def _generate_structured(
                 response_mime_type="application/json",
                 # JSON Schemaを明示し、response.parsedをPydanticで再検証する。
                 response_json_schema=response_schema,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 http_options=types.HttpOptions(timeout=request_timeout_ms),
             ),
         )
