@@ -183,8 +183,34 @@ Prefix: `/api/v1`
   既存の `artwork.schema.json` / `asset-manifest.schema.json` を `$ref` するだけで再定義しない
 - 共通Mock: `contracts/mock/generate-success-response.json`
 - JSONのKeyはArtwork Schemaと同じ **camelCase** を維持する【FIX】
-- 同期 / 非同期どちらで返すかは【PoC後FIX】。**どちらでも最終成功Resultの形は同じ**
+- 公開Contractは `202 + jobId`、`GET /api/v1/jobs/{jobId}` PollingでFIX。**最終成功Resultの形は同じ**
 - 失敗時は下記のError形式であり、この生成成功Response Schemaではない
+
+### `GET /api/v1/jobs/{jobId}`
+
+- Response: `pending` / `processing` / `completed` / `failed`
+- `completed.result` は **Artwork Data + Asset Manifest**
+- 存在しないjobIdは `JOB_NOT_FOUND`
+
+### `POST /api/v1/physical-output/exports`【Physical Output PoC候補】
+
+2026-09-02時点で、TypeScriptのSTL生成PoCをFrontendから撤去し、FastAPI側の候補Endpointとして追加する。
+最終Runtime / Repository配置はPoC後FIXのままだが、入力境界はDrive仕様どおり
+**確定Artwork Data + Assets** とする。
+
+- Request: `multipart/form-data`
+  - `artwork`: 確定Artwork Data JSON
+  - `assets`: 現在の `layers[]` が参照するLayer Asset画像。元写真や差し替え候補Assetは任意
+  - `outputFormat`: `stlZip` または `photoPdf`。未指定時は `stlZip`
+  - `physicalOutputConfig`: 任意JSON。未指定ならBackend側のPoC既定値（rail / 2L Landscape / 4行 x 3穴）
+- Response:
+  - `outputFormat=stlZip`: `application/zip`
+    - 平面パーツSTL、番号付きスロット土台STL、設定、レポート
+  - `outputFormat=photoPdf`: `application/pdf`
+    - 写真紙100%印刷用PDF
+- Artwork Dataへmm値を混ぜない。製造条件はPhysicalOutputConfigへ分離する
+- STL Responseは複数成果物を束ねるためZIPだが、入力をPortable Artwork Bundle ZIPへ固定しない
+- SVGはユーザー向け主要Downloadにしない。必要なら開発確認・手修正用の生成物として扱う
 
 ### 作らないもの【FIX】
 
@@ -194,7 +220,6 @@ Prefix: `/api/v1`
 - `PUT /api/v1/artworks/{artworkId}`
 - `POST /api/v1/artworks/{artworkId}/finalize`
 - `GET /api/v1/artworks/{artworkId}/bundle`
-- `GET /api/v1/jobs/{jobId}`（非同期Job方式を採用する場合のみ）
 - `GET /api/v1/assets/{assetId}`【検討中】
 
 `GET /health` 等のHealth Checkは【担当裁量】。Product API Contractには含めない。

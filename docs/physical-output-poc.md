@@ -81,40 +81,57 @@ python scripts/flat_photo_parts_poc.py
 
 ### FlatPhotoPartConfig
 
-- `targetWidthMm`: 160
+- `targetWidthMm`: 178
 - `partThicknessMm`: 1.6
 - `outlineMarginMm`: 0.35
-- `shapeMode`: contour
+- `shapeMode`: grid
 - `contourSimplifyMm`: 0.10
-- `gridCellMm`: 2
-- `mountMode`: rear
-- `tabWidthMm`: 16
-- `tabHeightMm`: 7
+- `gridCellMm`: 0.6
+- `supportBridgeWidthMm`: 1.8
+- `verticalSupportWidthMm`: 4
+- `verticalSupportMinHeightMm`: 1
+- `supportMode`: rail
+- `mountMode`: front-tab
+- `tabWidthMm`: 12
+- `tabHeightMm`: 5
 - `tabOverlapMm`: 1
-- `slotClearanceMm`: 0.4
+- `slotClearanceMm`: 0.35
 - `baseMode`: square-grid
-- `baseSideMm`: 90
+- `baseWidthMm`: 170
+- `baseDepthMm`: 121
 - `baseLayerCapacity`: 4
 - `baseSlotsPerLayer`: 3
-- `baseSlotLengthMm`: 16
+- `baseSlotLengthMm`: 12
 - `baseFrontMarginYMm`: 8
-- `baseBackMarginYMm`: 24
+- `baseBackMarginYMm`: 8
 - `baseLayerGapMm`: 7
-- `baseHeightMm`: 8
+- `baseHeightMm`: 5
+- `baseSlotLabelEngraveDepthMm`: 0.45
+- `baseSlotLabelDigitHeightMm`: 6
+- `baseSlotLabelOffsetYMm`: 1
+- `baseSlotLabelGapMm`: 0.7
+- `partSlotLabelEngraveDepthMm`: 0.35
+- `partSlotLabelDigitHeightMm`: 4
+- `partSlotLabelOffsetYMm`: 0.4
+- `partSlotLabelGapMm`: 0.45
+- `backgroundFillMode`: cover-2l
+- `printLayoutPageWidthMm`: 178
+- `printLayoutPageHeightMm`: 127
 - `material`: PLA
 
-既定の形状生成は、2mmグリッドではなく輪郭ポリゴン押し出しにした。OpenCVが使えない、または輪郭の三角形化に失敗した場合だけグリッド方式へフォールバックする。意図せずフォールバックした場合は、レポートの `warnings` に出す。
+既定の形状生成は、0.6mmグリッド方式にした。輪郭ポリゴン押し出しは比較用に残し、必要な場合だけ `--shape-mode contour` で指定する。現行の実プリント確認では、細かい外形よりも、未接続の島を検出・接続して1パーツとして成立させることを優先する。
 
 ### 出力
 
 生成物は `tmp/flat-photo-parts-poc/` に出る。
 
-- `label` が花、犬、人物になっているダミーLayerの背面マウントつき平面パーツSTL
-- パーツの背面マウント位置に対応したスロット土台STL
-- カット線、背面マウント位置、貼り込み範囲を入れた1:1印刷用 `flat-photo-print-layout.svg`
+- Layer PNGのalphaから作る平面パーツSTL
+- 4行 x 3穴の番号付きスロット土台STL
+- 開発確認用の `flat-photo-print-layout.svg`
+- 2L Landscape（178 x 127mm）写真紙100%印刷用の `flat-photo-print-layout.pdf`
 - `flat-photo-parts-report.json`
 
-背景Layerは、通常の写真台紙側で扱う想定なのでデフォルトでは除外する。必要な場合は `--include-background` で含められる。特定Layerだけを試す場合は `--layer-id layer-3` のように指定する。
+背景Layerも既定で出力する。今回のArtwork Dataでは `layerIndex: 0` が最背面であり、背景レイヤーとして真四角パネル化して写真紙を貼る想定がチーム内で確認済みのためである。背景を除外したい場合だけ `--exclude-background` を指定する。特定Layerだけを試す場合は `--layer-id layer-3` のように指定する。
 
 ### 確認結果
 
@@ -541,3 +558,297 @@ Contract検証では、以前と同じく `replacementCandidates` が空であ�
 ローカルPoCスクリプトに、RGBA alphaをグリッド化した後で連結成分を検出し、最大成分へ細い連結橋を追加する処理を入れた。輪郭ポリゴン方式で複数輪郭が出た場合も、そのまま複数島STLにせず、グリッド方式へ戻して連結処理を通す。生成後に `connectedComponentCount` が1より大きい場合は警告を出し、成功扱いにしない。
 
 同じ実生成Bundleを使って作り直した結果、屋敷レイヤーは元が6塊、追加した橋が5本、最終的に1塊になった。他の3レイヤーは最初から1塊だった。出力は `tmp/print-data-2l-connected-parts-20260831-grid06/`、ZIPは `tmp/print-data-2l-connected-parts-20260831-grid06.zip` に置いた。確認用PNGは `connected-parts-check-20260831.png` で、黒が元のalpha由来形状、緑が追加した連結橋である。
+
+### ブラウザZIPへの1:1貼り込みSVG同梱
+
+2026-09-01に、Driveの「ナンちゃん向け_開発開始ガイド」を優先資料として読み直した。そこで改めて重要だったのは、物理出力の成果物がSTLだけでは終わらず、画像と組み合わせて棚やデスクに置ける2.5D作品になることだった。
+
+ブラウザ版の印刷ZIPに `flat-photo-print-layout.svg` を追加した。各Layer画像を実寸mmで配置し、画像範囲、外形の目安、差し込みタブ側の領域、Layer labelを一枚のSVGへ入れる。表面素材は写真紙を第一候補にする。これにより、ブラウザだけで次の3点を同じZIPにまとめられる。
+
+- 平面パーツSTL
+- 2L判寄りの土台STL
+- 写真紙用の1:1貼り込みSVG
+
+Artwork Data本体には、URLやmm値を追加していない。画像URLは従来どおりAsset Manifestで解決し、製造条件と表面素材は `BrowserFlatPrintConfig` に置く。3D Printerへ直接送信せず、3MF / G-code化はBambu Studioへ渡す前提も維持する。
+
+白PLAのシルエットだけで成立する対象もあるが、人物や集合写真の「本人らしさ」は外形だけでは残りにくい。MVPでは、STLは形と差し込み構造を担い、表面の記憶情報は写真紙で補う。次の実物検証では、写真紙の厚み、接着方法、外形カットの手間、端の浮きや反りを確認する。
+
+### 差し込み脚の向き修正
+
+2026-09-01に、Bambu Studio上でローカル生成STLの脚が写真面の背面方向へ立ち上がって見える問題を確認した。原因は、ローカルPoCスクリプトの既定が `mountMode: rear` になっていたことにある。
+
+`rear` は写真面の下端に背面リブを足す考え方だったが、現行の土台は上面から差し込む縦スロットである。そのため、パーツを立てて組み立てるには、脚は写真面の下方向へ伸びている必要がある。背面リブのままだと、Bambu Studio上では脚だけが上へ出た寝かせパーツに見え、実物でも土台へ自然に差し込めない。
+
+ローカルPoCスクリプトの既定を `mountMode: front-tab` に戻した。ブラウザ版の印刷ZIPと同じく、STLは写真面を上にして寝かせて印刷し、印刷後にパーツを起こして下方向のタブを土台スロットへ差し込む前提にする。
+
+背面方向の支えが必要になった場合は、差し込み脚とは別の補助リブとして再設計する。少なくとも現行の2L判寄り土台では、脚と土台スロットの基本仕様を「下方向タブ + 上面スロット」にそろえる。
+
+### 貼り込みSVGのガイド文字修正
+
+2026-09-01に、`flat-photo-print-layout.svg` のガイド文字が画像や別パーツに重なって見える問題を確認した。原因は、長い `layerId` と日本語labelをそのまま紙面に出し、さらにタブ説明文を各パーツ内へ重ねていたことにある。
+
+貼り込みSVGは、写真紙を実寸で印刷して切るための作業紙である。写真の位置とサイズが正しくても、ラベルやタブ説明が重なると、切る人がどこを残すべきか迷う。
+
+ブラウザ版とローカルPoCスクリプトの両方で、紙面上の表示を短い `L<layerIndex> <label>` に変更した。長い `layerId` はSVGの `<title>` に残し、必要なときだけ確認できるようにした。タブ説明は各パーツへ重ねず、ページ上部の「写真紙100%印刷 / 赤い破線で切る / タブは残す」に集約する。
+
+### 2Lキャンバス基準への再調整
+
+2026-09-02に、実プリント写真を確認し、背景パネルが土台幅に対して小さく見える問題を見直した。原因は、前景パーツを小さめにするために `targetWidthMm: 120` を既定にしたことである。Artwork Dataの `scale` はフロントエンド表示上のキャンバス幅に対する割合なので、背景レイヤーの `scale` 約0.96も「追加の縮小率」ではなく、画面上の配置情報である。
+
+フロントエンド表示との相対サイズを優先し、ブラウザ版とローカルPoCスクリプトの既定を `targetWidthMm: 178` に戻した。これにより、2L Landscapeの長辺を物理キャンバス幅として解釈し、背景も前景も同じ倍率でSTL化する。この時点では、Driveテストデータの背景パネルは約171mm幅になり、170mm幅の土台とほぼ揃っていた。
+
+ただし、写真紙PDFで背景ページの左右に白余白が出ると、物理背景板としては弱く見える。2026-09-04時点の既定では、全面不透明の背景Layerだけを例外扱いし、2L Landscape全面へcover配置する。前景Layerの `x / y / scale` は従来どおり維持し、背景写真だけを歪ませずに上下cropして、背景STL板と貼り付けPDFを178 x 127mmへ揃える。
+
+同じDriveテストデータを `targetWidthMm: 178`、`shapeMode: grid`、`gridCellMm: 0.6`、`includeBackground: true` で再生成した。出力は `poc-output/physical-print/01-kanazawa-memories-try1-2l-canvas-178/`、ZIPは `poc-output/physical-print/01-kanazawa-memories-try1-2l-canvas-178.zip` に置いた。当時の主な寸法は、背景171.03 x 132.00mm、灯籠45.36 x 40.34mm、丸皿56.96 x 55.97mm、人物85.17 x 107.66mm、土台170 x 121 x 5mmである。現在の背景寸法は後述の `backgroundFillMode: cover-2l` により178 x 127mmへ変わっている。
+
+### 番号付きスロット土台
+
+2026-09-02に、汎用土台の3スロット x 4列へ前から順に番号を振る方式を追加した。番号は `R1-A` のような行列記号ではなく、手前左から右へ `1, 2, 3`、次の列を `4, 5, 6`、奥の列を `10, 11, 12` とする。
+
+番号は位置再現そのものではなく、組み立て時の差し込み先を間違えないためのガイドである。位置再現は、Artwork Dataの `x / layerIndex` からどの固定スロットを使うかを選び、選んだスロット位置に合わせてパーツ側のタブや接続部を設計することで担保する。スロットからレイヤー本体までが離れすぎる場合は、ブリッジが長くなって見た目や強度へ影響するため、警告または別方式を検討する。
+
+土台STLでは、番号を上面から0.45mmだけ浅く彫った7セグメント風の立体文字として生成する。スロット穴そのものは埋めず、穴の手前側に番号を置く。これにより、土台上面に余計な出っ張りを作らず、Bambu Studio上でも番号の位置を確認できる。
+
+レポートには、土台全体の `slotNumbering`、各番号の `slotLabels`、各スロットの `assemblyLabel` / `slotNumber` を残す。現時点では、各パーツに対して同じ奥行き行の3スロットを `compatibleSlotLabels` として出している。パーツ側へ番号を入れる場合は、次の段階でArtwork Dataの `x` に近い番号を1つ選び、その番号をタブまたは裏側へ付ける。
+
+Driveテストデータでは次を実行した。
+
+```bash
+python scripts/flat_photo_parts_poc.py --artwork tmp/drive-physical-test-20260901/extracted/01-kanazawa-memories-physical_layer_v2-try1/artwork.json --assets tmp/drive-physical-test-20260901/extracted/01-kanazawa-memories-physical_layer_v2-try1/assets --out poc-output/physical-print/01-kanazawa-memories-try1-2l-canvas-178-engraved-base --include-background --shape-mode grid --grid-cell-mm 0.6
+```
+
+結果は成功。出力は `poc-output/physical-print/01-kanazawa-memories-try1-2l-canvas-178-engraved-base/` に置いた。土台STLは `flat-photo-parts-slot-base.stl` で、寸法は170 x 121 x 5.0mmである。番号部分は上面から0.45mm下げて彫り込むため、土台の最大高さは変わらない。
+
+### Frontend STL生成PoCの撤去
+
+2026-09-02に、技術設計を読み直し、Frontend側に置いていたTypeScript製のSTL ZIP生成PoCを撤去した。
+
+技術設計では、Frontendの責任範囲は3D Preview、2D Edit、確定Artwork Data + Assetsの受け渡しである。Physical Outputは、確定Artwork Data + Assetsを受け取って実寸変換し、STL等を生成する領域として扱われている。Physical Outputの実行場所はPoC後FIXだが、少なくとも現時点ではFrontend TypeScriptをSTL生成ロジックの正本にはしない。
+
+撤去したFrontend実装は次の範囲である。
+
+- `frontend/src/print/flatPrint.ts`
+- `frontend/src/print/PrintExportPanel.tsx`
+- `frontend/src/print/simpleZip.ts`
+- 上記に対応するFrontend test
+
+同じ作業で `origin/frontend/3d-preview` の最新Frontendを取り込んだ。最新Frontend側にはSTL生成TypeScriptは含まれていない。残っている `frontend/src/bundle/artworkBundle.ts` は、確定Artwork Dataと参照AssetをPhysical Outputへ渡すためのPortable Artwork Bundleであり、STL / PDF / G-codeを生成しない。
+
+今後の物理出力PoCの正本は `scripts/flat_photo_parts_poc.py` とする。Frontendから直接STL / PDF / G-code、またはSTLを含む印刷ZIPを生成する必要が出た場合は、共通技術設計でPhysical Outputの実行場所をFrontend内にFIXしてから再実装する。
+
+同時に、Python PoCの既定値も現行の実プリント検証へ寄せた。`shapeMode` は `grid`、`gridCellMm` は0.6mm、背景レイヤーは既定で出力対象にする。背景を除外したい場合だけ `--exclude-background` を指定する。これにより、引数なしの最小実行でも「確定Artwork Data + Assetsを物理出力へ渡す」流れに近い4層出力を確認できる。
+
+2026-09-04時点で、過去のFrontend STL生成PoCはPR #4としてmainへ取り込み済みである。そのため、対応は「未マージPRを閉じる」ではなく、次のPRでmain上の `frontend/src/print/*` を削除し、Backend/FastAPIのPhysical Output Endpointへ責務を移す形にする。Frontendに残すZIP生成は、検証用のArtwork Data + Assets Bundleに限定し、STL/PDF生成とは扱いを分ける。
+
+### FastAPI artwork直渡しPoC
+
+2026-09-02に、Frontend TypeScriptで行っていたSTL/PDF生成ではなく、BackendのFastAPIからPython PoC生成器を呼ぶ候補実装を追加した。
+
+Endpointは `POST /api/v1/physical-output/exports`。入力はZIPではなく、Drive仕様の導線に合わせて次のmultipart form-dataにする。
+
+- `artwork`: 確定Artwork Data JSON文字列
+- `assets`: 現在の `layers[]` が参照するLayer Asset画像
+- `outputFormat`: `stlZip` または `photoPdf`。未指定時は `stlZip`
+- `physicalOutputConfig`: 任意JSON。未指定ならBackend側のPoC既定値（rail / 2L Landscape / 4行 x 3穴）
+
+`sourcePhotos[]` や `replacementCandidates[]` が参照する元写真・候補画像は、物理出力STL/PDF生成では必須にしない。Frontend側のBundleに含まれていても、今回のEndpointでは余分なAssetとして受け取り可能だが、STL/PDF生成は現在のLayer Assetだけで行う。
+
+Layer PNGは生成入力写真より大きくなることがあるため、生成APIの `maxPhotoBytes` ではなく、Physical Output専用の `maxPhysicalAssetBytes` / `maxPhysicalTotalAssetBytes` で検証する。とくに背景Layerは透過なしPNGになりやすく、2L相当の背景画像が15MiBを超えても物理出力上は正常な入力である。
+
+Responseは `outputFormat` で分ける。これは、まなみん側Frontendの完成画面にある「3Dプリンター用データを出力」と「写真貼り付け用PDFを出力」の2ボタン導線に合わせるためである。
+
+`outputFormat=stlZip` のResponseは `application/zip`。これは入力導線をZIPに固定する意味ではなく、STL、製造条件、レポートを1回のダウンロードにまとめるための成果物コンテナである。
+
+- `stl/`: 平面パーツSTLと番号付きスロット土台STL
+- `physical-output-config.json`: Artwork Dataと分離した製造条件
+- `flat-photo-parts-report.json`: 寸法、警告、スロット番号などのレポート
+- `artwork.json`: 入力Artwork Dataの控え
+
+`outputFormat=photoPdf` のResponseは `application/pdf`。写真紙を100%印刷して切るための `flat-photo-print-layout.pdf` を単体で返す。PDFの用紙サイズは既定で2L Landscape、178 x 127mmにする。各ページにはLayerの写真貼り込み面を1面ずつ原寸配置し、A4前提の余白紙面にはしない。SVGはユーザー向けの主要Downloadにしない。必要なら開発確認・手修正用の生成物として扱う。
+
+実装は `backend/app/api/v1/physical_output.py` と `backend/app/services/physical_output.py` に置く。生成処理の正本はまだ `scripts/flat_photo_parts_poc.py` のままで、Cloud Run ImageではDockerfileから `scripts/` を同梱して呼び出す。正式FIX時には、Physical Output runtimeをBackend内Packageへ移すか、独立Local Toolに切り出すかを改めて決める。
+
+検証は次で行った。
+
+```bash
+cd backend
+uv run pytest tests\test_physical_output_endpoint.py tests\test_no_extra_endpoints.py
+uv run ruff check .
+uv run pytest
+cd ..
+python -m py_compile scripts\flat_photo_parts_poc.py
+git diff --check
+```
+
+結果は成功。狭いテストでは `12 passed`、backend全体では `78 passed`。`outputFormat=stlZip` はSTL ZIPを返し、`outputFormat=photoPdf` はPDF単体を返す。STL ZIPにはPDF/SVGを含めず、写真紙用PDFは別ボタンで取得する前提にした。
+
+2026-09-03に、Frontend側から共有された `01-kanazawa-memories-physical_layer_v2-try1` Bundleを、FastAPI候補Endpointへ `assets/` ごと渡して確認した。Bundle内には元写真とLayer PNGが混在していたが、Endpoint側では `artwork.layers[]` が参照する4枚だけを使い、未使用Assetは無視した。
+
+結果は成功。`outputFormat=stlZip` は4つの平面パーツSTLと番号付きスロット土台STLを含むZIPを返し、`outputFormat=photoPdf` は写真紙100%印刷用PDFを返した。出力は `poc-output/physical-api-real-test-20260903/` に置いた。背景Layerはalphaが全て255の透過なし画像で、真四角パネルとして扱う。他3Layerはalpha 0/255を持つ切り抜き済み画像として扱う。
+
+### Frontend物理プレビュー検証
+
+2026-09-03に、まなみん側へ共有する前の検証として、別作業ツリーでFrontendのThree.js Preview上へ番号付き土台を仮表示した。
+
+この実装はSTL / PDF生成をFrontendへ戻すものではない。Frontendは、Artwork Dataの `x / y / scale / layerIndex` を読み、物理出力PoCと同じ3スロット x 4列の規則で、表示用の差し込み番号を派生計算する。Artwork Data本体には番号、mm値、土台情報を追加しない。
+
+仮表示で描くものは次である。
+
+- 170 x 121mm相当の土台
+- 手前左から `1, 2, 3`、次列を `4, 5, 6` と進む12個の番号付き差し込み口
+- `layerIndex` の大きいLayerを手前、`layerIndex: 0` を奥にした行割り当て
+- 各Layerの `x` から最寄り列を選んだ差し込み番号
+- 各パーツ側の番号バッジ
+- 選択スロットから垂直に立つ表示用の支柱
+
+初期の3D Previewでは、Layerを選択スロットの真上へスナップした物理成立後の位置で表示していた。しかし、固定スロット中心へ寄せるとFrontend上の構図と実物がずれやすい。現在は、STL側の `supportMode: tree` と同じ考え方に寄せ、Layer本体はArtwork Dataの `x` を土台幅へ写した位置に置き、長い差し込み溝と中心支柱、必要な場合の斜め補助リブで差分を吸収する。
+
+この番号は、編集中に毎回Backendへ問い合わせないための即時プレビューである。最終出力時は、確定Artwork Data + AssetsをFastAPIの物理出力Endpointへ渡し、STL ZIP内の `flat-photo-parts-report.json` と実際に生成された土台・パーツ側の番号を正とする。
+
+この検証用実装は、今回のBackend移管PRには含めない。まなみん側が正式実装する場合は、同じ考え方をFrontendの構成へ合わせて移植し、必要ならBackendの物理出力APIにPreview専用の軽いPlan Responseを追加する。
+
+手元検証では、`?screen=preview` または `?screen=done` で共通Mockの該当画面から起動できるデバッグ入口も追加した。これは検証用であり、本番の画面遷移仕様ではない。
+
+同日追記として、微調整画面のLayer Panelにも表示用の差し込み番号を出した。ユーザーは2D編集でLayerをドラッグ、四隅リサイズ、前後入れ替えできる。検証用には左右・上下・大きさのスライダーも追加し、操作後にスロット番号がどう変わるかを確認できるようにした。ここでの番号もArtwork Dataへ保存する値ではなく、現行Artwork Dataから派生した表示である。
+
+### Artwork y位置からの垂直支え生成
+
+2026-09-03に、平面パーツSTLへ垂直支えを追加した。これまでのPython PoCは、alphaから切り抜いた画像外形のすぐ下に差し込みタブを付けていたため、Frontend上で浮いて見えるLayerでも、実物では画像下端が土台面まで落ちたような部品になっていた。
+
+Artwork Schemaには物理的な高さFieldを追加しない。支え高さは、`targetWidthMm / canvas.aspectRatio` で物理キャンバス高さを出し、各Layerの `y / scale` とRGBA alphaの下端から「画像下端からキャンバス下端までのgap」を生成時に計算する。このgapが `verticalSupportMinHeightMm` 以上ある場合だけ、画像下端からタブまでまっすぐな支え板を追加する。
+
+追加したConfigは次の2つである。
+
+- `verticalSupportWidthMm`: まっすぐ下へ落とす支え板の幅。既定は4mm
+- `verticalSupportMinHeightMm`: この高さ未満なら支えを出さない閾値。既定は1mm
+
+タブ番号は従来どおりタブ側に彫る。支え板は番号を持たず、画像下端とタブをつなぐ構造として扱う。これにより、前後位置は `layerIndex`、横位置は固定スロット番号、縦方向の浮きはArtworkの `y` から派生した支え高さで再現する。
+
+FastAPI候補Endpointでも同じConfigを受け取れるようにした。`flat-photo-parts-report.json` には、各パーツの `dimensionsMm.verticalSupportHeightMm`、`verticalSupports[]`、`artworkPlacementMm.visibleBottomYMm`、`artworkPlacementMm.bottomGapToCanvasMm` を残す。写真貼り付け用PDF/SVGにも支え位置のガイド線を出し、STL側の形状と写真紙の切り取り範囲が対応するようにした。
+
+Frontend側から共有された `01-kanazawa-memories-physical_layer_v2-try1` BundleをFastAPI候補Endpointへ投げ直し、STL ZIPの生成を確認した。結果は4パーツ + 土台STLで計5 STL。支え高さは、背景0mm、灯籠系Layer 10.268mm、丸皿系Layer 15.153mm、人物0mmになった。背景と人物は画像下端がキャンバス下端まで届くため、追加支えを出していない。
+
+### 長い差し込み溝とtree支えの検証
+
+2026-09-03に、固定スロット中心へLayer位置を寄せない案として、検証用の `supportMode: tree` を追加した。当初の通常既定は `supportMode: straight` のままで、既存のまっすぐな支え方を維持していた。
+
+`supportMode: tree` では、土台の各横列を3分割し、各区画に長い差し込み溝を置く。パーツ側も同じ長さに近い横長タブを持つ。Layer本体の支柱は、タブ中心ではなく画像パーツの中心から下ろし、タブ上の左右差は斜めの補助リブで受ける。これにより、Artwork Dataの `x` を短いスロット中心へ丸める量を減らしつつ、穴がない位置にも支柱を立てられる。
+
+追加したConfigは次である。
+
+- `supportMode`: `straight` または `tree`
+- `treeBranchWidthMm`: 斜め補助リブの幅。既定は2.4mm
+- `treeSupportEdgeMarginMm`: 横長タブ端から補助リブを内側へ逃がす余白。既定は4mm
+
+Frontend側から共有された `01-kanazawa-memories-physical_layer_v2-try1` Bundleで、次を実行した。
+
+```bash
+python scripts/flat_photo_parts_poc.py --artwork C:\Users\indod\Downloads\01-kanazawa-memories-physical_layer_v2-try1\01-kanazawa-memories-physical_layer_v2-try1\artwork.json --assets C:\Users\indod\Downloads\01-kanazawa-memories-physical_layer_v2-try1\01-kanazawa-memories-physical_layer_v2-try1\assets --out poc-output\physical-print\01-kanazawa-memories-tree-support-20260903 --include-background --shape-mode grid --grid-cell-mm 0.6 --support-mode tree --base-slot-length-mm 55 --tab-width-mm 54
+```
+
+結果は成功。出力は `poc-output/physical-print/01-kanazawa-memories-tree-support-20260903/` に置いた。支えが出たLayerは2つで、灯籠系Layerはスロット中心から -10.2mm、丸皿系Layerは +9.07mmずれた位置から中心幹を下ろし、それぞれ2本の斜め補助リブを生成した。支え高さは、灯籠系Layer 10.268mm、丸皿系Layer 15.153mmである。
+
+確認用として、土台と全パーツを組み立て姿勢に変換した `assembled-tree-support-validation.stl` も同じ出力ディレクトリに作成した。これは分割印刷用の正本ではなく、Bambu Studio等で位置関係を見るための検証用STLである。
+
+### Frontend長溝プレビュー追随
+
+2026-09-03に、別作業ツリーの検証用Frontendで、Three.js Previewを上記の `supportMode: tree` 出力に合わせた。表示上は `supportMode: tree`、`baseSlotLengthMm: 55` にし、土台の横方向を3分割した長い溝として見せる。
+
+Layer本体は短いスロット中心へスナップしない。Artwork Dataの `x` を170mm土台幅へ写した `targetBaseXCenterMm` に置き、支柱はそのLayer中心からまっすぐ下へ出す。選択された長溝の中心とLayer中心がずれる場合は、STL側と同じく斜め補助リブを表示する。
+
+この変更は、FrontendでSTLやPDFを生成するための実装ではない。まなみん側Frontendへ共有する「物理側の見た目・差し込み制約」の検証用であり、確定データの生成正本は引き続きBackend/FastAPI側のPhysical Outputに置く。
+
+### 横レール方式の検証
+
+2026-09-04に、短い差し込み口へLayer位置を丸めず、Artwork Dataの `x` をより素直に扱うための検証用 `supportMode: rail` を追加した。
+
+`supportMode: rail` では、土台そのものは4行 x 3穴の短い差し込み口のまま維持する。各Layerパーツ側に、その行の3穴すべてへ差し込む横レールを付ける。Layer本体は横レール上の `targetBaseXCenterMm` から立ち上げるため、1つの穴の中央へ寄せずに `x` 位置を再現できる。Artwork上で下端がキャンバス下端から浮いているLayerは、横レール上面からLayer下端まで中央支柱を伸ばす。
+
+追加したConfigは次である。
+
+- `supportMode`: `straight`、`tree`、`rail`
+- `railBodyHeightMm`: 横レール本体の高さ。既定は4mm
+- `railEdgeMarginMm`: 横レールを土台左右端から内側へ逃がす余白。既定は0mm
+
+レポートには、各Partへ `rails[]` を追加する。`slotAssignment.selectedBy` は `rowRail`、`assemblyLabel` は `1-3`、`4-6` のように行全体を表す。`tabs[]` は従来の1つではなく、同じ行の3穴へ入る3つの差し込み足を持つ。Backend/FastAPI候補Endpointも `physicalOutputConfig.supportMode: "rail"` を受け取れる。
+
+別作業ツリーの検証用Three.js Previewも `supportMode: rail` に合わせた。選択状態は各行の3穴すべてを強調し、Layer本体は `targetBaseXCenterMm` 上に置く。Previewは確定データの生成正本ではなく、物理側仕様をまなみん側Frontendへ共有するための参照実装である。
+
+2026-09-04に、Frontendへ物理寸法や土台情報を持たせず、Backend側をPhysical Output仕様の正本に寄せるため、`FlatPhotoPartConfig.supportMode` のPoC既定値を `rail` に変更した。`physicalOutputConfig` は引き続き任意overrideとして受け取れるが、Frontendから未指定で呼んでもrail / 2L Landscape / 4行 x 3穴のBackend既定値でSTL ZIPまたは写真紙PDFを生成する。
+
+Frontend側から共有された `01-kanazawa-memories-physical_layer_v2-try1` Bundleで、次を実行した。
+
+```bash
+python scripts/flat_photo_parts_poc.py --artwork C:\Users\indod\Downloads\01-kanazawa-memories-physical_layer_v2-try1\01-kanazawa-memories-physical_layer_v2-try1\artwork.json --assets C:\Users\indod\Downloads\01-kanazawa-memories-physical_layer_v2-try1\01-kanazawa-memories-physical_layer_v2-try1\assets --out poc-output\physical-print\01-kanazawa-memories-rail-support-20260904 --include-background --shape-mode grid --grid-cell-mm 0.6 --support-mode rail
+```
+
+結果は成功。出力は `poc-output/physical-print/01-kanazawa-memories-rail-support-20260904/` に置いた。各Partは横レール1本と差し込み足3つを持つ。支え高さは、背景0mm、灯籠系Layer 10.268mm、丸皿系Layer 15.153mm、人物0mmである。行割り当ては、人物 `1-3`、丸皿 `4-6`、灯籠 `7-9`、背景 `10-12` になった。
+
+差し込み状態の確認用として、土台と全パーツを組み立て姿勢に変換した `assembled-rail-support-validation.stl` も同じ出力ディレクトリに作成した。これは分割印刷用の正本ではなく、Bambu Studio等で位置関係を見るための検証用STLである。ZIPは `poc-output/physical-print/01-kanazawa-memories-rail-support-20260904-assembled.zip` に置いた。
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts\flat_photo_parts_poc.py
+cd backend
+uv run pytest tests\test_physical_output_endpoint.py tests\test_no_extra_endpoints.py
+uv run ruff check .
+```
+
+結果は成功。Backendの狭いテストは `14 passed`、Ruffも通った。FrontendのPreview追随は別作業ツリーの検証として扱い、今回のBackend移管PRには含めない。
+
+### 2L写真紙PDFの用紙サイズ固定
+
+2026-09-04に、`outputFormat=photoPdf` のPDF MediaBoxがA4相当になっている問題を確認した。ファイル名や物理キャンバス基準は2L寄りでも、PDFページ自体がA4だと、写真店・家庭プリンター側で用紙指定を誤りやすい。
+
+`FlatPhotoPartConfig` に `printLayoutPageWidthMm` / `printLayoutPageHeightMm` を追加し、既定を2L Landscapeの178 x 127mmにした。`photoPdf` は各Layerの `imageAreaMm` を1ページ1面で原寸配置する。タブ、レール、支えを含むパーツ全体の確認は引き続きSVG / STL / report側で扱い、ユーザー向けPDFは写真紙に載せる画像面を2L余白なしで返す。
+
+`flat-photo-parts-report.json` には、`printLayout.photoPdfPageSizeMm`、`photoPdfPageCount`、各Partの `photoPrintLayoutMm` を追加した。Artwork Data本体にはmm値を追加しない。
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts\flat_photo_parts_poc.py
+cd backend
+uv run pytest tests\test_physical_output_endpoint.py -q
+uv run ruff check .
+cd ..
+python scripts\flat_photo_parts_poc.py --out tmp\2l-pdf-check-20260904 --include-background
+pdfinfo -box tmp\2l-pdf-check-20260904\flat-photo-print-layout.pdf
+pdftoppm -png -f 1 -l 1 -singlefile tmp\2l-pdf-check-20260904\flat-photo-print-layout.pdf tmp\2l-pdf-check-20260904\page-1
+```
+
+結果は成功。Endpointの狭いテストは `11 passed`、Ruffも成功。`pdfinfo` では `Pages: 4`、`Page size: 504.48 x 360 pts`、`MediaBox: 0.00 0.00 504.48 360.00` になり、約178 x 127mmの2L Landscapeとして出力できていることを確認した。確認後、`tmp\2l-pdf-check-20260904` は削除した。
+
+### 透過なし背景Layerの2L全面cover
+
+2026-09-04に、背景写真が2L PDFの端まで届かず、左右に約3.5mmずつ白余白が出ることを確認した。原因は、Driveテストデータの背景画像比率が2L Landscapeより少し縦長で、画像を歪ませずに全体を収めると `171.03 x 127mm` になるためである。
+
+現在の既定では、`FlatPhotoPartConfig.backgroundFillMode` を `cover-2l` にした。対象は `layerIndex: 0` かつalpha bboxが画像全体を覆う全面不透明PNGに限定する。該当する背景Layerは、STLの貼り込み面も写真紙PDF上の画像面も `178 x 127mm` に固定し、元画像は2L比率へ中央cover cropする。前景の切り抜きLayerにはこの特例を適用しない。
+
+Driveテストデータでは、背景元画像 `4032 x 2994px` を `4032 x 2877px` にcropした。cropは `top: 58px`、`bottom: 2935px` で、左右は落としていない。出力は `poc-output/physical-print/01-kanazawa-memories-cover-background-20260904/` に置いた。レポート上の背景 `imageAreaMm` と `photoPrintLayoutMm` はどちらも `178 x 127mm`、`xMm: 0`、`yMm: 0` である。
+
+Frontend側へ共有する表示要件も同じ考え方に寄せる。物理プレビューでは `layerIndex: 0` の背景をCanvas全面の平面として表示し、Three.jsのTexture `repeat / offset` を使ってcover crop表示すると、STL/PDFの背景板とプレビュー上の背景の見え方を揃えられる。
+
+検証は次で行った。
+
+```bash
+python -m py_compile scripts\flat_photo_parts_poc.py
+cd backend
+uv run pytest tests\test_physical_output_endpoint.py
+uv run ruff check .
+cd ..
+python scripts\flat_photo_parts_poc.py --artwork C:\Users\indod\Downloads\01-kanazawa-memories-physical_layer_v2-try1\01-kanazawa-memories-physical_layer_v2-try1\artwork.json --assets C:\Users\indod\Downloads\01-kanazawa-memories-physical_layer_v2-try1\01-kanazawa-memories-physical_layer_v2-try1\assets --out poc-output\physical-print\01-kanazawa-memories-cover-background-20260904 --include-background --shape-mode grid --grid-cell-mm 0.6 --support-mode rail
+pdfinfo -box poc-output\physical-print\01-kanazawa-memories-cover-background-20260904\flat-photo-print-layout.pdf
+pdftoppm -png -f 1 -l 1 -singlefile -r 72 poc-output\physical-print\01-kanazawa-memories-cover-background-20260904\flat-photo-print-layout.pdf tmp\pdfs\2l-cover-background-check-20260904\page-1
+```
+
+結果は成功。BackendのPhysical Output Endpointテストは `12 passed`、Ruffは成功した。`pdfinfo` では `Pages: 4`、`Page size: 504.48 x 360 pts`、`MediaBox: 0.00 0.00 504.48 360.00` で、2L Landscapeとして出力できている。確認後、`tmp\pdfs\2l-cover-background-check-20260904` は削除した。
+
+### 背景行スロットの奥寄せ
+
+2026-09-04に、番号付き土台の最奥行 `10, 11, 12` が背景パネル用としては手前に見える問題を確認した。土台は `170 x 121 x 5mm` のまま、後ろ余白を `20mm` から `8mm` へ変更し、前余白と同じ値にそろえた。
+
+これにより、4行目の背景スロットは奥端から約8mm手前まで下がる。前景側の `1, 2, 3` は従来どおり手前8mm位置に残し、中間行の間隔を広げることで、前景から背景へ奥行きが出る配置にした。FrontendのPhysical Previewへ反映する場合も、同じ `baseBackMarginYMm: 8` を表示要件として共有する。
+
+Driveテストデータで再生成した出力は `poc-output/physical-print/01-kanazawa-memories-background-row-back-20260904/` に置いた。report上の各行は、`1-3: 8.00-9.95mm`、`4-6: 42.35-44.30mm`、`7-9: 76.70-78.65mm`、`10-12: 111.05-113.00mm` になった。検証は `python -m py_compile scripts\flat_photo_parts_poc.py` と `uv run pytest tests\test_physical_output_endpoint.py -q` で通過した。PDFは引き続き `Pages: 4`、`Page size: 504.48 x 360 pts`、`MediaBox: 0.00 0.00 504.48 360.00` の2L Landscapeである。
