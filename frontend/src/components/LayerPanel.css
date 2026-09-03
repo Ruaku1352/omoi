@@ -50,15 +50,11 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 8px 0;
+  padding: 8px;
+  margin: 0 -8px;
   border-radius: 8px;
-}
-
-.lp-chip {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  border: 1.5px solid transparent;
+  cursor: pointer;
 }
 
 .lp-label {
@@ -130,8 +126,29 @@
 .lp-row.is-dragging {
   opacity: 0.4;
 }
-.lp-row.is-drag-over {
-  border: 1.5px dashed var(--omoi-orange);
+.lp-row.is-selected {
+  border-color: #2196f3;
+  background: rgba(33, 150, 243, 0.08);
+}
+
+.lp-gap {
+  position: relative;
+  min-height: 8px;
+  margin: 4px 0;
+}
+.lp-gap.is-over::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  background: var(--omoi-orange);
+  border-radius: 2px;
+  transform: translateY(-50%);
+}
+.lp-gap.is-over .lp-sep {
+  visibility: hidden;
 }
 
 .lp-order {

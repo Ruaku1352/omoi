@@ -118,16 +118,22 @@ export default function ArtworkEditor({
   artwork,
   onChange,
   assets,
+  selectedId: selectedIdProp,
+  onSelectId,
 }: {
   artwork: Artwork
   onChange: (next: Artwork) => void
   assets: AssetIndex
+  selectedId?: string | null
+  onSelectId?: (layerId: string | null) => void
 }) {
 const layers = sortByLayerIndex(artwork.layers)
 const containerRef = useRef<HTMLDivElement>(null)
 const [stageWidth, setStageWidth] = useState(DEFAULT_STAGE_WIDTH)
 const stageHeight = stageWidth / artwork.canvas.aspectRatio
-const [selectedId, setSelectedId] = useState<string | null>(null)
+const [selectedIdInternal, setSelectedIdInternal] = useState<string | null>(null)
+const selectedId = selectedIdProp !== undefined ? selectedIdProp : selectedIdInternal
+const setSelectedId = onSelectId ?? setSelectedIdInternal
 
 useEffect(() => {
   const el = containerRef.current

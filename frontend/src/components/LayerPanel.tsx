@@ -5,18 +5,20 @@ import lineDotted from '../assets/line-dotted.svg'
 import iconUpdown from '../assets/icon-updown.svg'
 import './LayerPanel.css'
 
-const chipColors = ['#5b75a2', '#d1ac6f', '#df96b0', '#91b8d5']
-
 type Props = {
   artwork: Artwork
   onChange: (next: Artwork) => void
+  selectedLayerId?: string | null
+  onSelectLayer?: (layerId: string) => void
 }
 
-export default function LayerPanel({ artwork, onChange }: Props) {
+export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelectLayer }: Props) {
   const layers = [...sortByLayerIndex(artwork.layers)].reverse()
 
   const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const [overIndex, setOverIndex] = useState<number | null>(null)
+  // ドラッグの落とし先は「レイヤーの行の上」ではなく「レイヤーとレイヤーの間のすき間」。
+  // gapIndex は 0〜layers.length。gapIndex=0 は一番上、gapIndex=layers.length は一番下。
+  const [overGap, setOverGap] = useState<number | null>(null)
 
   // layers は「手前(上)→奥(下)」の表示順。
   // ドラッグで並び替えたあと、逆順(奥→手前)にしてlayerIndexを振り直す
@@ -46,21 +48,26 @@ export default function LayerPanel({ artwork, onChange }: Props) {
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  const handleDragOver = (index: number) => (e: React.DragEvent) => {
+  const handleGapDragOver = (gapIndex: number) => (e: React.DragEvent) => {
     e.preventDefault()
-    if (overIndex !== index) setOverIndex(index)
+    if (overGap !== gapIndex) setOverGap(gapIndex)
   }
 
-  const handleDrop = (index: number) => (e: React.DragEvent) => {
+  const handleGapDrop = (gapIndex: number) => (e: React.DragEvent) => {
     e.preventDefault()
-    if (dragIndex !== null) reorderLayers(dragIndex, index)
+    if (dragIndex !== null) {
+      // 自分自身を取り除いたあとに挿入するので、元の位置より後ろのすき間に
+      // 落とした場合はひとつ前にずれる
+      const toIndex = dragIndex < gapIndex ? gapIndex - 1 : gapIndex
+      reorderLayers(dragIndex, toIndex)
+    }
     setDragIndex(null)
-    setOverIndex(null)
+    setOverGap(null)
   }
 
   const handleDragEnd = () => {
     setDragIndex(null)
-    setOverIndex(null)
+    setOverGap(null)
   }
 
   const replaceLayer = (layerId: string, candidateId: string) => {
@@ -105,18 +112,22 @@ export default function LayerPanel({ artwork, onChange }: Props) {
       <div className="lp-list">
         {layers.map((layer, i) => (
           <div key={layer.layerId}>
-            {i > 0 && <img className="lp-sep" src={lineDotted} alt="" />}
-                        <div
-              className={`lp-row${dragIndex === i ? ' is-dragging' : ''}${overIndex === i && dragIndex !== i ? ' is-drag-over' : ''}`}
+            <div
+              className={`lp-gap${overGap === i && dragIndex !== null && dragIndex !== i && dragIndex !== i - 1 ? ' is-over' : ''}`}
+              onDragOver={handleGapDragOver(i)}
+              onDrop={handleGapDrop(i)}
+            >
+              {i > 0 && <img className="lp-sep" src={lineDotted} alt="" />}
+            </div>
+            <div
+              className={`lp-row${dragIndex === i ? ' is-dragging' : ''}${selectedLayerId === layer.layerId ? ' is-selected' : ''}`}
               draggable
+              onClick={() => onSelectLayer?.(layer.layerId)}
               onDragStart={handleDragStart(i)}
-              onDragOver={handleDragOver(i)}
-              onDrop={handleDrop(i)}
               onDragEnd={handleDragEnd}
             >
               <span className="lp-handle" aria-label="ドラッグで並び替え">≡</span>
               <span className="lp-order">{i + 1}</span>
-              <span className="lp-chip" style={{ background: chipColors[i % chipColors.length] }} />
               <span className="lp-label">
                 {layer.label}
                 {i === 0 && <span className="lp-depth-tag">手前</span>}
@@ -134,6 +145,11 @@ export default function LayerPanel({ artwork, onChange }: Props) {
             </div>
           </div>
         ))}
+        <div
+          className={`lp-gap${overGap === layers.length && dragIndex !== null && dragIndex !== layers.length - 1 ? ' is-over' : ''}`}
+          onDragOver={handleGapDragOver(layers.length)}
+          onDrop={handleGapDrop(layers.length)}
+        />
       </div>
 
       <div className="lp-hint">

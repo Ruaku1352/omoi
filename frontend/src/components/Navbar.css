@@ -1,9 +1,10 @@
 .navbar {
-  height: 64px;
+  height: clamp(48px, 8vh, 64px);
   padding: 0 24px;
   background: var(--omoi-bg);
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .navbar-brand {
