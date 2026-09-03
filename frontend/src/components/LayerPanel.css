@@ -1,3 +1,115 @@
+.lp {
+  flex: 1 1 280px;
+  min-width: 260px;
+  max-width: 320px;
+  margin: 32px 0;
+  padding: 24px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.lp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lp-title {
+  margin: 0;
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  color: #000;
+}
+
+.lp-lead {
+  margin: 0;
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--omoi-gray);
+}
+
+.lp-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.lp-sep {
+  display: block;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.lp-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  border-radius: 8px;
+}
+
+.lp-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lp-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  font-size: 14px;
+  color: #000;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-pill {
+  flex-shrink: 0;
+  border: 1px solid var(--omoi-accent);
+  background: #fff;
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  font-size: 11px;
+  color: var(--omoi-accent);
+  cursor: pointer;
+}
+
+.lp-hint-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--omoi-bg);
+  border-radius: 12px;
+}
+
+.lp-hint-card img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.lp-hint-card p {
+  margin: 0;
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--omoi-gray);
+}
+
 .lp-handle {
   width: 24px;
   height: 20px;
