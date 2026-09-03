@@ -13,8 +13,10 @@
   width: 1150px;
   max-width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .preview3d-reset {
@@ -27,6 +29,8 @@
   font-family: "Zen Kaku Gothic New", sans-serif;
   font-weight: 900;
   font-size: 24px;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
 }
 
@@ -39,6 +43,8 @@
   font-family: "Zen Kaku Gothic New", sans-serif;
   font-weight: 700;
   font-size: 16px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .preview3d-hint img {
@@ -47,7 +53,8 @@
 }
 
 .preview3d-canvas {
- width: 100%;
-max-width: 852px;
-  height: 639px;
+  width: 100%;
+  max-width: 852px;
+  aspect-ratio: 4 / 3;
+  height: auto;
 }

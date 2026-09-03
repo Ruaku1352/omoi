@@ -1,13 +1,14 @@
 .screen {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  padding-right: 64px;
+  padding-right: clamp(16px, 4vw, 64px);
   background: #fff;
 }
 
 .screen-main {
-  flex: 2 1 0;
-  min-width: 0;
+  flex: 2 1 320px;
+  min-width: 280px;
   padding: 32px 32px 0 32px;  /* 右側にも32px追加 */
   display: flex;
   flex-direction: column;
@@ -16,12 +17,15 @@
 
 .screen-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .screen-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 32px;
 }

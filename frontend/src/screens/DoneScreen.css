@@ -52,15 +52,17 @@
   width: 100%;
 }
 .done-left .preview3d-head { width: 100%; }
-.done-left .preview3d-canvas { width: 616px; height: 491px; }
+.done-left .preview3d-canvas { width: 100%; max-width: 616px; aspect-ratio: 616 / 491; height: auto; }
 
 .done-caption {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 16px;
-  height: 51px;
-  padding: 0 115px;
+  min-height: 51px;
+  width: 100%;
+  padding: 8px clamp(16px, 8vw, 115px);
   background: #f8f1ec;
   border: 1px solid var(--omoi-orange);
   border-radius: 8px;
@@ -79,7 +81,6 @@
   color: var(--omoi-gray);
 }
 
-/* ---- 右（確定パネル） ---- */
 /* ---- 右（確定パネル） ---- */
 .done-right {
   flex: 1 1 280px;
