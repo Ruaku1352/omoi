@@ -1,5 +1,5 @@
 import './GeneratingScreen.css'
-
+import MomoMascot from '../components/MomoMascot'
 export default function GeneratingScreen({ photoCount }: { photoCount?: number }) {
   return (
     <div className="gen">
@@ -13,7 +13,7 @@ export default function GeneratingScreen({ photoCount }: { photoCount?: number }
             </p>
             <p className="gen-lead">高品質なデータを生成しています。30秒ほどお待ちください。</p>
           </div>
-          <div className="gen-spinner" />
+          <MomoMascot />
         </div>
       </div>
     </div>

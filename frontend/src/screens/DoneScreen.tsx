@@ -13,8 +13,11 @@ type Props = {
   onSelectScreen: (screen: Screen) => void
 }
 
+type ExportStatus = 'idle' | 'building' | 'done' | 'error'
+
 export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
-  const [status, setStatus] = useState<'idle' | 'building' | 'done' | 'error'>('idle')
+  const [stlStatus, setStlStatus] = useState<ExportStatus>('idle')
+  const [pdfStatus, setPdfStatus] = useState<ExportStatus>('idle')
 
   const today = new Date().toLocaleDateString('ja-JP', {
     year: 'numeric',
@@ -22,13 +25,43 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
     day: '2-digit',
   })
 
-  const handleConfirm = async () => {
-    setStatus('building')
+  // 3Dプリンター用データ出力(STL一式ZIP)
+  // 仮実装: 本来はBackend/物理出力側でSTLを生成する想定。
+  // 現状は既存のPortable Artwork Bundle(artwork.json + assets/)を流用してダウンロードしている。
+  // TODO: ナンちゃんとエンドポイント確定後、実際のSTL生成APIに差し替える
+  const handleExportStl = async () => {
+    setStlStatus('building')
     try {
       await downloadArtworkBundle(artwork, assets)
-      setStatus('done')
+      setStlStatus('done')
     } catch (e) {
-      setStatus('error')
+      setStlStatus('error')
+    }
+  }
+
+  // 写真貼り付け用PDF出力(100%印刷用PDF)
+  // 仮実装: 実際のPDF生成APIが未確定のためダミー処理。
+  // TODO: エンドポイント確定後、fetch先を実際のAPIに差し替える
+  const handleExportPdf = async () => {
+    setPdfStatus('building')
+    try {
+      // TODO: 仮のエンドポイント。実際のパスが決まり次第差し替え
+      const res = await fetch('/api/v1/artworks/export/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artwork }),
+      })
+      if (!res.ok) throw new Error('PDF export failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'omoi-print.pdf'
+      a.click()
+      URL.revokeObjectURL(url)
+      setPdfStatus('done')
+    } catch (e) {
+      setPdfStatus('error')
     }
   }
 
@@ -59,11 +92,17 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
                 ※「最初から作る」を選ぶと<br />
                 　作ったデータは消えてしまいます。
               </p>
-              {status === 'done' && (
-                <p className="done-note">ダウンロードしました！ナンちゃんに渡してね。</p>
+              {stlStatus === 'done' && (
+                <p className="done-note">3Dプリンター用データをダウンロードしました！</p>
               )}
-              {status === 'error' && (
-                <p className="done-note">ダウンロードに失敗しました。もう一度お試しください。</p>
+              {stlStatus === 'error' && (
+                <p className="done-note">3Dデータの出力に失敗しました。もう一度お試しください。</p>
+              )}
+              {pdfStatus === 'done' && (
+                <p className="done-note">印刷用PDFをダウンロードしました！</p>
+              )}
+              {pdfStatus === 'error' && (
+                <p className="done-note">PDFの出力に失敗しました。もう一度お試しください。</p>
               )}
             </div>
 
@@ -77,10 +116,18 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
               <button
                 type="button"
                 className="done-confirm"
-                onClick={handleConfirm}
-                disabled={status === 'building'}
+                onClick={handleExportStl}
+                disabled={stlStatus === 'building'}
               >
-                {status === 'building' ? '準備中…' : 'この作品で確定する'}
+                {stlStatus === 'building' ? '準備中…' : '3Dプリンター用データ出力'}
+              </button>
+              <button
+                type="button"
+                className="done-confirm done-confirm-pdf"
+                onClick={handleExportPdf}
+                disabled={pdfStatus === 'building'}
+              >
+                {pdfStatus === 'building' ? '準備中…' : '写真貼り付け用PDF出力'}
               </button>
             </div>
           </div>

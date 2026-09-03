@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { normalizeLayerIndexes, sortByLayerIndex } from '../artwork/layerOrder'
 import type { Artwork } from '../types/artwork'
 import lineDotted from '../assets/line-dotted.svg'
@@ -14,25 +15,52 @@ type Props = {
 export default function LayerPanel({ artwork, onChange }: Props) {
   const layers = [...sortByLayerIndex(artwork.layers)].reverse()
 
-  const swapOrder = (layerId: string, direction: -1 | 1) => {
-    const ordered = sortByLayerIndex(artwork.layers)
-    const i = ordered.findIndex((l) => l.layerId === layerId)
-    const j = i + direction
-    if (i < 0 || j < 0 || j >= ordered.length) return
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
 
-    const a = ordered[i]
-    const b = ordered[j]
+  // layers は「手前(上)→奥(下)」の表示順。
+  // ドラッグで並び替えたあと、逆順(奥→手前)にしてlayerIndexを振り直す
+  const reorderLayers = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+
+    const displayed = [...layers]
+    const [moved] = displayed.splice(fromIndex, 1)
+    displayed.splice(toIndex, 0, moved)
+
+    const ascending = [...displayed].reverse()
+    const layerIndexById = new Map(ascending.map((l, idx) => [l.layerId, idx]))
 
     onChange({
       ...artwork,
       layers: normalizeLayerIndexes(
-        artwork.layers.map((l) => {
-          if (l.layerId === a.layerId) return { ...l, layerIndex: b.layerIndex }
-          if (l.layerId === b.layerId) return { ...l, layerIndex: a.layerIndex }
-          return l
-        }),
+        artwork.layers.map((l) => ({
+          ...l,
+          layerIndex: layerIndexById.get(l.layerId) ?? l.layerIndex,
+        })),
       ),
     })
+  }
+
+  const handleDragStart = (index: number) => (e: React.DragEvent) => {
+    setDragIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (index: number) => (e: React.DragEvent) => {
+    e.preventDefault()
+    if (overIndex !== index) setOverIndex(index)
+  }
+
+  const handleDrop = (index: number) => (e: React.DragEvent) => {
+    e.preventDefault()
+    if (dragIndex !== null) reorderLayers(dragIndex, index)
+    setDragIndex(null)
+    setOverIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    setDragIndex(null)
+    setOverIndex(null)
   }
 
   const replaceLayer = (layerId: string, candidateId: string) => {
@@ -78,13 +106,22 @@ export default function LayerPanel({ artwork, onChange }: Props) {
         {layers.map((layer, i) => (
           <div key={layer.layerId}>
             {i > 0 && <img className="lp-sep" src={lineDotted} alt="" />}
-            <div className="lp-row">
-              <div className="lp-arrows">
-                <button type="button" onClick={() => swapOrder(layer.layerId, 1)} disabled={i === 0}>▲</button>
-                <button type="button" onClick={() => swapOrder(layer.layerId, -1)} disabled={i === layers.length - 1}>▼</button>
-              </div>
+                        <div
+              className={`lp-row${dragIndex === i ? ' is-dragging' : ''}${overIndex === i && dragIndex !== i ? ' is-drag-over' : ''}`}
+              draggable
+              onDragStart={handleDragStart(i)}
+              onDragOver={handleDragOver(i)}
+              onDrop={handleDrop(i)}
+              onDragEnd={handleDragEnd}
+            >
+              <span className="lp-handle" aria-label="ドラッグで並び替え">≡</span>
+              <span className="lp-order">{i + 1}</span>
               <span className="lp-chip" style={{ background: chipColors[i % chipColors.length] }} />
-              <span className="lp-label">{layer.label}</span>
+              <span className="lp-label">
+                {layer.label}
+                {i === 0 && <span className="lp-depth-tag">手前</span>}
+                {i === layers.length - 1 && <span className="lp-depth-tag">奥</span>}
+              </span>
               {layer.replacementCandidates.length > 0 && (
                 <button
                   type="button"
@@ -103,7 +140,7 @@ export default function LayerPanel({ artwork, onChange }: Props) {
         <div className="lp-hint-card">
           <img src={iconUpdown} alt="" />
           <p>
-            ▲▼ で前後が入れ替わります。<br />
+            ドラッグで前後が入れ替わります。<br />
             上が手前です。
           </p>
         </div>
