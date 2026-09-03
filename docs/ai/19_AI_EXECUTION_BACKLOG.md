@@ -2110,3 +2110,26 @@ benchmark artifactは`poc-output/performance-optimization-baseline-*-20260904/`�
 `poc-output/performance-optimization-p1-prepared-cache*-20260904/`でGit管理外に保存した。P1実装のfocused testは
 **33 passed**（FastAPI/httpxの既知deprecation warning 1件）、Ruff check / format、`git diff --check`はpassした。
 品質フェーズ**97%**、速度改善フェーズ**50%**（P0 baselineとP1 comparison完了、P1採用保留、P2へ進行）とする。
+
+### 8.72 資料22 P2 — split encoder / decoder + embedding cacheをTier A採用（2026-09-04）
+
+公式yformer/EfficientSAMが案内する同一revision `d8dbb1e`のTi split ONNXをGit非管理の`backend/.models/`へ取得した。
+encoder SHA-256は`84ed466ffcc5c1f8d08409bc34a23bb364ab2c15e402cb12d4335a42be0e0951`、decoder SHA-256は
+`a62f8fa5ea080447c0689418d69e58f1e83e0b7adf9c142e2bd9bcc8045c0b11`である。公式exampleどおり、encoderへ
+`batched_images`を1回入力し、decoderへ`image_embeddings`、従来と同じ2 corner box prompt / labels、
+`orig_im_size`を渡す`EfficientSamSplitOnnxSegmenter`を追加した。
+
+split経路は`PreparedSplitSegmentationImage`にembeddingを保持し、同一source photoのcandidate / retryでdecoderだけを
+再実行する。`EFFICIENTSAM_ENCODER_MODEL_PATH`と`EFFICIENTSAM_DECODER_MODEL_PATH`が**両方**設定された時だけ
+Generatorへ接続し、未設定時は従来のmonolithic ONNXを維持する。片方だけの設定は明示エラーにする。公開API、Artwork
+Contract、candidate数、Prompt、bbox、retry、Mask品質規則、closed-hole fill、micro-island cleanup、Compositionは変更していない。
+
+同じ再起動後AC給電・sleep無効条件、固定5写真 / Saved Plan / 10 subject bboxでwarm-up 1回＋**5回**を実行した。
+total中央値は**9,408.28 ms**（min 8,214.10 / p95 10,338.84 ms）、P0 baseline初回中央値17,170.49 msから
+**7,762.21 ms / 45.21%短縮**した。source photo 5枚ごとのencoder中央値は1,364.57 ms、10 bboxのdecoder中央値は
+129.45 msだった。全5 runのself binary Mask hash、およびP0 baseline referenceとのbinary Mask hash / bbox keyは完全一致した。
+private artifactは`poc-output/performance-optimization-p2-split-encoder-decoder-20260904/benchmark.json`である。
+
+split adapter / path selectionのunit testと既存pipeline focused testは**36 passed**（FastAPI/httpxの既知deprecation
+warning 1件）、Ruff check / format、`git diff --check`はpassした。P2は資料22 §15のTier Aを満たす品質非変更の
+速度改善として**採用**する。品質フェーズ**97%**、速度改善フェーズ**70%**（P2採用、Speed PR作成条件を満たす）とする。

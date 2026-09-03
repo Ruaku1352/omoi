@@ -26,13 +26,24 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from ai.image_ops import gemini_box_to_px  # noqa: E402
 from ai.internal_models import SemanticPlan  # noqa: E402
-from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult  # noqa: E402
+from ai.segmentation import (  # noqa: E402
+    EfficientSamOnnxSegmenter,
+    EfficientSamSplitOnnxSegmenter,
+    SegmentationResult,
+)
 
 STAGE_FIELDS = (
     "resizeElapsedMs",
     "tensorPreparationElapsedMs",
     "onnxInferenceElapsedMs",
+    "encoderInferenceElapsedMs",
+    "decoderInferenceElapsedMs",
     "maskRestoreElapsedMs",
+)
+SOURCE_PREPARATION_FIELDS = (
+    "resizeElapsedMs",
+    "tensorPreparationElapsedMs",
+    "encoderInferenceElapsedMs",
 )
 
 
@@ -52,6 +63,8 @@ def parse_args() -> argparse.Namespace:
         default=BACKEND_DIR / ".models" / "efficientsam_ti.onnx",
     )
     parser.add_argument("--max-side", type=int, default=1024)
+    parser.add_argument("--split-encoder-model-path", type=Path)
+    parser.add_argument("--split-decoder-model-path", type=Path)
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument(
@@ -74,6 +87,10 @@ def main() -> int:
         raise SystemExit("--runs は正、--warmup-runs は0以上にしてください")
     if args.max_side <= 0:
         raise SystemExit("--max-side は正の整数にしてください")
+    if bool(args.split_encoder_model_path) != bool(args.split_decoder_model_path):
+        raise SystemExit("split encoder / decoder model pathは両方指定してください")
+    if args.split_encoder_model_path and not args.reuse_prepared_images:
+        raise SystemExit("split ONNXは--reuse-prepared-imagesと組み合わせてください")
 
     plan = SemanticPlan.model_validate_json(args.plan.read_text(encoding="utf-8"))
     images = [_load_rgb(path) for path in args.photo]
@@ -86,7 +103,7 @@ def main() -> int:
     )
     output_dir.mkdir(parents=True, exist_ok=False)
 
-    segmenter = EfficientSamOnnxSegmenter(args.model_path, args.max_side)
+    segmenter = _build_segmenter(args)
     for _ in range(args.warmup_runs):
         _run_once(segmenter, attempts, reuse_prepared_images=args.reuse_prepared_images)
 
@@ -130,6 +147,9 @@ def main() -> int:
             "measurementRuns": args.runs,
             "warmupRuns": args.warmup_runs,
             "reusePreparedImages": args.reuse_prepared_images,
+            "segmentationMode": "split_encoder_decoder"
+            if args.split_encoder_model_path
+            else "monolithic",
             "sourcePhotoCount": len(images),
             "segmentationAttemptCount": len(attempts),
         },
@@ -178,8 +198,18 @@ def _build_attempts(plan: SemanticPlan, images: list[Image.Image]) -> list[dict[
     return attempts
 
 
+def _build_segmenter(args: argparse.Namespace):
+    if args.split_encoder_model_path:
+        return EfficientSamSplitOnnxSegmenter(
+            args.split_encoder_model_path,
+            args.split_decoder_model_path,
+            args.max_side,
+        )
+    return EfficientSamOnnxSegmenter(args.model_path, args.max_side)
+
+
 def _run_once(
-    segmenter: EfficientSamOnnxSegmenter,
+    segmenter,
     attempts: list[dict[str, Any]],
     *,
     reuse_prepared_images: bool,
@@ -201,6 +231,9 @@ def _run_once(
                         "resizeElapsedMs": prepared.timings.resize_elapsed_ms,
                         "tensorPreparationElapsedMs": (
                             prepared.timings.tensor_preparation_elapsed_ms
+                        ),
+                        "encoderInferenceElapsedMs": (
+                            prepared.timings.encoder_inference_elapsed_ms
                         ),
                     }
                 )
@@ -232,6 +265,8 @@ def _record_attempt(
         "resizeElapsedMs": timings.resize_elapsed_ms,
         "tensorPreparationElapsedMs": timings.tensor_preparation_elapsed_ms,
         "onnxInferenceElapsedMs": timings.onnx_inference_elapsed_ms,
+        "encoderInferenceElapsedMs": timings.encoder_inference_elapsed_ms,
+        "decoderInferenceElapsedMs": timings.decoder_inference_elapsed_ms,
         "maskRestoreElapsedMs": timings.mask_restore_elapsed_ms,
     }
 
@@ -265,17 +300,18 @@ def _mask_index(run: dict[str, Any]) -> dict[tuple[str, str, tuple[int, ...]], s
 
 def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
     values: dict[str, list[float]] = {"totalElapsedMs": []}
-    for field in STAGE_FIELDS:
+    for field in (
+        *STAGE_FIELDS,
+        *(f"sourcePreparation{field}" for field in SOURCE_PREPARATION_FIELDS),
+    ):
         values[field] = []
     for run in runs:
         values["totalElapsedMs"].append(run["totalElapsedMs"])
         for preparation in run.get("sourcePreparations", []):
-            for field in ("resizeElapsedMs", "tensorPreparationElapsedMs"):
+            for field in SOURCE_PREPARATION_FIELDS:
                 value = preparation[field]
                 if value is not None:
-                    values[f"sourcePreparation{field[0].upper()}{field[1:]}"] = values.get(
-                        f"sourcePreparation{field[0].upper()}{field[1:]}", []
-                    ) + [value]
+                    values[f"sourcePreparation{field}"] += [value]
         for attempt in run["attempts"]:
             for field in STAGE_FIELDS:
                 value = attempt[field]

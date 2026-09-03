@@ -1178,3 +1178,24 @@ sourcePhotoIndexごとのprepare 1回をunit testした。
 進み、P1はP2の必要な準備APIとして保持する。private artifactは
 `poc-output/performance-optimization-baseline-*-20260904/`と
 `poc-output/performance-optimization-p1-prepared-cache*-20260904/`に保存した。Speed PRは未作成である。
+
+### 24.4 P2 — split encoder / decoder + embedding cache（2026-09-04）
+
+公式EfficientSAM repositoryが案内する同一revision `d8dbb1e`のTi split ONNXを取得した（Git非管理）。encoder SHA-256は
+`84ed466ffcc5c1f8d08409bc34a23bb364ab2c15e402cb12d4335a42be0e0951`、decoder SHA-256は
+`a62f8fa5ea080447c0689418d69e58f1e83e0b7adf9c142e2bd9bcc8045c0b11`。公式exampleの入出力を検証した上で、
+source photoごとにencoderを1回、bbox / retryごとにdecoderを実行するadapterを実装した。
+
+| 条件 | run数 | total median | min | p95相当 | Tier A |
+| --- | ---: | ---: | ---: | ---: | --- |
+| P0 monolithic baseline 初回 | 5 | 17,170.49 ms | 16,258.58 ms | 19,005.95 ms | 5 / 5 self一致 |
+| P2 split + embedding cache | 5 | **9,408.28 ms** | 8,214.10 ms | 10,338.84 ms | self / baseline reference完全一致 |
+
+P2はP0初回baselineに対して**7,762.21 ms / 45.21%短縮**した。5 source photoのencoder中央値は
+1,364.57 ms、10 bboxのdecoder中央値は129.45 ms。固定bbox、best scoreから得られるfinal binary Mask hash、mask shapeは
+baseline referenceと一致した。これは資料22 §15 Level Aを満たすため、P2を品質非変更改善として**採用**する。
+
+`EFFICIENTSAM_ENCODER_MODEL_PATH`と`EFFICIENTSAM_DECODER_MODEL_PATH`を両方設定した場合だけsplit経路を有効にし、
+未設定時は従来monolithicを維持する。片方だけの設定はfail fastする。P2はcandidate数、Prompt、bbox、retry、Quality Gate、
+closed-hole fill、micro-island cleanup、Composition、Contractを変更しない。private artifactは
+`poc-output/performance-optimization-p2-split-encoder-decoder-20260904/benchmark.json`。Speed PRはP2 commit後に作成する。

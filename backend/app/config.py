@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     semantic_profile: str = "physical_layer_v2"
     segmentation_backend: str = "efficient_sam_onnx"
     efficientsam_model_path: Path | None = None
+    # 両方を明示した場合だけ、同一EfficientSAM-Tiの分離encoder / decoderを使う。
+    # 未設定時は従来のmonolithic ONNX経路を維持する。
+    efficientsam_encoder_model_path: Path | None = None
+    efficientsam_decoder_model_path: Path | None = None
     segmentation_max_retries: int = Field(default=1, ge=0, le=3)
     candidate_count: int = Field(default=12, ge=1, le=20)
     # MVP production profileは4層を成功条件にする。Schema自体の可変長性は維持する。
