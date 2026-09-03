@@ -77,6 +77,8 @@ async def test_structured_generation_disables_automatic_function_calling() -> No
     assert config.automatic_function_calling.disable is True
     assert config.http_options is not None
     assert config.http_options.timeout == 1_234
+    assert config.http_options.retry_options is not None
+    assert config.http_options.retry_options.attempts == 1
 
 
 @pytest.mark.anyio

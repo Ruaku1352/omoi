@@ -1195,7 +1195,13 @@ async def _generate_structured(
                 # JSON Schemaを明示し、response.parsedをPydanticで再検証する。
                 response_json_schema=response_schema,
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                http_options=types.HttpOptions(timeout=request_timeout_ms),
+                # 生成APIの既定retryは、request_timeout_msごとに待機を繰り返し、
+                # 1回の生成上限を超え得る。品質は変えず、呼び出し側が設定した
+                # timeoutで失敗を返せるよう1 attemptに固定する。
+                http_options=types.HttpOptions(
+                    timeout=request_timeout_ms,
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                ),
             ),
         )
     except Exception as exc:
