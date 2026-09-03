@@ -3,6 +3,7 @@ import { ApiError } from '../api/errors'
 import { generateArtwork } from '../api/generateArtwork'
 import type { Artwork } from '../types/artwork'
 import type { AssetManifest } from '../types/assetManifest'
+import type { JobStage } from '../types/job'
 import iconUpload from '../assets/icon-upload.svg'
 import iconCompose from '../assets/icon-compose.svg'
 import iconLayer from '../assets/icon-layer.svg'
@@ -13,10 +14,12 @@ export default function PhotoSelect({
   onGenerated,
   onStart,
   onFailed,
+  onProgress,
 }: {
   onGenerated: (artwork: Artwork, assetManifest: AssetManifest) => void
   onStart: () => void
   onFailed: (message: string) => void
+  onProgress?: (progress: { status: 'pending' | 'processing'; stage?: JobStage }) => void
 }) {
   const [photos, setPhotos] = useState<File[]>([])
   const [memoryText, setMemoryText] = useState('')
@@ -42,7 +45,7 @@ export default function PhotoSelect({
   const handleGenerate = async () => {
     onStart()
     try {
-      const result = await generateArtwork({ photos, memoryText })
+      const result = await generateArtwork({ photos, memoryText, onProgress })
       onGenerated(result.artwork, result.assetManifest)
     } catch (e) {
       onFailed(e instanceof ApiError ? e.message : '通信に失敗しました。')

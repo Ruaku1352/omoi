@@ -10,7 +10,7 @@
 
 import { apiBaseUrl } from '../config/env'
 import type { GenerateSuccessResponse } from '../types/generateResponse'
-import type { JobStatusResponse } from '../types/job'
+import type { JobStage, JobStatusResponse } from '../types/job'
 import { ApiError, toApiError } from './errors'
 
 export type { GenerateSuccessResponse }
@@ -19,6 +19,8 @@ export interface GenerateArtworkInput {
   photos: readonly File[]
   memoryText?: string
   signal?: AbortSignal
+  /** Job の状態が変わるたびに呼ばれる。ローディング表示の切り替えに使う。 */
+  onProgress?: (progress: { status: 'pending' | 'processing'; stage?: JobStage }) => void
 }
 
 function sleep(ms: number): Promise<void> {
@@ -77,6 +79,10 @@ export async function generateArtwork(
       })
     }
 
-    // ここに来たら「まだ処理中」。ループの先頭に戻ってもう一度待つ
+    // ここに来たら pending か processing。状態を呼び出し側へ伝えて、もう一度待つ
+    input.onProgress?.({
+      status: data.status,
+      stage: data.status === 'processing' ? data.stage : undefined,
+    })
   }
 }
