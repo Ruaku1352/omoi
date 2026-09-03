@@ -2020,3 +2020,44 @@ lint / build / Ruff / Contract validation / diff checkと、速度改善を混�
 
 速度改善はこのPRの差分や品質artifactをbaselineとして、別PRでCPU Segmentationのstage別計測と品質を変えない改善から扱う。
 候補数、Semantic Prompt、Quality Gate、Segmentation quality条件を変える場合は、さらに独立した品質比較PoCを伴う。
+
+### 8.68 資料22への移行前監査 — 速度改善を開始可能、品質進捗は97%へ訂正（2026-09-04）
+
+新設の`22_AI_PERFORMANCE_OPTIMIZATION_PLAN.md`を全文確認し、PR #8 head
+`4cc70570f99b582fdbb8d7cc652e590e13a01fc0`、current implementation、資料19 §8.61〜§8.67、
+未追跡の資料20を照合した。資料22の開始を妨げる、人間判断待ちの品質・費用・Cloud Run・外部GPU・private画像送信の
+条件はない。Speed PRは計画書だけでは作らず、最低1件の実速度改善を固定条件で5回測定してから作成する。
+
+ただし、§8.65の「資料21を16 / 16 = 100%」という記録は、§8.61の**foreground-bottom instruction=true**での
+固定3 case × 3回がGemini接続前のSemantic stageで全9件失敗し、§8.63で15.5 / 16 = 97%と再監査している事実と
+両立しない。frontend E2E成功の人間報告は統合確認として尊重するが、AI側でmodel名・artifact・設定を直接確認して
+いないため、固定datasetのReal Gemini成功artifactへ読み替えない。以後、資料21の品質進捗は**97%**、
+残件は「Gemini到達可能な環境でcurrent通常Profile（foreground-bottom=true）の固定Real E2Eを再確認」とする。
+
+一方で、資料22のP0〜P6はGemini APIを呼ばない固定Saved Plan / bboxの決定論的Segmentation比較であり、
+この残件に依存しない。品質コード基準はPR #8 headのまま固定し、候補数、Semantic / Composition Prompt、
+Quality Gate、Segmentation解像度・bbox・retry、closed-hole fill、micro-island cleanup、Contractを変えない。
+速度の候補変更はTier A parity、出力差が出る場合はTier Bの画像比較と人間判断を必須とする。
+
+P0-0としてlocal branch `codex/ai-speed-optimization`を上記SHAから作成した。資料20は引き続きuntrackedであり、
+本移行では変更・commit対象に含めない。進捗は、品質フェーズ**97%**、速度改善フェーズ**5%**（branch作成・
+計画移行前監査完了、hardware fingerprintとbaselineは未計測）とする。
+
+### 8.69 資料22 P0-A — local hardware / runtime fingerprintを保存（2026-09-04）
+
+資料22 §6.1のP0-Aとして、`scripts/capture_performance_environment.py`を追加し、private artifact
+`poc-output/performance-optimization-environment/environment.json`へ実行環境を保存した。CPUは
+12th Gen Intel(R) Core(TM) i7-1260P（physical 12 cores / logical 16 processors）、RAM 15.68 GB、
+OSはWindows 11 Home 10.0.26200、GPU列挙はIntel Iris Xeである。backend仮想環境はPython 3.13.13、
+NumPy 2.5.2、Pillow 12.3.0、ONNX Runtime 1.29.0、available providersは
+`AzureExecutionProvider`と`CPUExecutionProvider`だった。EfficientSAM-Ti ONNXは41,365,520 bytes、
+SHA-256 `143c3198a7b2a15f23c21cdb723432fb3fbcdbabbdad3483cf3babd8b95c1397`である。
+
+初回の非昇格WMI読取はアクセス拒否となったため、スクリプトはWMI失敗時に空値／0を正常値として保存しないよう
+`ErrorActionPreference=Stop`を設定した。昇格したread-only実行で上記fingerprintを再取得している。
+artifactは`.gitignore`済みの`poc-output/`配下であり、環境変数・API Key・private画像・memoryTextを含めない。
+
+Power schemeは「パナソニックの電源管理」と記録した。battery raw値をAC接続の証拠へ読み替えず、baselineの5回計測は
+AC給電、sleep無効、蓋を閉じない、重い並列作業なしを実行直前に満たしてから開始する。現時点ではbaselineを
+実行していない。進捗は、品質フェーズ**97%**、速度改善フェーズ**15%**（P0-0 / P0-A完了、P0-B timing・
+deterministic benchmark・baseline 5回は未着手）とする。
