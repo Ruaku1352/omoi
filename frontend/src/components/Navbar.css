@@ -25,3 +25,17 @@
   font-size: 24px;
   color: var(--omoi-brown);
 }
+
+@media (max-width: 600px) {
+  .navbar {
+    height: 44px;
+    padding: 0 16px;
+  }
+  .navbar-logo {
+    width: 24px;
+    height: 24px;
+  }
+  .navbar-name {
+    font-size: 20px;
+  }
+}

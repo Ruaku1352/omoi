@@ -24,3 +24,11 @@
 .breadcrumb-sep {
   color: var(--omoi-gray);
 }
+
+@media (max-width: 600px) {
+  .breadcrumb {
+    padding: 8px 12px;
+    gap: 6px;
+    font-size: 11px;
+  }
+}

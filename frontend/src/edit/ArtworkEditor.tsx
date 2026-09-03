@@ -157,7 +157,7 @@ useEffect(() => {
     
 
   return (
-<div ref={containerRef} style={{ background: 'var(--editor-bg)', width: '100%', maxWidth: DEFAULT_STAGE_WIDTH }}>
+<div ref={containerRef} className="ae-stage" style={{ background: 'var(--editor-bg)', width: '100%', maxWidth: DEFAULT_STAGE_WIDTH }}>
     <Stage
         width={stageWidth}
         height={stageHeight}

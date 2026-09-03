@@ -83,6 +83,7 @@
 }
 
 /* ---- 右（確定パネル） ---- */
+/* ---- 右（確定パネル） ---- */
 .done-right {
   flex: 1 1 280px;
   max-width: 900px;
@@ -165,4 +166,83 @@
   box-shadow: 4px 4px 2px rgba(0, 0, 0, 0.25);
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* ==== スマホ版（Figma: スマホ・完成 相当）==== */
+@media (max-width: 600px) {
+  /* パンくずは今回のスマホデザインに無いので隠す */
+  .done-flow { display: none; }
+
+  .done-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
+    border: none;
+    background: #fff;
+    overflow: visible;
+  }
+  .done-stage::before { display: none; }
+
+  /* カード構造をやめて中身を1列に並べ直すために箱を消す */
+  .done-right,
+  .done-panel,
+  .done-panel-top {
+    display: contents;
+  }
+
+  .done-title {
+    order: 1;
+    margin: 0;
+    font-size: 22px;
+    text-align: center;
+  }
+  .done-lead {
+    order: 2;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .done-left {
+    order: 3;
+    max-width: none;
+    width: 100%;
+    padding: 12px;
+    background: var(--omoi-bg);
+    box-shadow: none;
+    gap: 8px;
+  }
+  .done-caption { display: none; }
+
+  .done-panel-actions {
+    order: 4;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0;
+  }
+  .done-confirm {
+    min-height: 48px;
+    padding: 8px 20px;
+    font-size: 14px;
+  }
+  .done-restart,
+  .done-again {
+    flex: 0 0 auto;
+  }
+  .done-confirm {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .done-note {
+    order: 5;
+    width: 100%;
+    margin: 0;
+    text-align: center;
+    font-size: 11px;
+  }
 }
