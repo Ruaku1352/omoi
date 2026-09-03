@@ -22,6 +22,7 @@ from app.services.generator import build_generator
 from app.services.job_input_store import build_job_input_store
 from app.services.job_runner import JobRunner
 from app.services.job_store import build_job_store
+from app.services.stage_observer import JobStageObserver
 from app.services.task_queue import build_task_queue
 
 API_V1_PREFIX = "/api/v1"
@@ -57,7 +58,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_exception_handlers(app)
 
-    app.state.generator = build_generator(settings)
     app.state.asset_store = build_asset_store(settings)
 
     if settings.asset_backend == "local":
@@ -71,7 +71,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     # ---- 非同期化: Job Store / Job Input Store / Task Queue ----
+    # job_storeはGeneratorのstage通知Observerが使うため、Generatorより先に作る。
     app.state.job_store = build_job_store(settings)
+    app.state.generator = build_generator(settings, observer=JobStageObserver(app.state.job_store))
     app.state.job_input_store = build_job_input_store(settings)
     if settings.job_input_backend == "local":
         settings.job_input_dir.mkdir(parents=True, exist_ok=True)
