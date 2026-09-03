@@ -1,0 +1,6 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="boxicons:cube">
+<rect width="48" height="48" rx="8" fill="#F9E5D4"/>
+<path id="Vector" d="M6 32C6 32.68 6.36 33.34 6.94 33.7L22.94 43.7C23.2587 43.8964 23.6257 44.0005 24 44.0005C24.3743 44.0005 24.7413 43.8964 25.06 43.7L41.06 33.7C41.64 33.34 42 32.7 42 32V16C42 15.32 41.64 14.66 41.06 14.3L25.06 4.3C24.42 3.9 23.58 3.9 22.94 4.3L6.94 14.3C6.36 14.66 6 15.3 6 16V32ZM10 18.94L22 26.14V38.4L10 30.9V18.94ZM26 38.4V26.14L38 18.94V30.9L26 38.4ZM24 8.36L35.68 15.66L24 22.66L12.32 15.66L24 8.36Z" fill="#C24B03"/>
+</g>
+</svg>

@@ -1,0 +1,25 @@
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 16px 24px;
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: nowrap;
+   max-width: 1120px;    
+  margin: 0 auto; 
+}
+
+.breadcrumb-step {
+  color: var(--omoi-gray);
+}
+
+.breadcrumb-step.is-current {
+  color: var(--omoi-orange);
+}
+
+.breadcrumb-sep {
+  color: var(--omoi-gray);
+}

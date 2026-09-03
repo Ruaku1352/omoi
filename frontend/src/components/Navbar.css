@@ -1,0 +1,26 @@
+.navbar {
+  height: 64px;
+  padding: 0 24px;
+  background: var(--omoi-bg);
+  display: flex;
+  align-items: center;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.navbar-logo {
+  width: 32px;
+  height: 32px;
+  background: var(--omoi-brown);
+}
+
+.navbar-name {
+  font-family: "Roboto", sans-serif;
+  font-weight: 500;
+  font-size: 24px;
+  color: var(--omoi-brown);
+}
