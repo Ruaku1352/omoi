@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import Breadcrumb from '../components/Breadcrumb'
 import LayerPanel from '../components/LayerPanel'
@@ -15,6 +16,8 @@ type Props = {
 }
 
 export default function EditScreen({ artwork, assets, onChange, onSelectScreen }: Props) {
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
+
   return (
     <div className="screen">
       <Sidebar onSelect={onSelectScreen} />
@@ -27,9 +30,20 @@ export default function EditScreen({ artwork, assets, onChange, onSelectScreen }
             </button>
           </div>
         </div>
-        <ArtworkEditor artwork={artwork} assets={assets} onChange={onChange} />
+        <ArtworkEditor
+          artwork={artwork}
+          assets={assets}
+          onChange={onChange}
+          selectedId={selectedLayerId}
+          onSelectId={setSelectedLayerId}
+        />
       </div>
-      <LayerPanel artwork={artwork} onChange={onChange} />
+      <LayerPanel
+        artwork={artwork}
+        onChange={onChange}
+        selectedLayerId={selectedLayerId}
+        onSelectLayer={setSelectedLayerId}
+      />
     </div>
   )
 }

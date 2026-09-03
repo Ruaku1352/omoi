@@ -10,7 +10,7 @@
   position: relative;
   width: 100%;
   max-width: 1120px;
-  height: 716px;
+  height: min(716px, 68vh);
   padding: 28px;
   display: flex;
   align-items: center;
@@ -32,13 +32,12 @@
   position: relative;
   width: 100%;
   max-width: 930px;
-  height: 500px;
-  padding: 32px 24px;
+  padding: clamp(16px, 3vh, 32px) 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 32px;
+  gap: clamp(12px, 2vh, 24px);
   background: #fff;
   border-radius: 16px;
 }
@@ -67,8 +66,8 @@
 }
 
 .gen-spinner {
-  width: 128px;
-  height: 128px;
+  width: clamp(72px, 14vh, 128px);
+  height: clamp(72px, 14vh, 128px);
   border: 8px solid #d9d9d9;
   border-top-color: #000;
   border-radius: 50%;

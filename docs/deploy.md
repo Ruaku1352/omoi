@@ -154,9 +154,10 @@ Imageは `asia-northeast1-docker.pkg.dev/omoi-506412/omoi/omoi-backend-real:late
 Real AI Runtimeは `GEMINI_API_KEY` 環境変数を必要とする。Secret値はRepository・Docker Build
 Context・資料へ置かない。
 
-**採用した構成**: Secret Manager の **`gemini-api-key`** を `:latest` でbindする。
-Deployコマンドの `--set-secrets=GEMINI_API_KEY=gemini-api-key:latest` がそれにあたる
-（左が環境変数名、右がSecret resource名）。
+**採用した構成**: Secret Manager の **`GEMINI_API_KEY`** を `:latest` でbindする。
+Deployコマンドの `--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest` がそれにあたる
+（左が環境変数名、右がSecret resource名。実際のSecret resource名で命名済みのため、
+偶然どちらも同じ文字列になる）。
 Runtime Service Accountは既定のCompute Service Accountを使い、
 そこへ `roles/secretmanager.secretAccessor` を付与しておく。
 
@@ -239,7 +240,7 @@ gcloud run deploy "$SERVICE" \
 | # | やること | どこ | Owner権限 |
 |---|---|---|---|
 | 1 | API有効化 / Artifact Registry作成 | §3.1 | 不要 |
-| 2 | Secret作成（`gemini-api-key`） | §3.2 | 作成は不要 / **IAM付与は必要** |
+| 2 | Secret作成（`GEMINI_API_KEY`） | §3.2 | 作成は不要 / **IAM付与は必要** |
 | 3 | Firestore作成 + `roles/datastore.user` | §6.3 | **IAM付与は必要** |
 | 4 | GCS Bucket作成 + Lifecycle + IAM | §6.4 | **IAM付与は必要** |
 | 5 | Cloud Tasks Queue + invoker SA + `roles/run.invoker` | §6.5 | **IAM付与は必要** |
@@ -316,7 +317,7 @@ gcloud run deploy "$SERVICE" \
   --no-allow-unauthenticated \
   --cpu=1 --memory=2Gi --concurrency=4 \
   --min-instances=0 --max-instances=1 --timeout=600 \
-  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest,TASK_WORKER_TOKEN=task-worker-token:latest" \
+  --set-secrets="GEMINI_API_KEY=GEMINI_API_KEY:latest,TASK_WORKER_TOKEN=task-worker-token:latest" \
   "--set-env-vars=^|^APP_ENV=deployed|MOCK_AI=false|GEMINI_MODEL=gemini-3.5-flash-lite|CORS_ORIGINS=http://localhost:5173,http://localhost:5174,https://omoi-manami-test-77989.web.app|JOB_STORE_BACKEND=firestore|TASK_QUEUE_BACKEND=cloud_tasks|FIRESTORE_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_PROJECT_ID=$PROJECT_ID|CLOUD_TASKS_LOCATION=asia-northeast1|CLOUD_TASKS_WORKER_BASE_URL=$SERVICE_URL|CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=omoi-task-invoker@$PROJECT_ID.iam.gserviceaccount.com|JOB_INPUT_BACKEND=gcs|GCS_BUCKET=$JOB_INPUT_BUCKET"
 ```
 
