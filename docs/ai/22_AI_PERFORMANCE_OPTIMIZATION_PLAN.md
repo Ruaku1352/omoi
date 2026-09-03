@@ -1206,3 +1206,20 @@ P2のTier A parityと5回速度比較を満たしたため、`codex/ai-speed-opt
 stacked [Speed PR #10](https://github.com/Ruaku1352/omoi/pull/10)を作成した。PR本文にはbefore / after、P1保留、
 Tier A hash証跡、83 passed / Ruff / Contract validation、Real E2Eの残件を明記した。Speed PRにprivate artifact、
 private入力、model weightは含めない。
+
+### 24.6 TCP回復後のReal E2E停止記録とretry上限（2026-09-04）
+
+TCP 443到達の回復を確認後、`gemini-3.5-flash-lite`、current `physical_layer_v2`、P2 split ONNX、AC給電・sleep無効で
+private固定3 caseを再実行した。最初のcaseはSemantic Plan、bbox、raw / normalized Mask debug artifactまで進んだが、
+`metrics.json` / `summary.json`、4 Layer、Contract成功、total elapsedを出力しないまま異常に長く待機したため停止した。
+この結果はSegmentation Tier Aの速度根拠には使わず、private入力の追加再送もしない。
+
+SDKの`HttpOptions.timeout=120_000`に対し、既定retryがtimeout待機を連鎖させ得ることを確認した。Prompt、Gemini model、
+Schema、品質規則を変えず、`retry_options.attempts=1`を明示して設定timeoutで単発失敗を返すようにした。retry上限後の再試行も
+1件目が5分を超えるlocal CPU処理のまま完了artifactを出さなかったため停止した。現時点でfull E2Eの4 Layer / Contract /
+current品質規則 / 2分SLOは未確認である。
+
+full-resolution closed-hole fillを同一8近傍出力のまま高速化する行区間labeling PoCもprivate raw Maskへ試したが、
+5回比較の完走前に改善傾向を示さず中止した。依存追加は行わず、このPoCの実装・benchmark script・testは撤回した。
+P2の固定Saved Plan結果（5 / 5 Tier A binary Mask一致、17,170.49 ms→9,408.28 ms、45.21%短縮）は有効なままとする。
+AC sleep設定は各計測停止後に3600秒へ戻した。品質フェーズ**97%**、速度改善フェーズ**80%**を維持する。

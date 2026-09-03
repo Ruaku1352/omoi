@@ -2145,3 +2145,26 @@ local Gemini TCP未到達により未実施のReal E2Eを記載した。private�
 
 品質フェーズ**97%**、速度改善フェーズ**80%**（Tier A速度PR作成済み、Gemini到達可能環境でのfull E2Eと2分SLO確認が残る）
 とする。
+
+### 8.74 Speed PR #10 — TCP回復後Real E2Eの停止記録とGemini retry上限（2026-09-04）
+
+`generativelanguage.googleapis.com:443`のTCP到達が`true`へ回復したため、AGENTS.mdで許可済みのprivate固定3 caseを
+`gemini-3.5-flash-lite`、`physical_layer_v2`、P2 split ONNX、AC給電・sleep無効で再実行した。最初のcaseでは
+Semantic Plan、bbox、raw / normalized Mask debug artifactまでは生成されたが、完了用の`metrics.json` / `summary.json`は
+作られなかった。Gemini Compositionを含む完了結果・4 Layer・Contract・total elapsedを得る前に異常な長時間待機となったため、
+private入力の追加送信を避けて実行プロセスだけを停止した。
+
+SDKの1呼び出しtimeoutは120,000 msだった一方、SDK既定retryにより同じtimeout待機が連鎖し得ることをlocal package sourceで
+確認した。`_generate_structured`の`HttpOptions`へ`HttpRetryOptions(attempts=1)`を明示し、Prompt、model、Schema、
+Quality Gate、Segmentation、Composition規則は変えず、設定済みtimeoutで失敗を返すようにした。Unit Testは**33 passed**
+（既知FastAPI/httpx deprecation warning 1件）で、timeoutとretry attempt=1を検証している。
+
+retry上限後の同一通常Profile再試行でも、1件目が5分を超えてlocal CPU処理を継続し、`metrics.json` / `summary.json`を
+生成しなかったため停止した。このrunはGemini待機ではなく、full-resolutionのclosed-hole fill・mask quality・RGBA asset buildを
+含む実経路の局所処理も別途切り分ける必要を示すが、成功したE2E計測ではない。closed-hole fillを品質非変更で置換する
+行区間labeling PoCもprivate raw Mask集合で開始したが、5回の比較完走前に改善傾向を示さず中止し、実装・script・testは
+採用せず撤回した。private artifactはGit管理外に残すが、速度根拠・PR差分には使わない。
+
+P2の固定Saved Plan Tier A（5 / 5 binary Mask一致、45.21%短縮）は有効なままである。一方、full E2Eの4 Layer / Contract /
+current品質規則 / 2分SLOは未確認のままなので、Speed PRを完了扱いにしない。品質フェーズ**97%**、速度改善フェーズ
+**80%**を維持する。AC sleep設定は各停止後に3600秒へ復帰した。
