@@ -2061,3 +2061,24 @@ Power schemeは「パナソニックの電源管理」と記録した。battery 
 AC給電、sleep無効、蓋を閉じない、重い並列作業なしを実行直前に満たしてから開始する。現時点ではbaselineを
 実行していない。進捗は、品質フェーズ**97%**、速度改善フェーズ**15%**（P0-0 / P0-A完了、P0-B timing・
 deterministic benchmark・baseline 5回は未着手）とする。
+
+### 8.70 資料22 P0-B — 詳細stage timingと決定論的benchmarkを追加（2026-09-04）
+
+旧PR #3 `chore/ai-performance-timing`（`7695698`）をcurrent品質baselineへそのままmergeせず、
+EfficientSAMの1 prompt attemptに必要な部分だけを移植した。`SegmentationResult`の内部専用
+`SegmentationTimings`へ、`resize`、`tensor preparation`、monolithic `ONNX inference`、
+`mask restore`のelapsed millisecondsを記録する。Artwork Data、Asset Manifest、公開API、candidate数、
+Prompt、bbox、retry、Quality Gate、closed-hole fill、micro-island cleanup、Compositionは変更していない。
+
+`scripts/run_deterministic_segmentation_benchmark.py`はprivateなSaved Semantic PlanとsourcePhotoIndex順の
+写真を引数で受け、Geminiを呼ばず、scene anchorを除くsubject componentの固定bboxを順序どおり実行する。
+warm-up後の各runについてmask SHA-256、score、stage内訳、totalをprivateな`poc-output/`へ保存し、
+同一5 run内および必要時のreference artifactに対するbinary Mask hash一致をTier A gateとして強制する。
+品質評価・retry選択・Mask補正・RGBA・Compositionを測定対象に混ぜないため、P1/P2以降のSegmentation
+構造改善を固定入力で比較できる。
+
+`backend/tests/test_segmentation.py`を追加し、ONNX Sessionをfakeしたstage timingの回帰を確認した。
+focused backend testは**32 passed**（FastAPI/httpxの既知deprecation warning 1件）、Ruff check / format、
+`git diff --check`はpassした。baseline 5回は、AC給電、sleep無効、蓋を閉じない、重い並列作業なしを実行直前に
+満たしたことを確認してから開始する。進捗は品質フェーズ**97%**、速度改善フェーズ**25%**
+（P0-0 / P0-A / P0-B完了、baseline 5回とP1以降は未実施）とする。
