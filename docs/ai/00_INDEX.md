@@ -29,7 +29,8 @@ omoiのAI処理を「AIを使うこと」ではなく、
 19. `19_AI_EXECUTION_BACKLOG.md`
 20. `20_AI_PROCESSING_SEQUENCE.md`
 21. `21_AI_AUTONOMOUS_EXECUTION_PLAN.md`
-22. `99_SOURCES.md`
+22. `22_AI_PERFORMANCE_OPTIMIZATION_PLAN.md`
+23. `99_SOURCES.md`
 
 ## 現時点の一文
 
@@ -38,6 +39,13 @@ Geminiが「何を思い出として残すか」を決め、
 EfficientSAM-Tiが「どこまでがその対象か」を切り、
 Pillow/Pythonが「作品として使えるLayer」にする。
 ```
+
+## 現行の実行計画
+
+品質ベースラインの実装revisionはPR #8 head `4cc7057` とする。速度改善については
+`22_AI_PERFORMANCE_OPTIMIZATION_PLAN.md` を現行計画として優先し、
+`codex/ai-speed-optimization` 上で、固定Saved Planによる決定論的なSegmentation benchmarkから開始する。
+品質を変えない最初の速度改善では、候補数・Prompt・Quality Gate・Mask補正・Composition規則を変更しない。
 
 ## physical-ready構図におけるAIの責務
 
