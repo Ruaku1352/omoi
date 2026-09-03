@@ -4,6 +4,7 @@ import { generateArtwork } from '../api/generateArtwork'
 import type { Artwork } from '../types/artwork'
 import type { AssetManifest } from '../types/assetManifest'
 import type { JobStage } from '../types/job'
+import { resizeImage } from '../image/resizeImage'
 import iconUpload from '../assets/icon-upload.svg'
 import iconCompose from '../assets/icon-compose.svg'
 import iconLayer from '../assets/icon-layer.svg'
@@ -45,7 +46,16 @@ export default function PhotoSelect({
   const handleGenerate = async () => {
     onStart()
     try {
-      const result = await generateArtwork({ photos, memoryText, onProgress })
+      const uploads = await Promise.all(
+        photos.map(async (file) => {
+          try {
+            return await resizeImage(file)
+          } catch {
+            return file
+          }
+        }),
+      )
+      const result = await generateArtwork({ photos: uploads, memoryText, onProgress })
       onGenerated(result.artwork, result.assetManifest)
     } catch (e) {
       onFailed(e instanceof ApiError ? e.message : '通信に失敗しました。')
