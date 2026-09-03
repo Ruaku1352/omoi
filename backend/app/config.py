@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     max_photos: int = Field(default=20, ge=1)
     max_photo_bytes: int = Field(default=15 * 1024 * 1024, ge=1)
     max_total_upload_bytes: int = Field(default=60 * 1024 * 1024, ge=1)
+    # Physical Outputは切り抜き済みLayer PNGを受け取るため、生成入力写真とは制限を分ける。
+    # 2L背景LayerはPNG圧縮が効かず15MiBを超えることがある。
+    max_physical_asset_bytes: int = Field(default=30 * 1024 * 1024, ge=1)
+    max_physical_total_asset_bytes: int = Field(default=90 * 1024 * 1024, ge=1)
 
     # ---- Asset公開 ----
     # 既定はLocal Directory + 静的配信（開発用の暫定実装）。

@@ -15,6 +15,16 @@ Physical Output担当がPoCで扱いやすい技術・Runtimeを選び、その�
 PoCは共通Mockを使って、Repository外の作業ディレクトリで進めてよい。
 配置をFIXする段階になったら共通技術設計へ反映して共有する。
 
+2026-09-02時点では、Frontend TypeScriptのSTL生成PoCを撤去し、
+FastAPI側に `POST /api/v1/physical-output/exports` をPoC候補として置く。
+これは最終RuntimeをFIXするものではない。入力は `artwork` JSON + `assets[]`
+を主経路にし、Portable Artwork Bundle ZIPを入力必須にはしない。
+`physicalOutputConfig` は任意overrideで、未指定時はBackend側のPoC既定値
+（rail / 2L Landscape / 4行 x 3穴）を使う。
+ユーザー向け出力は `outputFormat=stlZip` で3Dプリンター用STL ZIP、
+`outputFormat=photoPdf` で2L Landscape（178 x 127mm）写真紙100%印刷用PDFへ分ける。SVGは主要Downloadにせず、
+必要なら開発確認・手修正用の生成物として扱う。
+
 ## 入力境界【FIX】
 確定Artwork Data + Assets。実行場所が変わってもこの境界は維持する。
 Frontend内部State / Canvas Pixel / Three.js座標 / AI Prompt へ依存しない。
@@ -26,6 +36,12 @@ Frontend内部State / Canvas Pixel / Three.js座標 / AI Prompt へ依存しな�
 **Mock Bundle を先回りで作らない。** 別Runtime / Toolへ渡す方式を採る場合のみ
 必要になる（技術設計 §16.1 / §26.1）。まずは `contracts/mock/` の
 Artwork + Assets をそのまま読んでPoCを進める。
+
+FastAPI候補Endpointでは、STL / PDF生成に使う現在の `layers[]` のAssetだけを必須にする。
+`sourcePhotos[]` や `replacementCandidates[]` のAssetは、受け取ってもよいが使わなければ
+必須にしない。
+Layer PNGは生成入力写真より大きくなる場合があるため、`maxPhotoBytes` ではなく
+Physical Output専用の `maxPhysicalAssetBytes` / `maxPhysicalTotalAssetBytes` で検証する。
 
 ## 実寸変換【FIX】
 ```
