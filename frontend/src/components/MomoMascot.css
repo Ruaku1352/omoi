@@ -17,7 +17,9 @@
   border-radius: 16px;
   padding: 12px 18px;
   min-height: 3em;
-  max-width: 320px;
+  width: 320px;
+  max-width: 90vw;
+  box-sizing: border-box;
 }
 .momo-bubble-text {
   margin: 0;

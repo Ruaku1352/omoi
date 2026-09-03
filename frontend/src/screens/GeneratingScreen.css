@@ -38,7 +38,7 @@
   align-items: center;
   justify-content: center;
   gap: clamp(12px, 2vh, 24px);
-  background: #fff;
+  background: rgba(255, 255, 255, 0.85);
   border-radius: 16px;
 }
 .gen-text {
