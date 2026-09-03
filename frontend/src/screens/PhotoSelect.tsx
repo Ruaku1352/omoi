@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../api/errors'
 import { generateArtwork } from '../api/generateArtwork'
+import { resizeImage } from '../image/resizeImage'   
 import type { Artwork } from '../types/artwork'
 import type { AssetManifest } from '../types/assetManifest'
 import iconUpload from '../assets/icon-upload.svg'
@@ -39,10 +40,22 @@ export default function PhotoSelect({
     setPhotos((prev) => [...prev, ...added].slice(0, 10))
   }
 
-  const handleGenerate = async () => {
+    const handleGenerate = async () => {
     onStart()
     try {
-      const result = await generateArtwork({ photos, memoryText })
+      // 送信直前に縮小＋JPEG化する。HEIC等もここでJPEGになるので、
+      // Backendの受付形式（JPEG / PNG / WebP）に収まる。
+      // 変換できなかった場合だけ元Fileのまま送り、判定はBackendへ委ねる。
+      const uploads = await Promise.all(
+        photos.map(async (file) => {
+          try {
+            return await resizeImage(file)
+          } catch {
+            return file
+          }
+        }),
+      )
+      const result = await generateArtwork({ photos: uploads, memoryText })
       onGenerated(result.artwork, result.assetManifest)
     } catch (e) {
       onFailed(e instanceof ApiError ? e.message : '通信に失敗しました。')
