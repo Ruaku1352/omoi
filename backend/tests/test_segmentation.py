@@ -30,13 +30,18 @@ def test_efficient_sam_returns_stage_timings(monkeypatch, tmp_path: Path) -> Non
         "ai.segmentation.ort.InferenceSession", lambda *_args, **_kwargs: _FakeSession()
     )
 
-    result = EfficientSamOnnxSegmenter(model_path, max_side=10).segment(
-        Image.new("RGB", (20, 10), "white"), (2, 2, 16, 8)
-    )
+    segmenter = EfficientSamOnnxSegmenter(model_path, max_side=10)
+    image = Image.new("RGB", (20, 10), "white")
+    result = segmenter.segment(image, (2, 2, 16, 8))
+    prepared = segmenter.prepare(image)
+    cached_result = segmenter.segment_prepared(prepared, (2, 2, 16, 8))
 
     assert result.mask.shape == (10, 20)
     assert result.score == pytest.approx(0.9)
     assert result.mask.any()
+    assert np.array_equal(result.mask, cached_result.mask)
+    assert result.score == cached_result.score
+    assert prepared.input_image.shape == (1, 3, 5, 10)
     assert result.timings.resize_elapsed_ms is not None
     assert result.timings.tensor_preparation_elapsed_ms is not None
     assert result.timings.onnx_inference_elapsed_ms is not None
@@ -50,3 +55,5 @@ def test_efficient_sam_returns_stage_timings(monkeypatch, tmp_path: Path) -> Non
             result.timings.mask_restore_elapsed_ms,
         )
     )
+    assert cached_result.timings.resize_elapsed_ms is None
+    assert cached_result.timings.tensor_preparation_elapsed_ms is None

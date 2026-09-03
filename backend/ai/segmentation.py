@@ -26,6 +26,18 @@ class SegmentationTimings:
 
 
 @dataclass(frozen=True)
+class PreparedSegmentationImage:
+    """同一source photoで共有できるresize済みEfficientSAM入力。"""
+
+    original_size: tuple[int, int]
+    resized_size: tuple[int, int]
+    scale_x: float
+    scale_y: float
+    input_image: np.ndarray
+    timings: SegmentationTimings
+
+
+@dataclass(frozen=True)
 class SegmentationResult:
     mask: np.ndarray
     score: float | None
@@ -35,6 +47,12 @@ class SegmentationResult:
 
 class Segmenter(Protocol):
     def segment(self, image: Image.Image, box_px: BoxPx) -> SegmentationResult: ...
+
+    def prepare(self, image: Image.Image) -> PreparedSegmentationImage: ...
+
+    def segment_prepared(
+        self, prepared: PreparedSegmentationImage, box_px: BoxPx
+    ) -> SegmentationResult: ...
 
 
 class EfficientSamOnnxSegmenter:
@@ -66,25 +84,61 @@ class EfficientSamOnnxSegmenter:
             raise AiNotConfiguredError("EfficientSAM ONNX modelの入力形式が一致しません")
 
     def segment(self, image: Image.Image, box_px: BoxPx) -> SegmentationResult:
+        prepared = self.prepare(image)
+        result = self.segment_prepared(prepared, box_px)
+        return SegmentationResult(
+            mask=result.mask,
+            score=result.score,
+            prompt_box_px=result.prompt_box_px,
+            timings=SegmentationTimings(
+                resize_elapsed_ms=prepared.timings.resize_elapsed_ms,
+                tensor_preparation_elapsed_ms=prepared.timings.tensor_preparation_elapsed_ms,
+                onnx_inference_elapsed_ms=result.timings.onnx_inference_elapsed_ms,
+                mask_restore_elapsed_ms=result.timings.mask_restore_elapsed_ms,
+            ),
+        )
+
+    def prepare(self, image: Image.Image) -> PreparedSegmentationImage:
         resize_started = time.perf_counter()
         resized, scale_x, scale_y = self._resize(image)
         resize_elapsed_ms = _elapsed_ms(resize_started)
 
         tensor_started = time.perf_counter()
+        input_image = np.asarray(resized, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0
+        return PreparedSegmentationImage(
+            original_size=image.size,
+            resized_size=resized.size,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            input_image=input_image,
+            timings=SegmentationTimings(
+                resize_elapsed_ms=resize_elapsed_ms,
+                tensor_preparation_elapsed_ms=_elapsed_ms(tensor_started),
+            ),
+        )
+
+    def segment_prepared(
+        self, prepared: PreparedSegmentationImage, box_px: BoxPx
+    ) -> SegmentationResult:
         x0, y0, x1, y1 = box_px
         points = np.array(
-            [[[[x0 * scale_x, y0 * scale_y], [x1 * scale_x, y1 * scale_y]]]], dtype=np.float32
+            [
+                [
+                    [
+                        [x0 * prepared.scale_x, y0 * prepared.scale_y],
+                        [x1 * prepared.scale_x, y1 * prepared.scale_y],
+                    ]
+                ]
+            ],
+            dtype=np.float32,
         )
         labels = np.array([[[2, 3]]], dtype=np.float32)
-        input_image = np.asarray(resized, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0
-        tensor_preparation_elapsed_ms = _elapsed_ms(tensor_started)
-
         inference_started = time.perf_counter()
         try:
             logits, predicted_iou, *_ = self._session.run(
                 None,
                 {
-                    self._INPUT_IMAGE: input_image,
+                    self._INPUT_IMAGE: prepared.input_image,
                     self._INPUT_POINTS: points,
                     self._INPUT_LABELS: labels,
                 },
@@ -97,18 +151,16 @@ class EfficientSamOnnxSegmenter:
         scores = np.asarray(predicted_iou)[0, 0]
         index = int(np.argmax(scores))
         mask = np.asarray(logits)[0, 0, index] >= 0
-        if mask.shape != (resized.height, resized.width):
+        if mask.shape != (prepared.resized_size[1], prepared.resized_size[0]):
             mask_image = Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
         else:
             mask_image = Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
-        restored = mask_image.resize(image.size, Image.Resampling.NEAREST)
+        restored = mask_image.resize(prepared.original_size, Image.Resampling.NEAREST)
         return SegmentationResult(
             mask=np.asarray(restored, dtype=np.uint8) > 0,
             score=float(scores[index]),
             prompt_box_px=box_px,
             timings=SegmentationTimings(
-                resize_elapsed_ms=resize_elapsed_ms,
-                tensor_preparation_elapsed_ms=tensor_preparation_elapsed_ms,
                 onnx_inference_elapsed_ms=onnx_inference_elapsed_ms,
                 mask_restore_elapsed_ms=_elapsed_ms(restore_started),
             ),
@@ -137,11 +189,22 @@ class LazyEfficientSamOnnxSegmenter:
         self._delegate: EfficientSamOnnxSegmenter | None = None
 
     def segment(self, image: Image.Image, box_px: BoxPx) -> SegmentationResult:
+        return self._get_delegate().segment(image, box_px)
+
+    def prepare(self, image: Image.Image) -> PreparedSegmentationImage:
+        return self._get_delegate().prepare(image)
+
+    def segment_prepared(
+        self, prepared: PreparedSegmentationImage, box_px: BoxPx
+    ) -> SegmentationResult:
+        return self._get_delegate().segment_prepared(prepared, box_px)
+
+    def _get_delegate(self) -> EfficientSamOnnxSegmenter:
         if self._delegate is None:
             if self._model_path is None:
                 raise AiNotConfiguredError("EFFICIENTSAM_MODEL_PATHが未設定です")
             self._delegate = EfficientSamOnnxSegmenter(self._model_path, self._max_side)
-        return self._delegate.segment(image, box_px)
+        return self._delegate
 
 
 def _elapsed_ms(started: float) -> float:

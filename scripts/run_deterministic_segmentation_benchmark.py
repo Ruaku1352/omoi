@@ -54,6 +54,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-side", type=int, default=1024)
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--warmup-runs", type=int, default=1)
+    parser.add_argument(
+        "--reuse-prepared-images",
+        action="store_true",
+        help="source photoごとにresize/tensorを1回だけ実行するP1 candidate mode",
+    )
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument(
         "--reference-results",
@@ -83,9 +88,12 @@ def main() -> int:
 
     segmenter = EfficientSamOnnxSegmenter(args.model_path, args.max_side)
     for _ in range(args.warmup_runs):
-        _run_once(segmenter, attempts)
+        _run_once(segmenter, attempts, reuse_prepared_images=args.reuse_prepared_images)
 
-    runs = [_run_once(segmenter, attempts) for _ in range(args.runs)]
+    runs = [
+        _run_once(segmenter, attempts, reuse_prepared_images=args.reuse_prepared_images)
+        for _ in range(args.runs)
+    ]
     _assert_self_parity(runs)
     if args.reference_results is not None:
         _assert_reference_parity(
@@ -121,6 +129,7 @@ def main() -> int:
             "maxSide": args.max_side,
             "measurementRuns": args.runs,
             "warmupRuns": args.warmup_runs,
+            "reusePreparedImages": args.reuse_prepared_images,
             "sourcePhotoCount": len(images),
             "segmentationAttemptCount": len(attempts),
         },
@@ -170,17 +179,45 @@ def _build_attempts(plan: SemanticPlan, images: list[Image.Image]) -> list[dict[
 
 
 def _run_once(
-    segmenter: EfficientSamOnnxSegmenter, attempts: list[dict[str, Any]]
+    segmenter: EfficientSamOnnxSegmenter,
+    attempts: list[dict[str, Any]],
+    *,
+    reuse_prepared_images: bool,
 ) -> dict[str, Any]:
     started = time.perf_counter()
+    prepared_images: dict[int, object] = {}
+    source_preparations = []
     results = []
     for attempt in attempts:
-        result = segmenter.segment(attempt["image"], attempt["promptBoxPx"])
-        results.append(_record_attempt(attempt, result))
-    return {"totalElapsedMs": _elapsed_ms(started), "attempts": results}
+        if reuse_prepared_images:
+            source_photo_index = attempt["sourcePhotoIndex"]
+            prepared = prepared_images.get(source_photo_index)
+            if prepared is None:
+                prepared = segmenter.prepare(attempt["image"])
+                prepared_images[source_photo_index] = prepared
+                source_preparations.append(
+                    {
+                        "sourcePhotoIndex": source_photo_index,
+                        "resizeElapsedMs": prepared.timings.resize_elapsed_ms,
+                        "tensorPreparationElapsedMs": (
+                            prepared.timings.tensor_preparation_elapsed_ms
+                        ),
+                    }
+                )
+            result = segmenter.segment_prepared(prepared, attempt["promptBoxPx"])
+        else:
+            result = segmenter.segment(attempt["image"], attempt["promptBoxPx"])
+        results.append(_record_attempt(attempt, result, used_prepared_image=reuse_prepared_images))
+    return {
+        "totalElapsedMs": _elapsed_ms(started),
+        "sourcePreparations": source_preparations,
+        "attempts": results,
+    }
 
 
-def _record_attempt(attempt: dict[str, Any], result: SegmentationResult) -> dict[str, Any]:
+def _record_attempt(
+    attempt: dict[str, Any], result: SegmentationResult, *, used_prepared_image: bool
+) -> dict[str, Any]:
     timings = result.timings
     mask = np.ascontiguousarray(result.mask, dtype=np.uint8)
     return {
@@ -191,6 +228,7 @@ def _record_attempt(attempt: dict[str, Any], result: SegmentationResult) -> dict
         "score": result.score,
         "maskSha256": hashlib.sha256(mask.tobytes()).hexdigest(),
         "maskShape": list(mask.shape),
+        "usedPreparedImage": used_prepared_image,
         "resizeElapsedMs": timings.resize_elapsed_ms,
         "tensorPreparationElapsedMs": timings.tensor_preparation_elapsed_ms,
         "onnxInferenceElapsedMs": timings.onnx_inference_elapsed_ms,
@@ -231,6 +269,13 @@ def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
         values[field] = []
     for run in runs:
         values["totalElapsedMs"].append(run["totalElapsedMs"])
+        for preparation in run.get("sourcePreparations", []):
+            for field in ("resizeElapsedMs", "tensorPreparationElapsedMs"):
+                value = preparation[field]
+                if value is not None:
+                    values[f"sourcePreparation{field[0].upper()}{field[1:]}"] = values.get(
+                        f"sourcePreparation{field[0].upper()}{field[1:]}", []
+                    ) + [value]
         for attempt in run["attempts"]:
             for field in STAGE_FIELDS:
                 value = attempt[field]
@@ -239,8 +284,10 @@ def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
     return {field: _distribution(samples) for field, samples in values.items()}
 
 
-def _distribution(samples: list[float]) -> dict[str, float | int]:
+def _distribution(samples: list[float]) -> dict[str, float | int | None]:
     ordered = sorted(samples)
+    if not ordered:
+        return {"count": 0, "minMs": None, "medianMs": None, "maxMs": None, "p95Ms": None}
     return {
         "count": len(ordered),
         "minMs": ordered[0],

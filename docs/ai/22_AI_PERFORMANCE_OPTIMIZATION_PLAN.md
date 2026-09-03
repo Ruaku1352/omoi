@@ -1151,3 +1151,30 @@ Speed PRは未作成である。
 
 baseline 5回は、AC給電・sleep無効・蓋を閉じない・重い並列作業なしを実行直前に満たしてから開始する。したがって
 この節時点では数値baselineをまだ記録せず、Speed PRも作成しない。
+
+### 24.3 P0 baseline / P1前処理cache — 再起動後の比較（2026-09-04）
+
+計測前に再起動時刻、BatteryStatus=2（AC給電）、残量99%を確認した。AC sleepを計測中だけ0秒にし、各計測後は
+既定の3600秒へ戻した。Geminiは呼んでいない。固定対象はgarden-architectureのSaved Plan、5写真、10 subject
+bbox（scene anchor除外）で、各条件warm-up 1回＋5回を実行した。
+
+| 条件 | run数 | total median | min | p95相当 | Tier A Mask |
+| --- | ---: | ---: | ---: | ---: | --- |
+| P0 baseline 初回 | 5 | 17,170.49 ms | 16,258.58 ms | 19,005.95 ms | 5 / 5一致 |
+| P1 prepared cache 初回 | 5 | 15,786.37 ms | 14,970.50 ms | 16,010.68 ms | self / baseline reference一致 |
+| P0 baseline 追加 | 5 | 15,610.28 ms | 12,189.19 ms | 16,293.45 ms | 5 / 5一致 |
+| P1 prepared cache 追加 | 5 | 15,735.59 ms | 15,486.02 ms | 16,467.42 ms | self / baseline reference一致 |
+
+初回だけではP1は8.06%（1,384.12 ms）短縮したが、5〜10%の暫定規則に従い、順序を反転した追加5回ずつを測った。
+ABBA順で合算した10 runずつの中央値はbaseline 16,276.01 ms、P1 15,760.98 msで、**515.04 ms / 3.16%短縮**だった。
+P1の全10 runでfixed bboxとbinary Mask hashはbaseline referenceと一致した。
+
+P1では`PreparedSegmentationImage`を導入し、同一request内でsource photoのresize / tensorを一度だけ行う。
+`segment_prepared`は同じNCHW tensor、同じbbox変換、同じONNX graph、同じmask restoreを使う。candidate / retry、
+closed-hole fill、micro-island cleanup、Quality Gate、Composition、Contractは変更していない。full generatorでも
+sourcePhotoIndexごとのprepare 1回をunit testした。
+
+ただし、10 runの短縮が<5%のためP1単独の採用判定は**保留**とする。P2 encoder / decoder分離とembedding cacheへ
+進み、P1はP2の必要な準備APIとして保持する。private artifactは
+`poc-output/performance-optimization-baseline-*-20260904/`と
+`poc-output/performance-optimization-p1-prepared-cache*-20260904/`に保存した。Speed PRは未作成である。
