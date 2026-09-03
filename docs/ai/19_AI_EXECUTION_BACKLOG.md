@@ -2133,3 +2133,15 @@ private artifactは`poc-output/performance-optimization-p2-split-encoder-decoder
 split adapter / path selectionのunit testと既存pipeline focused testは**36 passed**（FastAPI/httpxの既知deprecation
 warning 1件）、Ruff check / format、`git diff --check`はpassした。P2は資料22 §15のTier Aを満たす品質非変更の
 速度改善として**採用**する。品質フェーズ**97%**、速度改善フェーズ**70%**（P2採用、Speed PR作成条件を満たす）とする。
+
+### 8.73 Speed PR #10作成 — P2の計測根拠を明記（2026-09-04）
+
+P0 / P1 / P2のcommitを`codex/ai-speed-optimization`へpushし、PR #8
+`codex/ai-quality-baseline-review`をbaseにしたstacked Speed PR
+[#10 EfficientSAM Segmentationを高速化](https://github.com/Ruaku1352/omoi/pull/10)を作成した。
+PR本文には固定5写真 / Saved Plan / 10 bboxでのP0 17,170.49 ms→P2 9,408.28 ms（**45.21%短縮**）、
+5 / 5のTier A binary Mask hash一致、P1単独は3.16%のため保留、83 passed / Ruff / Contract validation、
+local Gemini TCP未到達により未実施のReal E2Eを記載した。private写真、memoryText、artifact、model weightはPRへ含めない。
+
+品質フェーズ**97%**、速度改善フェーズ**80%**（Tier A速度PR作成済み、Gemini到達可能環境でのfull E2Eと2分SLO確認が残る）
+とする。
