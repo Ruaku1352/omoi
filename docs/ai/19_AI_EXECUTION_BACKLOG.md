@@ -2082,3 +2082,31 @@ focused backend testは**32 passed**（FastAPI/httpxの既知deprecation warning
 `git diff --check`はpassした。baseline 5回は、AC給電、sleep無効、蓋を閉じない、重い並列作業なしを実行直前に
 満たしたことを確認してから開始する。進捗は品質フェーズ**97%**、速度改善フェーズ**25%**
 （P0-0 / P0-A / P0-B完了、baseline 5回とP1以降は未実施）とする。
+
+### 8.71 資料22 baseline / P1 — 再起動後の5回×2比較、P1は保留（2026-09-04）
+
+再起動後、Windowsの起動時刻、BatteryStatus=2（AC給電）、残量99%を確認した。計測中だけAC sleepを0秒へ
+設定し、各計測後に元の3600秒へ復帰した。Geminiは0回である。固定対象は
+`garden-architecture`のSaved Semantic Plan、5写真、scene anchorを除く10 subject bboxで、warm-up 1回の後に
+EfficientSAM-Ti monolithic ONNXを計測した。
+
+P0 baselineの最初の5回は、run totalの中央値**17,170.49 ms**（min 16,258.58 / max・p95 19,005.95 ms）だった。
+per prompt中央値はresize 91.14 ms、tensor 10.80 ms、ONNX inference 1,525.44 ms、mask restore 45.13 msで、
+5 runすべての固定bbox binary Mask hashは一致した。private artifactは
+`poc-output/performance-optimization-baseline-reboot-20260904/benchmark.json`である。
+
+P1では`PreparedSegmentationImage`を追加し、同一generation request内でsource photoごとのresize / tensorを
+1回だけ行い、candidate / retryは`segment_prepared`へ渡すようにした。segmenterがこの能力を持たない既存test fakeは
+従来の`segment`経路を使うため、上位のcandidate / quality制御を変えない。fixed benchmarkにも
+`--reuse-prepared-images`を追加し、source preparationをrun totalへ含めつつ、baseline artifactとのbinary Mask hash
+完全一致を強制した。
+
+P1の最初の5回は中央値**15,786.37 ms**でbaseline比8.06%短縮だった。資料22 §16.2の5〜10%規則に従い、
+順序を反転した追加5回ずつを続けた。ABBA順の10回ずつ合算ではbaseline中央値**16,276.01 ms**、P1中央値
+**15,760.98 ms**、短縮**515.04 ms（3.16%）**となった。P1の10回すべてでself Mask hash一致、baseline referenceとの
+Mask hash一致、bbox key一致を確認したが、短縮量は<5%であり、P1単独の採用は**保留**とする。
+
+benchmark artifactは`poc-output/performance-optimization-baseline-*-20260904/`および
+`poc-output/performance-optimization-p1-prepared-cache*-20260904/`でGit管理外に保存した。P1実装のfocused testは
+**33 passed**（FastAPI/httpxの既知deprecation warning 1件）、Ruff check / format、`git diff --check`はpassした。
+品質フェーズ**97%**、速度改善フェーズ**50%**（P0 baselineとP1 comparison完了、P1採用保留、P2へ進行）とする。

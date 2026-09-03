@@ -432,6 +432,7 @@ class GeminiArtworkGenerator:
             semantic_plan.candidates, key=lambda item: item.importance, reverse=True
         )
         seen_candidate_ids: set[str] = set()
+        prepared_images: dict[int, object] = {}
         for candidate in candidates[: self._candidate_count]:
             if candidate.candidate_id in seen_candidate_ids:
                 candidate_metrics.append(
@@ -464,8 +465,16 @@ class GeminiArtworkGenerator:
                     )
                 )
                 continue
+            image = decoded[candidate.source_photo_index].image
+            prepared_image = await self._prepare_source_image(
+                candidate.source_photo_index,
+                image,
+                prepared_images,
+            )
             layer, metric = await self._build_candidate(
-                candidate, decoded[candidate.source_photo_index].image
+                candidate,
+                image,
+                prepared_image=prepared_image,
             )
             candidate_metrics.append(metric)
             if layer is not None:
@@ -651,8 +660,36 @@ class GeminiArtworkGenerator:
         if callable(callback):
             callback(accepted=accepted, diagnostics=diagnostics)
 
+    async def _prepare_source_image(
+        self,
+        source_photo_index: int,
+        image: Image.Image,
+        prepared_images: dict[int, object],
+    ) -> object | None:
+        if source_photo_index in prepared_images:
+            return prepared_images[source_photo_index]
+        prepare = getattr(self._segmenter, "prepare", None)
+        segment_prepared = getattr(self._segmenter, "segment_prepared", None)
+        if not callable(prepare) or not callable(segment_prepared):
+            return None
+        prepared = await asyncio.to_thread(prepare, image)
+        prepared_images[source_photo_index] = prepared
+        return prepared
+
+    def _segment(
+        self,
+        image: Image.Image,
+        box_px,
+        prepared_image: object | None,
+    ) -> SegmentationResult:
+        if prepared_image is not None:
+            segment_prepared = getattr(self._segmenter, "segment_prepared", None)
+            if callable(segment_prepared):
+                return segment_prepared(prepared_image, box_px)
+        return self._segmenter.segment(image, box_px)
+
     async def _build_candidate(
-        self, candidate, image: Image.Image
+        self, candidate, image: Image.Image, *, prepared_image: object | None = None
     ) -> tuple[AcceptedLayer | None, CandidateMetric]:
         if self._physical_ready and candidate.kind == "scene_anchor":
             return self._build_scene_anchor(candidate, image)
@@ -676,7 +713,12 @@ class GeminiArtworkGenerator:
             quality: MaskQuality | None = None
             for attempt in range(self._segmentation_max_retries + 1):
                 current_box = prompt_box if attempt == 0 else expand_box(prompt_box, image.size)
-                raw_result = await asyncio.to_thread(self._segmenter.segment, image, current_box)
+                raw_result = await asyncio.to_thread(
+                    self._segment,
+                    image,
+                    current_box,
+                    prepared_image,
+                )
                 raw_quality = assess_mask(
                     raw_result.mask,
                     current_box,

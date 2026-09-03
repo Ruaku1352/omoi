@@ -229,6 +229,20 @@ class FakeSegmenter:
         return SegmentationResult(mask=mask, score=0.9, prompt_box_px=box_px)
 
 
+class PreparedFakeSegmenter(FakeSegmenter):
+    def __init__(self) -> None:
+        self.prepare_calls: list[Image.Image] = []
+        self.segment_prepared_calls = 0
+
+    def prepare(self, image: Image.Image) -> Image.Image:
+        self.prepare_calls.append(image)
+        return image
+
+    def segment_prepared(self, prepared: Image.Image, box_px) -> SegmentationResult:
+        self.segment_prepared_calls += 1
+        return super().segment(prepared, box_px)
+
+
 class PerforatedSegmenter(FakeSegmenter):
     def segment(self, image: Image.Image, box_px) -> SegmentationResult:
         result = super().segment(image, box_px)
@@ -744,6 +758,33 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
                 assert diagnose_mask(alpha, max_side=80).interior_hole_count == 1
     assert generator.last_metrics.semantic_planning_elapsed_ms >= 0
     assert all(metric.success for metric in generator.last_metrics.candidates)
+
+
+@pytest.mark.anyio
+async def test_pipeline_prepares_each_source_photo_once_when_segmenter_supports_it() -> None:
+    segmenter = PreparedFakeSegmenter()
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=segmenter,
+        candidate_count=4,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_planner=FakePlanner(candidate_count=4),
+        composer=FakeComposer(),
+    )
+
+    await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    assert len(segmenter.prepare_calls) == 2
+    assert segmenter.segment_prepared_calls == 4
 
 
 @pytest.mark.anyio
