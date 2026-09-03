@@ -77,3 +77,24 @@
 @keyframes gen-spin {
   to { transform: rotate(360deg); }
 }
+
+@media (max-width: 600px) {
+  .gen {
+    padding: 12px 16px;
+  }
+  .gen-stage {
+    height: auto;
+    min-height: 60vh;
+    padding: 16px;
+  }
+  .gen-card {
+    padding: 20px 16px;
+    gap: 16px;
+  }
+  .gen-title {
+    font-size: 22px;
+  }
+  .gen-lead {
+    font-size: 14px;
+  }
+}

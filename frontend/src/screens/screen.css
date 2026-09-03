@@ -63,3 +63,39 @@
   width: 32px;
   height: 32px;
 }
+
+@media (max-width: 600px) {
+  .screen {
+    flex-direction: column;
+    padding: 0 16px 16px;
+  }
+  .screen-main {
+    width: 100%;
+    min-width: 0;
+    padding: 12px 0 0;
+    gap: 12px;
+  }
+  .screen-top {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .screen-actions {
+    gap: 10px;
+  }
+  .btn-outline,
+  .btn-fill {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
+  .btn-fill img {
+    width: 18px;
+    height: 18px;
+  }
+  .ae-stage {
+    max-width: 300px !important;
+  }
+}

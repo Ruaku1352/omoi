@@ -46,15 +46,44 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
   const handleDragStart = (index: number) => (e: React.DragEvent) => {
     setDragIndex(index)
     e.dataTransfer.effectAllowed = 'move'
+
+    // ドラッグ中にカーソルへ追従するプレビュー画像から番号を除外する。
+    // 何もしないと行全体（番号バッジ込み）のスナップショットがそのまま
+    // プレビューになり、番号がドラッグ対象と一緒に動いているように見えてしまう。
+    // 番号は常に「上から何番目か」という位置を表す値であって、
+    // ドラッグ中のレイヤーに付随するものではないため。
+    const row = e.currentTarget as HTMLElement
+    const clone = row.cloneNode(true) as HTMLElement
+    clone.querySelector('.lp-order')?.remove()
+    clone.style.position = 'absolute'
+    clone.style.top = '-9999px'
+    clone.style.left = '-9999px'
+    clone.style.width = `${row.offsetWidth}px`
+    clone.style.pointerEvents = 'none'
+    document.body.appendChild(clone)
+    e.dataTransfer.setDragImage(clone, 20, row.offsetHeight / 2)
+    window.setTimeout(() => {
+      if (clone.parentNode) document.body.removeChild(clone)
+    }, 0)
   }
 
-  const handleGapDragOver = (gapIndex: number) => (e: React.DragEvent) => {
+  // 行(レイヤー)自体をドロップ先にする。カーソルがその行の上半分にあれば
+  // 「この行の上」、下半分にあれば「この行の下」に挿入する gapIndex を決める。
+  const gapIndexForRowEvent = (rowIndex: number, e: React.DragEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const isUpperHalf = e.clientY < rect.top + rect.height / 2
+    return isUpperHalf ? rowIndex : rowIndex + 1
+  }
+
+  const handleRowDragOver = (rowIndex: number) => (e: React.DragEvent) => {
     e.preventDefault()
+    const gapIndex = gapIndexForRowEvent(rowIndex, e)
     if (overGap !== gapIndex) setOverGap(gapIndex)
   }
 
-  const handleGapDrop = (gapIndex: number) => (e: React.DragEvent) => {
+  const handleRowDrop = (rowIndex: number) => (e: React.DragEvent) => {
     e.preventDefault()
+    const gapIndex = gapIndexForRowEvent(rowIndex, e)
     if (dragIndex !== null) {
       // 自分自身を取り除いたあとに挿入するので、元の位置より後ろのすき間に
       // 落とした場合はひとつ前にずれる
@@ -114,8 +143,6 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
           <div key={layer.layerId}>
             <div
               className={`lp-gap${overGap === i && dragIndex !== null && dragIndex !== i && dragIndex !== i - 1 ? ' is-over' : ''}`}
-              onDragOver={handleGapDragOver(i)}
-              onDrop={handleGapDrop(i)}
             >
               {i > 0 && <img className="lp-sep" src={lineDotted} alt="" />}
             </div>
@@ -124,6 +151,8 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
               draggable
               onClick={() => onSelectLayer?.(layer.layerId)}
               onDragStart={handleDragStart(i)}
+              onDragOver={handleRowDragOver(i)}
+              onDrop={handleRowDrop(i)}
               onDragEnd={handleDragEnd}
             >
               <span className="lp-handle" aria-label="ドラッグで並び替え">≡</span>
@@ -147,8 +176,6 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
         ))}
         <div
           className={`lp-gap${overGap === layers.length && dragIndex !== null && dragIndex !== layers.length - 1 ? ' is-over' : ''}`}
-          onDragOver={handleGapDragOver(layers.length)}
-          onDrop={handleGapDrop(layers.length)}
         />
       </div>
 

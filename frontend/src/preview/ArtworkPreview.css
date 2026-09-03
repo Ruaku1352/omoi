@@ -59,3 +59,31 @@
   height: auto;
   max-height: 52vh;
 }
+
+@media (max-width: 600px) {
+  .preview3d {
+    padding: 12px;
+    gap: 12px;
+  }
+  .preview3d-head {
+    justify-content: center;
+    gap: 10px;
+  }
+  .preview3d-reset {
+    height: 32px;
+    padding: 0 16px;
+    font-size: 12px;
+  }
+  .preview3d-hint {
+    padding: 0;
+    font-size: 11px;
+    gap: 6px;
+  }
+  .preview3d-hint img {
+    width: 18px;
+    height: 18px;
+  }
+  .preview3d-canvas {
+    max-height: 40vh;
+  }
+}
