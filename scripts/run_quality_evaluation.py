@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import sys
 from dataclasses import asdict, dataclass
@@ -148,6 +149,19 @@ def load_photos(case: EvaluationCase, photos_dir: Path) -> list[InputPhoto]:
     return photos
 
 
+def input_hash(photos: list[InputPhoto]) -> str:
+    """順序を保った入力写真のSHA-256をprivate評価記録へ残す。"""
+
+    photo_hashes = [hashlib.sha256(photo.data).hexdigest() for photo in photos]
+    return hashlib.sha256("\n".join(photo_hashes).encode()).hexdigest()
+
+
+def memory_text_hash(memory_text: str) -> str:
+    """APIへ送る原文を保存せず、同一入力であることだけを追跡する。"""
+
+    return hashlib.sha256(memory_text.encode()).hexdigest()
+
+
 async def run(args: argparse.Namespace) -> int:
     cases = load_dataset(args.dataset)
     profiles = tuple(args.profile or DEFAULT_PROFILES)
@@ -160,6 +174,10 @@ async def run(args: argparse.Namespace) -> int:
         raise ValueError("MOCK_AI=falseで実行してください")
     if not base_settings.gemini_api_key or not base_settings.efficientsam_model_path:
         raise ValueError("GEMINI_API_KEYとEFFICIENTSAM_MODEL_PATHが必要です")
+    if base_settings.gemini_model != "gemini-3.5-flash-lite":
+        raise ValueError(
+            "品質評価はGEMINI_MODEL=gemini-3.5-flash-liteで実行する必要があります"
+        )
 
     output = (
         args.output_dir
@@ -170,6 +188,10 @@ async def run(args: argparse.Namespace) -> int:
     for ordinal, (case, profile, attempt) in enumerate(run_plan, start=1):
         case_output = output / f"{ordinal:02d}-{case.case_id}-{profile}-try{attempt}"
         case_output.mkdir()
+        print(
+            f"stage=generate case={case.case_id} profile={profile} attempt={attempt}",
+            flush=True,
+        )
         record = await run_case(
             case,
             profile,
@@ -186,6 +208,8 @@ async def run(args: argparse.Namespace) -> int:
         "plannedE2eRuns": len(run_plan),
         "repeat": args.repeat,
         "profiles": list(profiles),
+        "geminiModel": base_settings.gemini_model,
+        "qualityFeatureFlags": _quality_feature_flags(base_settings),
         "successCount": sum(record["success"] for record in records),
         "failureCount": sum(not record["success"] for record in records),
         "runs": records,
@@ -218,10 +242,14 @@ async def run_case(
     )
     if not isinstance(generator, GeminiArtworkGenerator):
         raise TypeError("MOCK_AI=falseのReal generatorを構成できません")
+    photos = load_photos(case, photos_dir)
+    evidence = {
+        "photoCount": len(photos),
+        "inputHash": input_hash(photos),
+        "memoryTextHash": memory_text_hash(case.memory_text),
+    }
     try:
-        result = await generator.generate(
-            load_photos(case, photos_dir), case.memory_text
-        )
+        result = await generator.generate(photos, case.memory_text)
         artwork = Artwork.model_validate(result.artwork)
         errors = check_artwork_rules(artwork) + check_assets_present(
             artwork, result.assets
@@ -233,6 +261,9 @@ async def run_case(
             "profile": profile,
             "attempt": attempt,
             "scenarioTags": list(case.scenario_tags),
+            **evidence,
+            "geminiModel": settings.gemini_model,
+            "qualityFeatureFlags": _quality_feature_flags(settings),
             "success": True,
             "layerCount": len(artwork.layers),
             "metrics": asdict(generator.last_metrics),
@@ -246,15 +277,26 @@ async def run_case(
             selected_photo_files=case.photos,
             preview_width_px=preview_width_px,
         )
+        print(
+            f"stage=generated case={case.case_id} success=true layers={len(artwork.layers)}",
+            flush=True,
+        )
         _write_review_template(output / "quality-review.json", record)
         return record
     except Exception as exc:  # noqa: BLE001 - PoCでは失敗種別を問わず記録して次ケースへ進む
+        print(
+            f"stage=failed case={case.case_id} error_type={type(exc).__name__}",
+            flush=True,
+        )
         metrics = asdict(generator.last_metrics)
         record = {
             "caseId": case.case_id,
             "profile": profile,
             "attempt": attempt,
             "scenarioTags": list(case.scenario_tags),
+            **evidence,
+            "geminiModel": settings.gemini_model,
+            "qualityFeatureFlags": _quality_feature_flags(settings),
             "success": False,
             "errorType": type(exc).__name__,
             "failureStage": _failure_stage(metrics, type(exc).__name__),
@@ -325,6 +367,19 @@ def _write_review_template(path: Path, record: dict[str, Any]) -> None:
             ],
         },
     )
+
+
+def _quality_feature_flags(settings: Settings) -> dict[str, bool]:
+    """採否待ちPoCの実効状態をprivate artifactへ残す。"""
+
+    return {
+        "closedHoleFillEnabled": settings.closed_hole_fill_enabled,
+        "microIslandCleanupEnabled": settings.micro_island_cleanup_enabled,
+        "compositionOverlapInstructionEnabled": settings.composition_overlap_instruction_enabled,
+        "compositionForegroundBottomInstructionEnabled": (
+            settings.composition_foreground_bottom_instruction_enabled
+        ),
+    }
 
 
 def _aggregate_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:

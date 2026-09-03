@@ -11,7 +11,7 @@ from ai.gemini import GeminiArtworkGenerator, GenerationObserver
 from ai.quality import QualityPolicy
 from ai.segmentation import LazyEfficientSamOnnxSegmenter
 from ai.types import ArtworkGenerator
-from app.config import Settings
+from app.config import BACKEND_DIR, Settings
 from app.services.mock_generator import MockArtworkGenerator
 
 
@@ -25,11 +25,16 @@ def build_generator(
         return MockArtworkGenerator(settings.contracts_dir)
     if settings.segmentation_backend != "efficient_sam_onnx":
         raise AiNotConfiguredError("未対応のSEGMENTATION_BACKENDです")
+    model_path = settings.efficientsam_model_path
+    if model_path is None:
+        raise AiNotConfiguredError("EFFICIENTSAM_MODEL_PATHが未設定です")
+    if not model_path.is_absolute():
+        model_path = BACKEND_DIR / model_path
     return GeminiArtworkGenerator(
         api_key=settings.gemini_api_key,
         model=settings.gemini_model,
         segmenter=LazyEfficientSamOnnxSegmenter(
-            settings.efficientsam_model_path,
+            model_path,
             settings.segmentation_max_side,
         ),
         candidate_count=settings.candidate_count,
@@ -55,6 +60,12 @@ def build_generator(
         physical_max_bottom_gap=settings.physical_max_bottom_gap,
         architecture_micro_island_max_area_ratio=settings.architecture_micro_island_max_area_ratio,
         mask_micro_island_max_area_ratio=settings.mask_micro_island_max_area_ratio,
+        closed_hole_fill_enabled=settings.closed_hole_fill_enabled,
+        micro_island_cleanup_enabled=settings.micro_island_cleanup_enabled,
+        composition_overlap_instruction_enabled=settings.composition_overlap_instruction_enabled,
+        composition_foreground_bottom_instruction_enabled=(
+            settings.composition_foreground_bottom_instruction_enabled
+        ),
         subject_overlap_diagnostics=subject_overlap_diagnostics,
         observer=observer,
     )
