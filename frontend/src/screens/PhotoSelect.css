@@ -1,12 +1,12 @@
 .s01 {
   position: relative;
-  padding: clamp(16px, 3vh, 28px);
+  padding: clamp(14px, 2.5vh, 28px);
   border-radius: 16px;
   background: var(--omoi-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(10px, 2vh, 16px);
+  gap: clamp(8px, 1.5vh, 16px);
   max-width: 1120px;
   margin: 0 auto;
 }
@@ -32,7 +32,7 @@
   background: #fff;
   border: 2px dashed var(--omoi-brown);
   border-radius: 16px;
-  padding: 32px 24px;
+  padding: clamp(14px, 2.5vh, 32px) 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -46,7 +46,7 @@
 .s01-title {
   font-family: "Roboto", sans-serif;
   font-weight: 500;
-  font-size: 40px;
+  font-size: clamp(20px, 3.2vh, 32px);
   color: #000;
   margin: 0;
 }
@@ -54,7 +54,7 @@
 .s01-lead {
   font-family: "Roboto", sans-serif;
   font-weight: 500;
-  font-size: 16px;
+  font-size: 14px;
   color: var(--omoi-gray);
   margin: 0;
 }
@@ -90,7 +90,7 @@
   max-width: 928px;
   background: #fff;
   border-radius: 16px;
-  padding: 16px 24px;
+  padding: clamp(8px, 1.8vh, 16px) 24px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -116,17 +116,17 @@
 .s01-howto {
   max-width: 1120px;
   margin: 0 auto;
-  padding: clamp(12px, 3vh, 31px) 0;
+  padding: clamp(8px, 2vh, 31px) 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .s01-howto-title {
   font-family: "Roboto", sans-serif;
   font-weight: 500;
-  font-size: 32px;
+  font-size: clamp(15px, 2.2vh, 24px);
   color: #000;
   margin: 0;
 }
@@ -140,7 +140,7 @@
 .s01-card {
  flex: 1 1 0;
   min-width: 0;
-  padding: clamp(14px, 2vh, 24px) 24px;
+  padding: clamp(10px, 1.8vh, 24px) 24px;
   border-radius: 16px;
   background: #efe7d9;
 }
@@ -149,18 +149,18 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: clamp(4px, 0.8vh, 10px);
 }
 
 .s01-card-head img {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
 }
 
 .s01-card-head span {
   font-family: "Roboto", sans-serif;
   font-weight: 500;
-  font-size: 20px;
+  font-size: 17px;
   color: #000;
 }
 
@@ -168,8 +168,8 @@
   margin: 0;
   font-family: "Roboto", sans-serif;
   font-weight: 500;
-  font-size: 16px;
-  line-height: 30px;
+  font-size: 14px;
+  line-height: clamp(18px, 2.6vh, 24px);
   color: var(--omoi-gray);
 }
 .s01-grid {
