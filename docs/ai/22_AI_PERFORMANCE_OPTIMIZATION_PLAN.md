@@ -1199,3 +1199,10 @@ baseline referenceと一致した。これは資料22 §15 Level Aを満たす�
 未設定時は従来monolithicを維持する。片方だけの設定はfail fastする。P2はcandidate数、Prompt、bbox、retry、Quality Gate、
 closed-hole fill、micro-island cleanup、Composition、Contractを変更しない。private artifactは
 `poc-output/performance-optimization-p2-split-encoder-decoder-20260904/benchmark.json`。Speed PRはP2 commit後に作成する。
+
+### 24.5 Speed PR #10（2026-09-04）
+
+P2のTier A parityと5回速度比較を満たしたため、`codex/ai-speed-optimization`をpushし、PR #8 branchをbaseにした
+stacked [Speed PR #10](https://github.com/Ruaku1352/omoi/pull/10)を作成した。PR本文にはbefore / after、P1保留、
+Tier A hash証跡、83 passed / Ruff / Contract validation、Real E2Eの残件を明記した。Speed PRにprivate artifact、
+private入力、model weightは含めない。
