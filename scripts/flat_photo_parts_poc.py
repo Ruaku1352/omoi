@@ -60,6 +60,9 @@ class FlatPhotoPartConfig:
     support_bridge_width_mm: float = 1.8
     vertical_support_width_mm: float = 4.0
     vertical_support_min_height_mm: float = 1.0
+    support_root_pad_width_mm: float = 12.0
+    support_root_pad_height_mm: float = 5.0
+    support_root_overlap_mm: float = 2.0
     support_mode: str = "rail"
     tree_branch_width_mm: float = 2.4
     tree_support_edge_margin_mm: float = 4.0
@@ -113,6 +116,9 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "supportBridgeWidthMm": config.support_bridge_width_mm,
         "verticalSupportWidthMm": config.vertical_support_width_mm,
         "verticalSupportMinHeightMm": config.vertical_support_min_height_mm,
+        "supportRootPadWidthMm": config.support_root_pad_width_mm,
+        "supportRootPadHeightMm": config.support_root_pad_height_mm,
+        "supportRootOverlapMm": config.support_root_overlap_mm,
         "supportMode": config.support_mode,
         "treeBranchWidthMm": config.tree_branch_width_mm,
         "treeSupportEdgeMarginMm": config.tree_support_edge_margin_mm,
@@ -1259,6 +1265,7 @@ def _vertical_support_height_mm(
 
 def _vertical_support_specs(
     tabs: list[dict],
+    image_width_mm: float,
     image_height_mm: float,
     support_height_mm: float,
     config: FlatPhotoPartConfig,
@@ -1278,6 +1285,12 @@ def _vertical_support_specs(
         height_mm = support_height_mm + overlap
         if height_mm <= 0:
             continue
+        root_overlap = min(max(config.support_root_overlap_mm, 0.0), image_height_mm)
+        root_width = max(width_mm, config.support_root_pad_width_mm)
+        root_width = min(root_width, image_width_mm + root_overlap * 2)
+        root_x = anchor_x - root_width / 2
+        root_y = image_height_mm - root_overlap
+        root_height = max(config.support_root_pad_height_mm, overlap + root_overlap)
         branches = []
         if config.support_mode == "tree" and support_height_mm >= 4.0:
             branch_width = max(0.8, min(config.tree_branch_width_mm, width_mm * 0.85))
@@ -1326,6 +1339,13 @@ def _vertical_support_specs(
                 "anchorXMm": round(anchor_x, 3),
                 "supportHeightMm": round(support_height_mm, 3),
                 "overlapMm": round(overlap, 3),
+                "rootPad": {
+                    "xMm": round(root_x, 3),
+                    "yMm": round(root_y, 3),
+                    "widthMm": round(root_width, 3),
+                    "heightMm": round(root_height, 3),
+                    "overlapIntoImageMm": round(root_overlap, 3),
+                },
                 "branches": branches,
             }
         )
@@ -1510,7 +1530,7 @@ def _part_from_layer(
             continue
         seen_rail_ids.add(rail_id)
         rails.append(rail)
-    vertical_supports = _vertical_support_specs(tabs, height_mm, support_height_mm, config)
+    vertical_supports = _vertical_support_specs(tabs, width_mm, height_mm, support_height_mm, config)
     name = f"flat-part-{layer['layerIndex']}-{_slug(layer['layerId'])}"
     stl_path = out_dir / f"{name}.stl"
     assembly_marks = []
@@ -1539,6 +1559,16 @@ def _part_from_layer(
             label_info["location"] = "back side of full-row rail"
             assembly_marks.append(label_info)
     for support in vertical_supports:
+        root_pad = support.get("rootPad")
+        if root_pad:
+            triangles += _box_triangles(
+                root_pad["xMm"],
+                root_pad["yMm"],
+                0.0,
+                root_pad["xMm"] + root_pad["widthMm"],
+                root_pad["yMm"] + root_pad["heightMm"],
+                config.part_thickness_mm,
+            )
         triangles += _box_triangles(
             support["xMm"],
             support["yMm"],
@@ -1589,11 +1619,17 @@ def _part_from_layer(
         for branch in support.get("branches", [])
         for point in branch["points"]
     ]
+    root_pads = [
+        support["rootPad"]
+        for support in vertical_supports
+        if support.get("rootPad")
+    ]
     min_part_x = min(
         [0.0]
         + [rail["xMm"] for rail in rails]
         + [tab["xMm"] for tab in tabs]
         + [support["xMm"] for support in vertical_supports]
+        + [pad["xMm"] for pad in root_pads]
         + branch_x_values
     )
     max_part_x = max(
@@ -1601,6 +1637,7 @@ def _part_from_layer(
         + [rail["xMm"] + rail["widthMm"] for rail in rails]
         + [tab["xMm"] + tab["widthMm"] for tab in tabs]
         + [support["xMm"] + support["widthMm"] for support in vertical_supports]
+        + [pad["xMm"] + pad["widthMm"] for pad in root_pads]
         + branch_x_values
     )
     shift_x = -min_part_x if min_part_x < 0 else 0.0
@@ -1616,6 +1653,9 @@ def _part_from_layer(
         for support in vertical_supports:
             support["xMm"] = round(support["xMm"] + shift_x, 3)
             support["anchorXMm"] = round(support["anchorXMm"] + shift_x, 3)
+            root_pad = support.get("rootPad")
+            if root_pad:
+                root_pad["xMm"] = round(root_pad["xMm"] + shift_x, 3)
             for branch in support.get("branches", []):
                 for point in branch["points"]:
                     point["xMm"] = round(point["xMm"] + shift_x, 3)
@@ -1629,6 +1669,7 @@ def _part_from_layer(
         + [rail["yMm"] + rail["heightMm"] for rail in rails]
         + [tab["yMm"] + tab["heightMm"] for tab in tabs]
         + [support["yMm"] + support["heightMm"] for support in vertical_supports]
+        + [pad["yMm"] + pad["heightMm"] for pad in root_pads]
         + [
             point["yMm"]
             for support in vertical_supports
@@ -2430,6 +2471,18 @@ def _write_print_layout(
             ]
         )
         for support in part.get("verticalSupports", []):
+            root_pad = support.get("rootPad")
+            if root_pad:
+                pad_x = x + root_pad["xMm"]
+                pad_y = y + root_pad["yMm"]
+                lines.append(
+                    (
+                        f'<rect x="{pad_x:.3f}" y="{pad_y:.3f}" '
+                        f'width="{root_pad["widthMm"]:.3f}" height="{root_pad["heightMm"]:.3f}" '
+                        'fill="none" stroke="#ea580c" stroke-width="0.45" '
+                        'stroke-dasharray="1 0.8"/>'
+                    )
+                )
             for branch in support.get("branches", []):
                 points = " ".join(
                     f'{(x + point["xMm"]):.3f},{(y + point["yMm"]):.3f}'
@@ -2795,6 +2848,21 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=FlatPhotoPartConfig.vertical_support_min_height_mm,
     )
+    parser.add_argument(
+        "--support-root-pad-width-mm",
+        type=float,
+        default=FlatPhotoPartConfig.support_root_pad_width_mm,
+    )
+    parser.add_argument(
+        "--support-root-pad-height-mm",
+        type=float,
+        default=FlatPhotoPartConfig.support_root_pad_height_mm,
+    )
+    parser.add_argument(
+        "--support-root-overlap-mm",
+        type=float,
+        default=FlatPhotoPartConfig.support_root_overlap_mm,
+    )
     parser.add_argument("--support-mode", choices=("straight", "tree", "rail"), default=FlatPhotoPartConfig.support_mode)
     parser.add_argument("--tree-branch-width-mm", type=float, default=FlatPhotoPartConfig.tree_branch_width_mm)
     parser.add_argument(
@@ -2900,6 +2968,9 @@ def main() -> int:
         support_bridge_width_mm=args.support_bridge_width_mm,
         vertical_support_width_mm=args.vertical_support_width_mm,
         vertical_support_min_height_mm=args.vertical_support_min_height_mm,
+        support_root_pad_width_mm=args.support_root_pad_width_mm,
+        support_root_pad_height_mm=args.support_root_pad_height_mm,
+        support_root_overlap_mm=args.support_root_overlap_mm,
         support_mode=args.support_mode,
         tree_branch_width_mm=args.tree_branch_width_mm,
         tree_support_edge_margin_mm=args.tree_support_edge_margin_mm,
