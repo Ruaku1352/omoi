@@ -9,6 +9,7 @@ import PreviewScreen from './screens/PreviewScreen'
 import EditScreen from './screens/EditScreen'
 import GeneratingScreen from './screens/GeneratingScreen'
 import DoneScreen from './screens/DoneScreen'
+import type { JobStage } from './types/job'
 export type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
 
 /**
@@ -21,7 +22,8 @@ export default function App() {
 const [artwork, setArtwork] = useState(mockArtwork)
 const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
 const [screen, setScreen] = useState<Screen>('select')
-const [error, setError] = useState<string | null>(null) 
+const [error, setError] = useState<string | null>(null)
+const [stage, setStage] = useState<JobStage | undefined>(undefined) 
   // `layers[]` の配列位置は奥行き順ではない。必ず layerIndex で並べ替える。
   const assets = buildAssetIndex(manifest)
 
@@ -56,10 +58,11 @@ const [error, setError] = useState<string | null>(null)
           setManifest(nextManifest)
           setScreen('preview') 
         }}
-         onStart={() => { setError(null); setScreen('generating') }}
+         onStart={() => { setError(null); setStage(undefined); setScreen('generating') }}
+         onProgress={(next) => setStage(next.stage)}
   onFailed={(message) => setError(message)}
       />)}
-      {screen === 'generating' && <GeneratingScreen />}
+      {screen === 'generating' && <GeneratingScreen stage={stage} />}
 {screen === 'preview' && (
   <PreviewScreen
     artwork={artwork}
