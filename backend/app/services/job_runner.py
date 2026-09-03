@@ -19,6 +19,7 @@ from app.errors import ApiError
 from app.services.asset_store import AssetStore
 from app.services.generation import generate_and_publish
 from app.services.job_store import JobStore
+from app.services.stage_observer import current_job_id
 
 
 class JobRunner:
@@ -55,26 +56,33 @@ class JobRunner:
         async def _on_stage(stage: str) -> None:
             await self._job_store.set_stage(job_id, stage)  # type: ignore[arg-type]
 
+        # JobStageObserver（GeminiのGenerationObserver経由）が同じTask上でこの値を見て
+        # extractingへの遷移を報告できるようにする。asyncioのTask Local値なので、
+        # concurrency>1で複数Jobが並行しても取り違えない。
+        token = current_job_id.set(job_id)
         try:
-            response = await generate_and_publish(
-                photos,
-                memory_text,
-                generator=self._generator,
-                asset_store=self._asset_store,
-                base_url=base_url,
-                on_stage=_on_stage,
-            )
-        except ApiError as exc:
-            if exc.retryable and allow_retry:
-                raise
-            await self._job_store.mark_failed(
-                job_id,
-                code=str(exc.code),
-                message=exc.message,
-                retryable=exc.retryable,
-                details=exc.details,
-            )
-            return
+            try:
+                response = await generate_and_publish(
+                    photos,
+                    memory_text,
+                    generator=self._generator,
+                    asset_store=self._asset_store,
+                    base_url=base_url,
+                    on_stage=_on_stage,
+                )
+            except ApiError as exc:
+                if exc.retryable and allow_retry:
+                    raise
+                await self._job_store.mark_failed(
+                    job_id,
+                    code=str(exc.code),
+                    message=exc.message,
+                    retryable=exc.retryable,
+                    details=exc.details,
+                )
+                return
+        finally:
+            current_job_id.reset(token)
 
         await self._job_store.mark_completed(
             job_id, response.model_dump(by_alias=True, exclude_none=True)
