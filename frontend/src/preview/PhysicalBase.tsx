@@ -12,34 +12,21 @@
  * - 土台は4行×3穴、計12穴として表示する(細長いスロット形状。実際に使われるかはLayer数次第)
  * - layerIndex が大きいLayerほど手前に表示する(toLayerPlaneの z 計算と同じ基準)
  * - layerIndex: 0 は背景Layerとして扱う
+ * - 行の間隔・土台の奥行きは previewDepthStep から出す。こうしておくと、間隔を変えても
+ *   Layer・穴・横レールが必ず同じ位置で揃う(2026-09-04、まなみん要望で間隔を可変にした)
  * - 背景以外の前景Layerは、横レールで支えられている見た目にする
  *   (1つの前景Layerの下に、同じ行の3穴すべてに差し込まれている横長の支えパーツがある見た目。
- *   印藤さん共有分の `supportMode: "rail"` に対応。1つの穴だけに差し込む見た目にしないのは、
- *   Layer本体の左右位置をArtwork Dataの x に近い形で反映するため)
- * - 横レールはLayer本体の下端から土台上面まで、Layerと同じzで繋がって見えるようにする
- *   (2026-09-04、まなみん共有の実機3Dプリント写真: レイヤーの足元が土台の穴へ
- *   一直線に伸びて刺さっている見た目に合わせた)
- * - layerIndex: 0(背景Layer)には横レールを作らない。これは2D編集で前後変更した結果、
- *   別のLayerが新たにlayerIndex: 0になった場合も同様(常にその時点のlayerIndexで判定する)
- * - 横レールは2段構成にする(2026-09-04、まなみん指示)
- *   1. 行全体を貫く低いレール。背景以外のLayerがある行には常に存在する
- *   2. そのLayerの中心(x)の位置だけ、棒くらいの太さで高くなっている部分。
- *      Layer本体の幅には合わせない(Layerが変わっても太さは変えない)
- * - 2D編集でLayerを入れ替えた(layerIndexを変えた)場合、対応する横レールは
- *   そのLayer自身のlayerIndexから毎回計算しているので、自動的に正しい行へ移動する
- * - 横レール(低いレール・足とも)のz位置は、穴グリッドと同じ REF_ROW_FRONT_RATIOS /
- *   zFront / baseDepth から計算する(2026-09-04、まなみん指摘: 以前はlayerIndex *
- *   previewDepthStepという別の式でzを出していたため、横レールが土台の穴の行とズレて見えていた。
- *   同じ式を使うことで、レールは必ずどれかの穴の行のzと一致する)
- * - 2D編集でLayerの左右位置(x)を変えたら、高くなっている部分もそのxに追従する。
- *   上下位置(y)を変えたときも、Layerがある位置の足の高さがそれに合わせて変わるようにする
- *   (2026-09-04、まなみん追加指示: 足はLayer本体の下端まで伸びて繋がって見えるようにしたい。
- *   低いレール部分の高さ・行そのものの位置は変えない)
+ *   印藤さん共有分の `supportMode: "rail"` に対応)
+ * - layerIndex: 0(背景Layer)には横レールを作らない。2D編集で前後変更した結果、
+ *   別のLayerが新たにlayerIndex: 0になった場合も同様
+ * - 横レールは2段構成: 行全体を貫く低いレール + Layer中心(x)だけ棒状に高くなる足
+ * - レール・足の前後方向の厚みは実寸のスロット幅(1.95mm)基準。previewDepthStep から出すと、
+ *   Layer間隔を変えたときに一緒に太ってしまう
+ * - 2D編集でLayerの左右位置(x)を変えたら足もそのxに追従し、上下位置(y)を変えたら
+ *   Layer本体の下端まで届くように足の高さが変わる
  *
  * 背景Layer用の装飾back panelは、実際のLayer画像と別に額縁のような不要な板が
  * もう1枚あるように見えてしまったため廃止(2026-09-04、まなみん確認済み)。
- * 背景Layerが「土台奥にある」こと自体は、既存の toLayerPlane の z = layerIndex * previewDepthStep
- * （layerIndex: 0 が最も奥）だけで表現できているので、追加の板は無くても成立する。
  */
 import { DoubleSide } from 'three'
 import { previewDepthStep } from '../config/artworkEditing'
@@ -49,15 +36,18 @@ import type { Artwork } from '../types/artwork'
 // 印藤さん共有のmm参照値。2L判(178mm幅)を基準に、Canvas幅=1.0の正規化座標へ換算する。
 const REF_CANVAS_WIDTH_MM = 178
 const REF_BASE_WIDTH_MM = 170
-const REF_BASE_DEPTH_MM = 121
 const REF_BASE_THICKNESS_MM = 5
 // スロット(穴)の形状。横幅12mm x 前後幅(スロット幅)1.95mmの細長い長方形
 const REF_SLOT_WIDTH_MM = 12
 const REF_SLOT_DEPTH_MM = 1.95
 // 3列の穴中心(土台左端からのmm) → 0..1の比率(左端基準)
 const REF_COLUMN_RATIOS = [18, 85, 152].map((mm) => mm / REF_BASE_WIDTH_MM)
-// 4行の穴中心(土台手前端からのmm) → 0(手前)〜1(奥)の比率
-const REF_ROW_FRONT_RATIOS = [8.975, 43.325, 77.675, 112.025].map((mm) => mm / REF_BASE_DEPTH_MM)
+// 穴は4行。手前端から一番手前の行の中心までが8.975mm、奥端から一番奥の行の中心までも同じ
+// (実寸: 行中心が 8.975 / 43.325 / 77.675 / 112.025mm、土台奥行き121mm)
+const ROW_COUNT = 4
+const rowFrontMargin = 8.975 / REF_CANVAS_WIDTH_MM
+// 参考: 実寸の土台奥行きは121mm。previewDepthStep = 0.193 のとき
+// (ROW_COUNT - 1) * 0.193 + rowFrontMargin * 2 がこれとほぼ一致する
 
 const baseWidth = REF_BASE_WIDTH_MM / REF_CANVAS_WIDTH_MM
 const baseThickness = REF_BASE_THICKNESS_MM / REF_CANVAS_WIDTH_MM
@@ -66,6 +56,10 @@ const slotWidth = REF_SLOT_WIDTH_MM / REF_CANVAS_WIDTH_MM
 // 見た目の視認性のためだけに前後幅を誇張する(表示専用の倍率。実寸換算には使わない)
 const SLOT_DEPTH_VISUAL_SCALE = 4
 const slotDepth = (REF_SLOT_DEPTH_MM / REF_CANVAS_WIDTH_MM) * SLOT_DEPTH_VISUAL_SCALE
+// 横レール・足の前後方向の厚み。スロットへ差し込む板なので、実寸のスロット幅(1.95mm)に合わせる。
+// previewDepthStep から出すと、Layer間隔を変えたときに一緒に太ってしまう
+// (2026-09-04、まなみん指摘: 土台の上のレイヤーが太すぎる)
+const plateDepth = REF_SLOT_DEPTH_MM / REF_CANVAS_WIDTH_MM
 
 const BASE_COLOR = '#a7724c' // --omoi-brown
 const SLOT_COLOR = '#3f2717' // 土台の色よりはっきり濃くして視認性を上げる
@@ -78,31 +72,39 @@ export default function PhysicalBase({ artwork }: { artwork: Artwork }) {
   const layerIndexes = artwork.layers.map((l) => l.layerIndex)
   const maxLayerIndex = layerIndexes.length > 0 ? Math.max(...layerIndexes) : 0
 
-  // 土台の手前端・奥端。previewDepthStep基準の表示値であり、mmから直接換算しない
-  // (previewDepthStepとmm参照値は別々の【PoC後FIX】値のため、固定の換算係数を持たせない)
-  const zFront = maxLayerIndex * previewDepthStep + previewDepthStep * 0.6
-  const zBack = -previewDepthStep * 1.6
-  const baseDepth = zFront - zBack
+  // 行の間隔は previewDepthStep に合わせる。こうしておくと、間隔を変えても
+  // 「Layer・穴・横レール」が必ず同じ位置で揃う
+  // (2026-09-04、まなみん要望: レイヤー同士の間隔を微調整したい)。
+  // 土台の奥行きも「行の並び + 手前奥の余白」から出すので、間隔を変えると土台ごと自然に詰まる。
+  // previewDepthStep = 0.193 のとき、実物の土台奥行き121mm(=0.6798)とほぼ一致する。
+  const rowPitch = previewDepthStep
+  const baseDepth = (ROW_COUNT - 1) * rowPitch + rowFrontMargin * 2
+
+  // 土台の手前端。「一番手前のLayerが手前1行目の穴に載る」ように置く。
+  // Layerが4枚を超える場合は、はみ出したLayerも土台に載るよう手前側へ広げる。
+  const frontRowLayerZ = Math.max(maxLayerIndex, ROW_COUNT - 1) * rowPitch
+  const zFront = frontRowLayerZ + rowFrontMargin
+  const zBack = zFront - baseDepth
   const baseCenterZ = (zFront + zBack) / 2
 
-  const baseTopY = -canvasHeight / 2 - previewDepthStep * 0.4
+  // 手前から rowI 番目(0 = 手前1行目)の行のz
+  const rowZ = (rowI: number) => zFront - rowFrontMargin - rowI * rowPitch
+
+  // 土台上面。Canvas下端のすぐ下に置く。ここも previewDepthStep 基準にすると
+  // Layer間隔を変えたときに土台が離れていってしまうので、土台の厚み基準にする
+  const baseTopY = -canvasHeight / 2 - baseThickness * 0.3
   const baseCenterY = baseTopY - baseThickness / 2
 
   // layerIndex: 0(背景Layer)以外の前景Layerは、行ごとの横レールで支えられている見た目にする
   const foregroundLayers = artwork.layers.filter((l) => l.layerIndex !== 0)
 
-  // layerIndexが大きい(=手前の)Layerほど、手前の行(REF_ROW_FRONT_RATIOSの先頭)に割り当てる。
+  // layerIndexが大きい(=手前の)Layerほど、手前の行に割り当てる。
   // 穴は4行までしかないので、Layer数がそれより多い場合は一番奥の行にまとめる
-  const rowZForLayerIndex = (layerIndex: number) => {
-    const rowI = Math.min(
-      Math.max(maxLayerIndex - layerIndex, 0),
-      REF_ROW_FRONT_RATIOS.length - 1,
-    )
-    return zFront - REF_ROW_FRONT_RATIOS[rowI] * baseDepth
-  }
+  const rowZForLayerIndex = (layerIndex: number) =>
+    rowZ(Math.min(Math.max(maxLayerIndex - layerIndex, 0), ROW_COUNT - 1))
 
   const railWidth = baseWidth * 0.85
-  const railDepth = previewDepthStep * 0.5
+  const railDepth = plateDepth
   // 行全体を貫く低いレール部分の高さ。土台からわずかに立ち上がる程度の低いプロファイルにする
   const railLowThickness = baseThickness * 0.4
   // Layerの中心だけ高くする「足」部分。Layer本体の幅には合わせず、棒くらいの太さで固定する
@@ -119,10 +121,10 @@ export default function PhysicalBase({ artwork }: { artwork: Artwork }) {
       </mesh>
 
       {/* 穴グリッド(4行 x 3列、計12穴の装飾)。細長いスロット形状。土台自体の見た目であり、実Layer数とは独立 */}
-      {REF_ROW_FRONT_RATIOS.map((rowRatio, rowI) =>
+      {Array.from({ length: ROW_COUNT }, (_, rowI) =>
         REF_COLUMN_RATIOS.map((colRatio, colI) => {
           const holeX = (colRatio - 0.5) * baseWidth
-          const holeZ = zFront - rowRatio * baseDepth
+          const holeZ = rowZ(rowI)
           return (
             <mesh
               key={`hole-${rowI}-${colI}`}
@@ -165,7 +167,7 @@ export default function PhysicalBase({ artwork }: { artwork: Artwork }) {
               <meshBasicMaterial color={RAIL_COLOR} />
             </mesh>
             <mesh position={[pegX, pegCenterY, railZ]}>
-              <boxGeometry args={[pegSize, pegHeight, pegSize]} />
+              <boxGeometry args={[pegSize, pegHeight, plateDepth]} />
               <meshBasicMaterial color={RAIL_COLOR} />
             </mesh>
           </group>

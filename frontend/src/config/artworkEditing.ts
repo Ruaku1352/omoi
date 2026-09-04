@@ -49,8 +49,16 @@ export const exportMaxAssetDimension = numberFromEnv(
   1400,
 )
 
-/** 3D Preview の Layer 間隔。表示値であって物理厚みではない。【PoC後FIX】 */
-export const previewDepthStep = numberFromEnv(import.meta.env.VITE_PREVIEW_DEPTH_STEP, 0.02)
+/**
+ * 3D Preview の Layer 間隔。表示値であって物理厚みではない。【PoC後FIX】
+ *
+ * 既定値は「実機の土台で隣り合う行の間隔（行中心どうしで約34.35mm）を、
+ * 2L判の幅178mmを1.0とした正規化値へ直したときの見た目」に合わせている（34.35 / 178 ≒ 0.193）。
+ * 2026-09-04、まなみん指摘（3D Preview上のレイヤー間隔が実物に比べて狭い）を受けて
+ * 0.02 から変更した。mm値そのものをここへ持ち込んでいるわけではなく、
+ * あくまで見た目を実物へ寄せるための表示値であり、Artwork Dataには一切入らない（AGENTS.md §7）。
+ */
+export const previewDepthStep = numberFromEnv(import.meta.env.VITE_PREVIEW_DEPTH_STEP, 0.193)
 
 
 /** 3D Preview の Layer 1枚の見かけの厚み。表示値であって物理厚みではない。【PoC後FIX】 */
