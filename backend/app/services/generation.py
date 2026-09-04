@@ -48,6 +48,16 @@ async def generate_and_publish(
 
     try:
         result = await generator.generate(photos, memory_text)
+    except ValidationError as exc:
+        # Gemini Structured Output等のAI内部Pydantic検証失敗は、同一入力を
+        # Cloud Tasksで再送しても解消しない。生のValidationErrorをWorkerまで
+        # 漏らさず、既存のterminalなAI_FAILEDへ正規化する。
+        raise ApiError(
+            ErrorCode.AI_FAILED,
+            _GENERIC_AI_MESSAGE,
+            retryable=False,
+            log_message=f"AI structured output validation: {exc.error_count()} error(s)",
+        ) from exc
     except AiTimeoutError as exc:
         raise ApiError(ErrorCode.AI_TIMEOUT, _GENERIC_AI_MESSAGE, log_message=str(exc)) from exc
     except AiRateLimitedError as exc:
