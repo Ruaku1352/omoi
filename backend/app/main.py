@@ -15,6 +15,7 @@ from app.api.internal.artworks import router as internal_artworks_router
 from app.api.internal.jobs import router as internal_jobs_router
 from app.api.v1.artworks import router as artworks_router
 from app.api.v1.jobs import router as jobs_router
+from app.api.v1.physical_output import router as physical_output_router
 from app.config import Settings, get_settings
 from app.errors import register_exception_handlers
 from app.services.asset_store import build_asset_store
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=settings.allowed_origins,
             allow_methods=["POST", "GET", "OPTIONS"],
             allow_headers=["*"],
+            expose_headers=["Content-Disposition", "X-Omoi-Physical-Warning-Count"],
         )
     else:
         logger.warning("CORS_ORIGINS が空。別OriginのFrontendからは呼べない。")
@@ -88,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(artworks_router, prefix=API_V1_PREFIX)
     app.include_router(jobs_router, prefix=API_V1_PREFIX)
+    app.include_router(physical_output_router, prefix=API_V1_PREFIX)
     app.include_router(internal_jobs_router)
     app.include_router(internal_artworks_router)
 

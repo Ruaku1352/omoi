@@ -83,8 +83,10 @@ Build時に `contracts/` の中身をPythonパッケージのリソースとし�
 
 - `Dockerfile` — `python:3.13-slim` ベース、`uv` で `uv.lock` から再現Install。
   `PORT` は環境変数から受け取り、`8000` に固定していない。最終`default` targetは
-  Model Artifactを含まないMock用、`real-ai` targetだけがEfficientSAM ONNXを含む
-- `.dockerignore` — `frontend/`、ローカル生成物、Secret類を除外
+  Model Artifactを含まないMock用、`real-ai` targetだけがEfficientSAM ONNXを含む。
+  Physical Output API用に `scripts/flat_photo_parts_poc.py` だけを `/srv/scripts/` へ同梱する
+- `.dockerignore` — `frontend/`、ローカル生成物、Secret類を除外。
+  `scripts/` は原則除外し、Cloud Run実行時に必要な `flat_photo_parts_poc.py` だけ含める
 - `.gcloudignore` — `gcloud builds submit` 用。**無いと `.gitignore` が代用され、
   `backend/.models/` のONNXがBuild Contextから落ちる**（3.5参照）
 - `cloudbuild.real-ai.yaml` — Cloud Runへ載せるReal AI ImageのBuild設定（3.5参照）
