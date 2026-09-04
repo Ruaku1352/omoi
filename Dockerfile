@@ -62,7 +62,14 @@ CMD exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
 # Real Cloud Run用target。Model ArtifactはGit管理せず、Build Contextへ明示的に供給する。
 FROM base AS real-ai
 COPY --chown=appuser:appuser backend/.models/efficientsam_ti.onnx /srv/models/efficientsam_ti.onnx
+# split encoder / decoder。両方設定したときだけsplit経路が有効になり、
+# source photoごとにencoderを1回、bbox / retryごとにdecoderを実行する
+# （docs/ai/22 §24.4。monolithicに対して約45%短縮）。
+COPY --chown=appuser:appuser backend/.models/efficientsam_ti_encoder.onnx /srv/models/efficientsam_ti_encoder.onnx
+COPY --chown=appuser:appuser backend/.models/efficientsam_ti_decoder.onnx /srv/models/efficientsam_ti_decoder.onnx
 ENV EFFICIENTSAM_MODEL_PATH=/srv/models/efficientsam_ti.onnx
+ENV EFFICIENTSAM_ENCODER_MODEL_PATH=/srv/models/efficientsam_ti_encoder.onnx
+ENV EFFICIENTSAM_DECODER_MODEL_PATH=/srv/models/efficientsam_ti_decoder.onnx
 
 # `docker build .` の既存Mock開発経路をModel Artifact必須にしない。
 # `gcloud run deploy --source .` もDockerfileの最終stageをBuildするため、
