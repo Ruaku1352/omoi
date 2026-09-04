@@ -21,7 +21,11 @@ const isHeic = (file: File) => {
 
 const isImageFile = (file: File) => file.type.startsWith('image/') || isHeic(file)
 
-const convertHeicIfNeeded = async (file: File): Promise<File> => {
+// 変換に失敗したときは null を返す。元のHEICをそのまま使い続けると、
+// 一覧のサムネイルが表示できず（Windows等の<img>はHEIC非対応）、
+// アップロードもBackendの受け付け基準から外れる。何が起きたか分かるように
+// 呼び出し側でユーザーへ知らせる（2026-09-04、まなみん報告: PCでHEICが扱えない）。
+const convertHeicIfNeeded = async (file: File): Promise<File | null> => {
   if (!isHeic(file)) return file
   try {
     const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
@@ -30,7 +34,7 @@ const convertHeicIfNeeded = async (file: File): Promise<File> => {
     return new File([blob], newName, { type: 'image/jpeg' })
   } catch (e) {
     console.error('HEIC変換に失敗しました:', file.name, e)
-    return file
+    return null
   }
 }
 
@@ -73,8 +77,9 @@ const resizeIfNeeded = async (file: File): Promise<File> => {
   }
 }
 
-const prepareForUpload = async (file: File): Promise<File> => {
+const prepareForUpload = async (file: File): Promise<File | null> => {
   const displayable = await convertHeicIfNeeded(file)
+  if (!displayable) return null
   return resizeIfNeeded(displayable)
 }
 
@@ -93,6 +98,9 @@ export default function PhotoSelect({
   const [memoryText, setMemoryText] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
+  // 追加できなかったファイルがあったときの案内。黙って無視すると
+  // 「ドラッグしても何も起きない」ように見えてしまう
+  const [notice, setNotice] = useState<string | null>(null)
 
   const previews = useMemo(() => photos.map((file) => URL.createObjectURL(file)), [photos])
 
@@ -107,12 +115,40 @@ export default function PhotoSelect({
   }
 
   const addPhotos = async (files: FileList | File[]) => {
-    const incoming = Array.from(files).filter(isImageFile)
-    if (incoming.length === 0) return
+    const all = Array.from(files)
+    const incoming = all.filter(isImageFile)
+    const rejected = all.filter((f) => !isImageFile(f))
+
+    if (incoming.length === 0) {
+      setNotice(
+        rejected.length > 0
+          ? `画像として読み込めないファイルでした: ${rejected.map((f) => f.name).join('、')}`
+          : null,
+      )
+      return
+    }
+
+    setNotice(null)
     setIsConverting(true)
     try {
       const prepared = await Promise.all(incoming.map(prepareForUpload))
-      setPhotos((prev) => [...prev, ...prepared].slice(0, 10))
+      const usable = prepared.filter((f): f is File => f !== null)
+      const failed = incoming.filter((_, i) => prepared[i] === null)
+      setPhotos((prev) => [...prev, ...usable].slice(0, 10))
+
+      const messages: string[] = []
+      if (failed.length > 0) {
+        messages.push(
+          `変換できなかった写真があります: ${failed.map((f) => f.name).join('、')}。` +
+            `お手数ですが、JPEGかPNGに変換してからお試しください。`,
+        )
+      }
+      if (rejected.length > 0) {
+        messages.push(
+          `画像として読み込めないファイルは除きました: ${rejected.map((f) => f.name).join('、')}`,
+        )
+      }
+      setNotice(messages.length > 0 ? messages.join(' ') : null)
     } finally {
       setIsConverting(false)
     }
@@ -175,7 +211,13 @@ export default function PhotoSelect({
           <input
             id="photo-input"
             type="file"
-            accept="image/*"
+            // `image/*` だけだと、Windowsではファイル選択ダイアログでHEIC/HEIFが
+            // グレーアウトして選べない。ブラウザがOSに登録されたMIMEタイプで絞り込むため、
+            // `.heic` が画像として登録されていない環境（HEIF拡張機能が未導入など）で弾かれる。
+            // iPhoneは写真ピッカーが出るのでこの制限を受けず、結果として
+            // 「スマホからは選べるのにPCからは選べない」状態になっていた
+            // （2026-09-04、まなみん報告）。拡張子とMIMEを明示して選べるようにする。
+            accept="image/*,.heic,.heif,image/heic,image/heif"
             multiple
             hidden
             onChange={(e) => {
@@ -192,6 +234,8 @@ export default function PhotoSelect({
                 : '写真をドロップ、または選ぶ'}
           </label>
         </div>
+
+        {notice && <p className="app-error">{notice}</p>}
 
         <div className="s01-bottom">
           <input

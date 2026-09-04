@@ -30,8 +30,8 @@ function downloadBlob(blob: Blob, fileName: string) {
 export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
   const [stlStatus, setStlStatus] = useState<ExportStatus>('idle')
   const [stlError, setStlError] = useState<string | null>(null)
-  const [pdfStatus, setPdfStatus] = useState<ExportStatus>('idle')
-  const [pdfError, setPdfError] = useState<string | null>(null)
+  const [jpegStatus, setJpegStatus] = useState<ExportStatus>('idle')
+  const [jpegError, setJpegError] = useState<string | null>(null)
 
   const today = new Date().toLocaleDateString('ja-JP', {
     year: 'numeric',
@@ -58,20 +58,21 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
     }
   }
 
-  // 写真貼り付け用PDF出力
-  // 同じくBackend側の POST /api/v1/physical-output/exports を叩く（outputFormat: "photoPdf"）。
-  const handleExportPdf = async () => {
-    setPdfStatus('building')
-    setPdfError(null)
+  // 写真貼り付け用JPEG出力（コンビニの2L写真プリント用。Layerごとのjpgをまとめたzip）
+  // 同じくBackend側の POST /api/v1/physical-output/exports を叩く（outputFormat: "photoJpegZip"）。
+  // 2026-09-04、まなみん指示でPDFからJPEGへ変更。
+  const handleExportJpeg = async () => {
+    setJpegStatus('building')
+    setJpegError(null)
     try {
-      const { blob, fileName } = await exportPhysicalOutput(artwork, assets, 'photoPdf')
+      const { blob, fileName } = await exportPhysicalOutput(artwork, assets, 'photoJpegZip')
       downloadBlob(blob, fileName)
-      setPdfStatus('done')
+      setJpegStatus('done')
     } catch (e) {
-      setPdfError(
-        e instanceof ApiError ? e.message : 'PDFの出力に失敗しました。もう一度お試しください。',
+      setJpegError(
+        e instanceof ApiError ? e.message : '写真データの出力に失敗しました。もう一度お試しください。',
       )
-      setPdfStatus('error')
+      setJpegStatus('error')
     }
   }
 
@@ -110,12 +111,14 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
                   {stlError ?? '3Dデータの出力に失敗しました。もう一度お試しください。'}
                 </p>
               )}
-              {pdfStatus === 'done' && (
-                <p className="done-note">印刷用PDFをダウンロードしました！</p>
-              )}
-              {pdfStatus === 'error' && (
+              {jpegStatus === 'done' && (
                 <p className="done-note">
-                  {pdfError ?? 'PDFの出力に失敗しました。もう一度お試しください。'}
+                  写真プリント用データ（JPEG一式のZIP）をダウンロードしました！
+                </p>
+              )}
+              {jpegStatus === 'error' && (
+                <p className="done-note">
+                  {jpegError ?? '写真データの出力に失敗しました。もう一度お試しください。'}
                 </p>
               )}
             </div>
@@ -138,10 +141,10 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
               <button
                 type="button"
                 className="done-confirm done-confirm-pdf"
-                onClick={handleExportPdf}
-                disabled={pdfStatus === 'building'}
+                onClick={handleExportJpeg}
+                disabled={jpegStatus === 'building'}
               >
-                {pdfStatus === 'building' ? '準備中…' : '写真貼り付け用PDF出力'}
+                {jpegStatus === 'building' ? '準備中…' : '写真貼り付け用JPEG出力'}
               </button>
             </div>
           </div>
