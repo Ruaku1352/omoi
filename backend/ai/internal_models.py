@@ -54,17 +54,16 @@ class VisualElementCandidate(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _canonicalize_subject_metadata(cls, value: object) -> object:
-        """旧Saved Planを保ちつつ、kindをscene_anchorの唯一の種別情報にする。"""
+        """scene_anchorの余計なsubject metadataをcanonical formから除く。"""
         if not isinstance(value, dict):
             return value
         normalized = dict(value)
         if normalized.get("kind", "subject") == "scene_anchor":
-            # 旧Planではscene_anchorをsemantic_role=general / extraction_intent=scene_anchorで
-            # 二重に記録していた。意味を失わない中立値だけを読み込み時に正規化する。
-            if normalized.get("semantic_role") == "general":
-                normalized.pop("semantic_role")
-            if normalized.get("extraction_intent") == "scene_anchor":
-                normalized.pop("extraction_intent")
+            # kindがscene_anchorの唯一の種別情報である。LLMや旧Saved Planが
+            # subject専用metadataを付けても、scene anchorに意味を与えず捨てる。
+            # bboxやcomponent数など、他の妥当性検証は後段で厳密に行う。
+            normalized.pop("semantic_role", None)
+            normalized.pop("extraction_intent", None)
             return normalized
         normalized.setdefault("semantic_role", "general")
         normalized.setdefault("extraction_intent", "single_form")
