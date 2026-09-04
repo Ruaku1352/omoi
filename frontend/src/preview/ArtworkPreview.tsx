@@ -1,4 +1,4 @@
-import { Suspense, useRef, type ComponentRef } from 'react'
+import { Suspense, useEffect, useRef, useState, type ComponentRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useTexture } from '@react-three/drei'
 import { DoubleSide } from 'three'
@@ -12,8 +12,8 @@ import {
 } from '../config/artworkEditing'
 import type { Artwork, Layer } from '../types/artwork'
 import iconRotate from '../assets/icon-rotate.svg'
-import './ArtworkPreview.css'
 import PhysicalBase from './PhysicalBase'
+import './ArtworkPreview.css'
 
 function LayerPlane({
   layer,
@@ -40,6 +40,17 @@ function LayerPlane({
   )
 }
 
+/**
+ * Suspenseの中身（＝全Layerのテクスチャ読み込み）が解決したことを外へ知らせるだけの部品。
+ * 読み込み中のオーバーレイを消すタイミングに使う。
+ */
+function ReadySignal({ onReady }: { onReady: () => void }) {
+  useEffect(() => {
+    onReady()
+  }, [onReady])
+  return null
+}
+
 export default function ArtworkPreview({
   artwork,
   assets,
@@ -49,6 +60,9 @@ export default function ArtworkPreview({
 }) {
   const layers = sortByLayerIndex(artwork.layers)
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null)
+  // Layer画像の読み込みが終わったか。終わるまでは土台も含めて何も見せない
+  // （2026-09-04、まなみん指摘: 土台だけ先に出て写真が後から乗るのを無くしたい）
+  const [ready, setReady] = useState(false)
 
   return (
     <div className="preview3d">
@@ -66,11 +80,14 @@ export default function ArtworkPreview({
         </span>
       </div>
 
-      <div className="preview3d-canvas">
+      <div className="preview3d-canvas" style={{ position: 'relative' }}>
         <Canvas camera={{ position: [0, 0, 1.0] }}>
           <OrbitControls ref={controlsRef} makeDefault />
-          <PhysicalBase artwork={artwork} />
+          {/* 土台もSuspenseの内側へ入れる。外に置くとテクスチャ待ちの影響を受けず
+              先に描画されてしまい、「土台だけ先に出て写真が後から乗る」状態になる。
+              内側へ入れることで、Layer画像が揃ってから土台ごと一度に表示される。 */}
           <Suspense fallback={null}>
+            <PhysicalBase artwork={artwork} />
             {layers.map((layer) => (
               <LayerPlane
                 key={layer.layerId}
@@ -79,8 +96,26 @@ export default function ArtworkPreview({
                 url={resolveAssetUrl(assets, layer.asset.assetId)}
               />
             ))}
+            <ReadySignal onReady={() => setReady(true)} />
           </Suspense>
         </Canvas>
+        {!ready && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: '"Zen Kaku Gothic New", sans-serif',
+              fontSize: 13,
+              color: 'var(--omoi-gray)',
+              pointerEvents: 'none',
+            }}
+          >
+            読み込み中…
+          </div>
+        )}
       </div>
     </div>
   )

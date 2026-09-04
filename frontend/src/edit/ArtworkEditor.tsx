@@ -2,9 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type Konva from 'konva'
 import { Stage, Layer, Image as KonvaImage, Transformer } from 'react-konva'
 import { resolveAssetUrl, type AssetIndex } from '../artwork/assetIndex'
-import { fromLayerRectPx, toLayerRectPx } from '../artwork/geometry'
+import {
+  clampLayerCenterWithinCanvas,
+  fromLayerRectPx,
+  maxScaleWithinCanvas,
+  toLayerRectPx,
+} from '../artwork/geometry'
 import { sortByLayerIndex } from '../artwork/layerOrder'
-import { clampScale, minScale, maxScale } from '../config/artworkEditing'
+import { clampScale, minScale, maxScale, maxOutOfCanvasRatio } from '../config/artworkEditing'
 import type { Artwork, Layer as ArtworkLayer } from '../types/artwork'
 
 const DEFAULT_STAGE_WIDTH = 600
@@ -28,17 +33,22 @@ function useImage(url: string) {
 
 function LayerImage({
   layer,
+  canvas,
   url,
   stageWidth,
   stageHeight,
+  maxScaleForLayer,
   isSelected,
   onSelect,
   onChangeRect,
 }: {
   layer: ArtworkLayer
+  canvas: Artwork['canvas']
   url: string
   stageWidth: number
   stageHeight: number
+  /** このLayerが2L判(Canvas)に収まる scale の上限。Assetの縦横比ごとに変わる */
+  maxScaleForLayer: number
   isSelected: boolean
   onSelect: () => void
   onChangeRect: (next: Pick<ArtworkLayer, 'x' | 'y' | 'scale'>) => void
@@ -68,15 +78,36 @@ function LayerImage({
         draggable
         onMouseDown={onSelect}
         onTap={onSelect}
+        // ドラッグ中のリアルタイム制限。Layerの四辺が許容範囲（既定ではCanvas内）から
+        // 出ないところで止める。土台へ載らない位置まで動かせてしまうのを防ぐ
+        // （2026-09-04、まなみん指摘）。許容量は config/artworkEditing.ts 側で管理する。
+        dragBoundFunc={(pos) => {
+          // Layerの四辺がCanvasの外へ出ないところで止める（中心ではなく全体で判定）
+          const minLeft = -maxOutOfCanvasRatio * stageWidth
+          const maxLeft = (1 + maxOutOfCanvasRatio) * stageWidth - rect.widthPx
+          const minTop = -maxOutOfCanvasRatio * stageHeight
+          const maxTop = (1 + maxOutOfCanvasRatio) * stageHeight - rect.heightPx
+          return {
+            x: maxLeft < minLeft ? pos.x : Math.min(maxLeft, Math.max(minLeft, pos.x)),
+            y: maxTop < minTop ? pos.y : Math.min(maxTop, Math.max(minTop, pos.y)),
+          }
+        }}
         onDragEnd={(e) => {
-          onChangeRect(
-            fromLayerRectPx(
-              { leftPx: e.target.x(), topPx: e.target.y(), widthPx: rect.widthPx },
-              stageWidth,
-              stageHeight,
-              layer,
-            ),
+          const next = fromLayerRectPx(
+            { leftPx: e.target.x(), topPx: e.target.y(), widthPx: rect.widthPx },
+            stageWidth,
+            stageHeight,
+            layer,
           )
+          // 保存する正規化値の側でも念のため丸める（dragBoundFuncを通らない経路への保険）
+          onChangeRect({
+            ...next,
+            ...clampLayerCenterWithinCanvas(
+              { ...layer, ...next },
+              canvas,
+              maxOutOfCanvasRatio,
+            ),
+          })
         }}
         onTransformEnd={() => {
           const node = shapeRef.current
@@ -90,7 +121,16 @@ function LayerImage({
             stageHeight,
             layer,
           )
-          onChangeRect({ ...next, scale: clampScale(next.scale) })
+          // 拡大縮小の結果、Layerが枠の外へ出ることがあるので位置もあわせて丸める
+          const scale = Math.min(maxScaleForLayer, clampScale(next.scale))
+          onChangeRect({
+            scale,
+            ...clampLayerCenterWithinCanvas(
+              { ...layer, ...next, scale },
+              canvas,
+              maxOutOfCanvasRatio,
+            ),
+          })
         }}
       />
 
@@ -102,8 +142,20 @@ function LayerImage({
     enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
     boundBoxFunc={(oldBox, newBox) => {
       const minWidthPx = minScale * stageWidth
-      const maxWidthPx = maxScale * stageWidth
+      // 幅・高さの両方が2L判(Canvas)に収まる上限。縦長のAssetでは幅の上限より小さくなる
+      const maxWidthPx = maxScaleForLayer * stageWidth
       if (newBox.width < minWidthPx || newBox.width > maxWidthPx) {
+        return oldBox
+      }
+      // 拡大の結果、四辺がCanvasの外へ出る操作は受け付けない
+      const outX = maxOutOfCanvasRatio * stageWidth
+      const outY = maxOutOfCanvasRatio * stageHeight
+      if (
+        newBox.x < -outX ||
+        newBox.y < -outY ||
+        newBox.x + newBox.width > stageWidth + outX ||
+        newBox.y + newBox.height > stageHeight + outY
+      ) {
         return oldBox
       }
       return newBox
@@ -145,16 +197,31 @@ useEffect(() => {
   observer.observe(el)
   return () => observer.disconnect()
 }, [])
+  // Artwork Dataへ書き戻す唯一の入口。どの操作経路から来ても、ここで
+  // scale と 位置(x / y) を許容範囲へ丸めてから保存する
+  // （2026-09-04、まなみん指摘: 際限なく拡大できる／土台外へ動かせるのを防ぐ）。
   const updateLayer = (layerId: string, next: Partial<ArtworkLayer>) => {
     onChange({
       ...artwork,
-      layers: artwork.layers.map((l) => (l.layerId === layerId ? { ...l, ...next } : l)),
+      layers: artwork.layers.map((l) => {
+        if (l.layerId !== layerId) return l
+        const merged = { ...l, ...next }
+        const scale = Math.min(
+          maxScaleWithinCanvas(merged, artwork.canvas, maxScale),
+          clampScale(merged.scale),
+        )
+        return {
+          ...merged,
+          scale,
+          ...clampLayerCenterWithinCanvas(
+            { ...merged, scale },
+            artwork.canvas,
+            maxOutOfCanvasRatio,
+          ),
+        }
+      }),
     })
   }
-
-  
-
-    
 
   return (
 <div ref={containerRef} className="ae-stage" style={{ background: 'var(--editor-bg)', width: '100%', maxWidth: DEFAULT_STAGE_WIDTH }}>
@@ -170,9 +237,11 @@ useEffect(() => {
             <LayerImage
               key={layer.layerId}
               layer={layer}
+              canvas={artwork.canvas}
               url={resolveAssetUrl(assets, layer.asset.assetId)}
               stageWidth={stageWidth}
               stageHeight={stageHeight}
+              maxScaleForLayer={maxScaleWithinCanvas(layer, artwork.canvas, maxScale)}
               isSelected={layer.layerId === selectedId}
               onSelect={() => setSelectedId(layer.layerId)}
               onChangeRect={(next) => updateLayer(layer.layerId, next)}
@@ -180,8 +249,6 @@ useEffect(() => {
           ))}
         </Layer>
       </Stage>
-
-      
     </div>
   )
 }
