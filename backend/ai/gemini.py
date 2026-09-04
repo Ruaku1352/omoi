@@ -212,7 +212,9 @@ class GeminiSemanticPlanner:
                 [prompt, *photo_parts],
                 SemanticPlan,
                 _semantic_plan_schema(
-                    require_semantic_role=self._semantic_profile == "physical_layer_v3_architecture",
+                    require_semantic_role=(
+                        self._semantic_profile == "physical_layer_v3_architecture"
+                    ),
                     require_extraction_plan=self._semantic_profile == "coherent_group_planning",
                 ),
                 self._request_timeout_ms,
