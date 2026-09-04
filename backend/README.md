@@ -34,20 +34,45 @@ curl -F photos=@../contracts/assets/source-p1.jpg -F memoryText=海に行った�
 
 ## API
 
-`POST /api/v1/artworks/generate`（**P0で作るProduct Endpointはこれだけ**）
+`POST /api/v1/artworks/generate`
 
 - Request: `multipart/form-data` — `photos`（複数・可変長）/ `memoryText`（任意）
-- Response: `{"artwork": ..., "assetManifest": ...}`
+- Response: `202 + {"jobId": "..."}`
+- `GET /api/v1/jobs/{jobId}` でPollingし、完了時に `{"artwork": ..., "assetManifest": ...}` を受け取る
   - Schema正本: `/contracts/generate-success-response.schema.json`【FIX】（技術設計 §14.2）
     （`artwork.schema.json` と `asset-manifest.schema.json` を `$ref` するだけの層）
   - 外側のKeyは `artwork` / `assetManifest`。**P0では `data` 等の追加Envelopeを設けない**
 - Error: `/AGENTS.md` §4 の形式
 
-`GET /health` は担当裁量のHealth Check。OpenAPIには載せず、Product API Contractに含めない。
+`POST /api/v1/physical-output/exports`
 
-同期 / 非同期は【PoC後FIX】。まず同期で実装してある。
-代表写真5枚ケースの**実測時間を計測して共有**してから決める。
-それまで Job Store も Polling も作らない。
+- Request: `multipart/form-data`
+  - `artwork`: 確定Artwork Data JSON
+  - `assets`: 現在の `layers[]` が参照するLayer Asset画像。元写真や差し替え候補Assetは任意
+  - `outputFormat`: `stlZip` / `photoPdf` / `photoJpegZip`。未指定時は `stlZip`
+  - `physicalOutputConfig`: 任意JSON。未指定ならBackend側のPoC既定値（rail / 2L Landscape / 4行 x 3穴）
+- Response:
+  - `outputFormat=stlZip`: `application/zip`
+    - `stl/`: 平面パーツSTL + 番号付きスロット土台STL
+    - `physical-output-config.json`: 製造条件
+    - `flat-photo-parts-report.json`: 寸法・警告・組み立て情報
+  - `outputFormat=photoPdf`: `application/pdf`
+    - 2L Landscape（178 x 127mm）写真紙100%印刷用の `flat-photo-print-layout.pdf`
+    - 全面不透明の `layerIndex: 0` 背景は既定で2L全面へcover cropする
+  - `outputFormat=photoJpegZip`: `application/zip`
+    - `photo/`: コンビニ2L写真プリント用の貼り付けレイヤーJPEG一式
+    - 既定は2L Landscape 300dpi（2102 x 1500px）。PDFが普通紙文書扱いになる環境ではこちらを使う
+    - 背景板にも写真を貼るため、2L全面cover背景パネルも含める
+
+このEndpointは2026-09-02時点のPhysical Output PoC候補。入力境界はDrive仕様どおり
+確定Artwork Data + Assetsで、Artwork Dataへmm値を混ぜない。複数成果物を返すため
+STL側ResponseはZIPだが、入力をPortable Artwork Bundle ZIPへ固定しない。SVGはユーザー向け
+主要Downloadにはせず、必要なら開発確認・手修正用の生成物として扱う。
+Layer PNGは生成入力写真とは別制限で検証する。`MAX_PHYSICAL_ASSET_BYTES` と
+`MAX_PHYSICAL_TOTAL_ASSET_BYTES` を使い、Bundle内に元写真が混ざっていても
+現在の `layers[]` が参照するAssetだけをSTL/PDF生成対象にする。
+
+`GET /health` は担当裁量のHealth Check。OpenAPIには載せず、Product API Contractに含めない。
 
 ## 構成
 
@@ -58,13 +83,16 @@ backend/
 │  ├─ config.py             # 環境変数（【PoC後FIX】の値もここへ集約）
 │  ├─ errors.py             # AGENTS.md §4 の Error形式と例外Handler
 │  ├─ api/v1/artworks.py    # POST /api/v1/artworks/generate
+│  ├─ api/v1/physical_output.py
+│  │                        # POST /api/v1/physical-output/exports
 │  ├─ models/               # contracts/ Schema の写像（Pydantic）
 │  │                        #   api.py = GenerateSuccessResponse
 │  └─ services/
 │     ├─ validation.py      # Schemaで表現できない規則の検証
 │     ├─ asset_store.py     # Asset Binary → URL（方式は【未決定】）
 │     ├─ generator.py       # Mock / Real の選択（Fallback経路を作らない）
-│     └─ mock_generator.py  # MOCK_AI=true 用。共通Mockを同じ形式で返す
+│     ├─ mock_generator.py  # MOCK_AI=true 用。共通Mockを同じ形式で返す
+│     └─ physical_output.py # Artwork + Assets → STL ZIP / PDF
 ├─ ai/                      # AI・画像処理Module（**呼び出し境界だけ**）
 │  ├─ types.py              #   InputPhoto / AssetBlob / GenerationResult / Protocol
 │  ├─ errors.py             #   AiError系。HTTP StatusやUI文言はここで決めない
@@ -80,7 +108,7 @@ backend/
   `AssetStore` の別実装へ差し替える。**Asset Manifest の形（API境界）は変えない**
 - `GET /api/v1/assets/{assetId}` は【検討中】。先回りで作らない。
   暫定の静的配信は `/api/v1` 配下に置いていない
-- `GET|PUT /api/v1/artworks/{artworkId}` / finalize / bundle / jobs も作らない。
+- `GET|PUT /api/v1/artworks/{artworkId}` / finalize / bundle も作らない。
   `tests/test_no_extra_endpoints.py` がAPI表面を固定している
 - Real AI失敗時に黙ってMockへ落ちる経路を作らない。`MOCK_AI` は明示Modeのみ。
   Mockの実装は Backend側（`app/services/mock_generator.py`）に置き、`ai/` は境界だけに保つ
