@@ -209,7 +209,8 @@ Prefix: `/api/v1`
   - `outputFormat=photoPdf`: `application/pdf`
     - 写真紙100%印刷用PDF
   - `outputFormat=photoJpegZip`: `application/zip`
-    - コンビニ2L写真プリントへ渡すためのJPEG一式、設定、レポート
+    - コンビニ2L写真プリントへ渡すための貼り付け用レイヤーJPEG一式、設定、レポート
+    - 2L全面cover背景パネルは含めず、切り取って貼る前景レイヤーだけを含める
 - Artwork Dataへmm値を混ぜない。製造条件はPhysicalOutputConfigへ分離する
 - STL Responseは複数成果物を束ねるためZIPだが、入力をPortable Artwork Bundle ZIPへ固定しない
 - SVGはユーザー向け主要Downloadにしない。必要なら開発確認・手修正用の生成物として扱う
