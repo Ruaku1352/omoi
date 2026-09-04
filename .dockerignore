@@ -37,7 +37,8 @@ Thumbs.db
 # 実行時に不要（イメージサイズ削減）
 docs/
 skills/
-scripts/
+scripts/*
+!scripts/flat_photo_parts_poc.py
 README.md
 AGENTS.md
 CLAUDE.md
