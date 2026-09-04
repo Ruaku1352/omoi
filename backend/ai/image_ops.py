@@ -7,6 +7,7 @@ from io import BytesIO
 
 import numpy as np
 from PIL import Image, ImageOps
+from scipy.ndimage import binary_fill_holes
 
 from ai.errors import AiError
 from ai.internal_models import Box2D
@@ -106,34 +107,8 @@ def fill_closed_mask_holes(mask: np.ndarray) -> np.ndarray:
     if not result.size:
         return result
 
-    height, width = result.shape
-    exterior = np.zeros_like(result, dtype=bool)
-    pending: list[int] = []
-
-    def mark_exterior(y: int, x: int) -> None:
-        if not result[y, x] and not exterior[y, x]:
-            exterior[y, x] = True
-            pending.append(y * width + x)
-
-    for x in range(width):
-        mark_exterior(0, x)
-        mark_exterior(height - 1, x)
-    for y in range(1, height - 1):
-        mark_exterior(y, 0)
-        mark_exterior(y, width - 1)
-
-    while pending:
-        y, x = divmod(pending.pop(), width)
-        for delta_y in (-1, 0, 1):
-            for delta_x in (-1, 0, 1):
-                if delta_y == 0 and delta_x == 0:
-                    continue
-                next_y = y + delta_y
-                next_x = x + delta_x
-                if 0 <= next_y < height and 0 <= next_x < width:
-                    mark_exterior(next_y, next_x)
-
-    return np.logical_or(result, ~exterior)
+    # `structure=3x3` は従来の8近傍flood fillと同じ接続性で外周背景を判定する。
+    return np.asarray(binary_fill_holes(result, structure=np.ones((3, 3), dtype=bool)), dtype=bool)
 
 
 def _binary_dilate(mask: np.ndarray, radius: int) -> np.ndarray:

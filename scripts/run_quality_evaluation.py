@@ -65,6 +65,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--photos-dir", type=Path, default=REPO_ROOT / "poc-images")
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "poc-output")
+    parser.add_argument("--case-id")
     parser.add_argument("--profile", choices=SUPPORTED_PROFILES, action="append")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--max-e2e-runs", type=int, default=24)
@@ -164,6 +165,11 @@ def memory_text_hash(memory_text: str) -> str:
 
 async def run(args: argparse.Namespace) -> int:
     cases = load_dataset(args.dataset)
+    case_id = getattr(args, "case_id", None)
+    if case_id is not None:
+        cases = tuple(case for case in cases if case.case_id == case_id)
+        if not cases:
+            raise ValueError("--case-idに一致するdataset caseがありません")
     profiles = tuple(args.profile or DEFAULT_PROFILES)
     run_plan = build_run_plan(cases, profiles, args.max_e2e_runs, args.repeat)
     if args.preview_width_px <= 0:

@@ -2168,3 +2168,17 @@ retry上限後の同一通常Profile再試行でも、1件目が5分を超えて
 P2の固定Saved Plan Tier A（5 / 5 binary Mask一致、45.21%短縮）は有効なままである。一方、full E2Eの4 Layer / Contract /
 current品質規則 / 2分SLOは未確認のままなので、Speed PRを完了扱いにしない。品質フェーズ**97%**、速度改善フェーズ
 **80%**を維持する。AC sleep設定は各停止後に3600秒へ復帰した。
+
+### 8.75 P2 + SciPy後処理最適化 — 5写真Real E2Eを65.82秒で達成（2026-09-04）
+
+full-resolutionのclosed-hole fillとmicro-island cleanup／diagnosticsにあったPython連結成分探索を、同じ8近傍接続性の
+SciPy実装へ置換した。private raw Mask 7枚のclosed-hole fillは各5回で、旧中央値136,833.68 msから
+**1,576.60 ms（86.79倍）**へ短縮し、全output hashは完全一致した。候補数、Prompt、bbox、retry、Quality Gate、
+closed-hole fill／micro-island cleanupの規則、Composition、Contractは変更していない。backend正規testは**84 passed**、
+Contract validationと`git diff --check`もpassした。
+
+同じ再起動後AC給電・sleep無効条件で、`gemini-3.5-flash-lite`／`physical_layer_v2`／P2 split ONNXの代表5写真caseを
+Real E2Eした。**4 Layer**、Contract validation成功、total **65,816.47 ms（65.82秒）**、Semantic 28,332.28 ms、
+Composition 7,960.68 ms、12 candidateで成功した。private artifactは
+`poc-output/performance-optimization-p2-scipy-real-e2e-3-20260904/`に保存し、AC sleepは3600秒へ復帰した。
+品質フェーズ**97%**、速度改善フェーズ**100%**とする。

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.ndimage import label as connected_component_labels
 
 from ai.image_ops import BoxPx
 
@@ -171,18 +172,35 @@ def diagnose_mask(mask: np.ndarray, *, max_side: int) -> MaskDiagnostics:
         raise ValueError("max_side must be positive")
     scale = max(1, (max(mask.shape) + max_side - 1) // max_side)
     sampled = np.asarray(mask[::scale, ::scale], dtype=bool)
-    areas = _component_areas(sampled)
+    labels, _ = connected_component_labels(sampled, structure=np.ones((3, 3), dtype=bool))
+    areas = np.bincount(labels.ravel())[1:].tolist()
     foreground = sum(areas)
     ratios = tuple(sorted((area / foreground for area in areas), reverse=True))
     top = ratios[:5]
-    holes = _interior_holes(sampled)
-    hole_pixels = sum(hole.shape[0] for hole in holes)
+    background_labels, background_count = connected_component_labels(
+        np.logical_not(sampled), structure=np.ones((3, 3), dtype=bool)
+    )
+    background_areas = np.bincount(background_labels.ravel(), minlength=background_count + 1)
+    border_labels = np.unique(
+        np.concatenate(
+            (
+                background_labels[0],
+                background_labels[-1],
+                background_labels[:, 0],
+                background_labels[:, -1],
+            )
+        )
+    )
+    hole_labels = np.setdiff1d(
+        np.arange(1, background_count + 1), border_labels, assume_unique=False
+    )
+    hole_pixels = int(background_areas[hole_labels].sum())
     return MaskDiagnostics(
         component_count=len(ratios),
         largest_component_ratio=top[0] if top else 0,
         top_component_area_ratios=top,
         tail_component_area_ratio=float(sum(ratios[5:])),
-        interior_hole_count=len(holes),
+        interior_hole_count=len(hole_labels),
         interior_hole_area_ratio=hole_pixels / foreground,
         analysis_scale=scale,
     )
@@ -201,26 +219,28 @@ def clean_micro_islands(mask: np.ndarray, *, max_removed_area_ratio: float) -> M
     if mask.ndim != 2 or not mask.size or not mask.any():
         return MicroIslandCleanup(mask, 0, 0, 0, False)
 
-    components = _connected_components(mask)
-    foreground = sum(component.shape[0] for component in components)
-    largest = max(components, key=lambda component: component.shape[0])
-    largest_area = largest.shape[0]
+    labels, component_count = connected_component_labels(
+        np.asarray(mask, dtype=bool), structure=np.ones((3, 3), dtype=bool)
+    )
+    areas = np.bincount(labels.ravel())[1:]
+    foreground = int(areas.sum())
+    largest_label = int(np.argmax(areas)) + 1
+    largest_area = int(areas[largest_label - 1])
     removed_area_ratio = (foreground - largest_area) / foreground
-    if len(components) == 1:
+    if component_count == 1:
         return MicroIslandCleanup(mask, 1, 1, 0, False)
     if removed_area_ratio > max_removed_area_ratio:
         return MicroIslandCleanup(
             mask,
-            len(components),
+            component_count,
             largest_area / foreground,
             removed_area_ratio,
             False,
         )
-    cleaned = np.zeros_like(mask, dtype=bool)
-    cleaned[largest[:, 0], largest[:, 1]] = True
+    cleaned = labels == largest_label
     return MicroIslandCleanup(
         cleaned,
-        len(components),
+        component_count,
         largest_area / foreground,
         removed_area_ratio,
         True,

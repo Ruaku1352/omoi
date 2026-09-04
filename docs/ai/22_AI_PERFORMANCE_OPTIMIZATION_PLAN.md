@@ -1223,3 +1223,11 @@ full-resolution closed-hole fillを同一8近傍出力のまま高速化する�
 5回比較の完走前に改善傾向を示さず中止した。依存追加は行わず、このPoCの実装・benchmark script・testは撤回した。
 P2の固定Saved Plan結果（5 / 5 Tier A binary Mask一致、17,170.49 ms→9,408.28 ms、45.21%短縮）は有効なままとする。
 AC sleep設定は各計測停止後に3600秒へ戻した。品質フェーズ**97%**、速度改善フェーズ**80%**を維持する。
+
+### 24.7 SciPy 8近傍後処理最適化とReal E2E達成（2026-09-04）
+
+SciPy 1.18.1を追加し、closed-hole fill、micro-island cleanup、diagnosticsのfull-resolution連結成分処理を従来と同じ
+8近傍接続性へ置換した。private raw Mask 7枚を5回比較し、closed-hole fillは136,833.68 ms→**1,576.60 ms**、
+**86.79倍**短縮、output hash完全一致だった。P2 split ONNXを含む代表5写真のReal E2Eは
+`gemini-3.5-flash-lite`／`physical_layer_v2`で**4 Layer**、Contract成功、total **65.82秒**（Semantic 28.33秒、
+Composition 7.96秒）となり、2分SLOを満たした。品質97%／速度改善**100%**。
