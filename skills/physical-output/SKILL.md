@@ -23,8 +23,9 @@ FastAPI側に `POST /api/v1/physical-output/exports` をPoC候補として置く
 （rail / rail支え10mm / 2L Landscape / 4行 x 3穴）を使う。
 ユーザー向け出力は `outputFormat=stlZip` で3Dプリンター用STL ZIP、
 `outputFormat=photoPdf` で2L Landscape（178 x 127mm）写真紙100%印刷用PDF、
-`outputFormat=photoJpegZip` でコンビニ2L写真プリント用JPEG ZIPへ分ける。SVGは主要Downloadにせず、
+`outputFormat=photoJpegZip` でコンビニ2L写真プリント用の貼り付けレイヤーJPEG ZIPへ分ける。SVGは主要Downloadにせず、
 必要なら開発確認・手修正用の生成物として扱う。
+`photoJpegZip` には2L全面cover背景パネルを含めず、切り取ってパーツへ貼る前景レイヤーだけを含める。
 
 ## 入力境界【FIX】
 確定Artwork Data + Assets。実行場所が変わってもこの境界は維持する。

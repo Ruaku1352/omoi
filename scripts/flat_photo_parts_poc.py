@@ -2946,6 +2946,8 @@ def _write_photo_jpeg_pages(
     dpi = round(config.print_layout_dpi)
 
     for part, canvas in zip(parts, canvases):
+        if _is_photo_jpeg_background_part(part):
+            continue
         filename = f"photo-2l-layer-{part['layerIndex']}-{_slug(part['layerId'])}.jpg"
         path = out_dir / filename
         canvas.save(
@@ -2958,6 +2960,11 @@ def _write_photo_jpeg_pages(
         outputs.append(path)
 
     return outputs
+
+
+def _is_photo_jpeg_background_part(part: dict) -> bool:
+    background_fill = part.get("backgroundFill") or {}
+    return part.get("layerIndex") == 0 or background_fill.get("mode") == "cover-2l"
 
 
 def _selected_layers(artwork: dict, layer_ids: set[str], include_background: bool) -> list[dict]:

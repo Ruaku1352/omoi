@@ -60,8 +60,9 @@ curl -F photos=@../contracts/assets/source-p1.jpg -F memoryText=海に行った�
     - 2L Landscape（178 x 127mm）写真紙100%印刷用の `flat-photo-print-layout.pdf`
     - 全面不透明の `layerIndex: 0` 背景は既定で2L全面へcover cropする
   - `outputFormat=photoJpegZip`: `application/zip`
-    - `photo/`: コンビニ2L写真プリント用のJPEG一式
+    - `photo/`: コンビニ2L写真プリント用の貼り付けレイヤーJPEG一式
     - 既定は2L Landscape 300dpi（2102 x 1500px）。PDFが普通紙文書扱いになる環境ではこちらを使う
+    - 2L全面cover背景パネルは含めず、切り取って貼る前景レイヤーだけを含める
 
 このEndpointは2026-09-02時点のPhysical Output PoC候補。入力境界はDrive仕様どおり
 確定Artwork Data + Assetsで、Artwork Dataへmm値を混ぜない。複数成果物を返すため
