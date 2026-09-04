@@ -2188,3 +2188,25 @@ Composition 7,960.68 ms、12 candidateで成功した。private artifactは
 人間確認用にprivate datasetの3 caseを2回ずつ、`gemini-3.5-flash-lite`、`physical_layer_v2`、P2 split ONNX、
 SciPy後処理で実行した。6 run中**5成功／1失敗**であり、成功した5件だけのcomposition previewとArtwork / debug artifactを
 `poc-output/accuracy-validation-five-patterns-20260904/`へ保存した。失敗runを成功証跡へ混ぜず、previewの人間レビューを依頼する。
+
+### 8.77 Cloud Run Structured Output — scene_anchor metadataのcanonicalizationとJob終端化（2026-09-04）
+
+Cloud RunへPR #10まで反映したReal生成で、Gemini Structured OutputのHTTP 200後に、`kind=scene_anchor`の
+candidateへsubject専用の`semantic_role`（`architecture_primary` / `architecture_detail`を含む）や
+`extraction_intent`（`single_form` / `coherent_group`を含む）が付くと、`SemanticPlan`のPydantic validationが
+失敗することを確認した。従来のcanonicalizationは旧Saved Planの`general` / `scene_anchor`組だけしか除去しなかったため、
+Gemini由来の他の値がそのまま後段の「scene_anchor must not have subject metadata」へ到達していた。
+
+`kind=scene_anchor`の場合は値にかかわらず`semantic_role`と`extraction_intent`を受信時に削除し、scene anchorの唯一の
+種別情報を`kind`として維持するよう修正した。scene anchorのcomponent数、bboxの正当性、subjectのmetadata要件は緩めていない。
+Semantic Promptの`physical_layer_v2`、`physical_layer_v3_architecture`、`coherent_group_planning`にも、scene_anchorは
+exactly one broad rectangular componentであり、subject-only metadataを付けないことを明示した。Structured Output schemaへ
+複雑なconditional / `oneOf`は追加せず、Gemini Structured Outputの互換性を保ちながら、Promptとcanonicalizationを二重の
+防御線とした。
+
+同時に、AI内部のPydantic `ValidationError`がrawのまま`generate_and_publish`、`JobRunner`、Cloud Tasks endpointを
+すり抜けると、retry尽き後もJobが`processing/analyzing`に残る経路を確認した。AI Structured Outputのvalidation失敗は
+再送で解消しないため、既存`AI_FAILED`（`retryable=false`）へ正規化し、Cloud Tasks経路でも即`failed`へ確定するようにした。
+retryableなtimeout / rate limitの既存retry設計、stage timing、candidate数、Promptの候補選定思想、Segmentation、
+closed-hole fill、micro-island cleanup、Composition、Contractは変更していない。private画像・memoryText・API Keyを使う
+Real再実行はこの修正では行っていない。
