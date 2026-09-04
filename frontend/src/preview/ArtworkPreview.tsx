@@ -13,6 +13,7 @@ import {
 import type { Artwork, Layer } from '../types/artwork'
 import iconRotate from '../assets/icon-rotate.svg'
 import './ArtworkPreview.css'
+import PhysicalBase from './PhysicalBase'
 
 function LayerPlane({
   layer,
@@ -68,6 +69,7 @@ export default function ArtworkPreview({
       <div className="preview3d-canvas">
         <Canvas camera={{ position: [0, 0, 1.0] }}>
           <OrbitControls ref={controlsRef} makeDefault />
+          <PhysicalBase artwork={artwork} />
           <Suspense fallback={null}>
             {layers.map((layer) => (
               <LayerPlane

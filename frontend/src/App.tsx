@@ -11,6 +11,8 @@ import GeneratingScreen from './screens/GeneratingScreen'
 import DoneScreen from './screens/DoneScreen'
 import ErrorBoundary from './components/ErrorBoundary'
 import type { JobStage } from './types/job'
+import type { AssetRef } from './types/artwork'
+import type { AssetManifestEntry } from './types/assetManifest'
 export type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
 
 /**
@@ -33,26 +35,48 @@ const [stage, setStage] = useState<JobStage | undefined>(undefined)
       <Navbar />
       {error && <p className="app-error">{error}</p>}
 {(screen === 'select' || screen === 'generating') && <Breadcrumb current={screen} />}
+      <div className="sample-load">
       <button
   type="button"
   className="debug-load-btn"
   onClick={async () => {
-    const base = 'http://localhost:8000'
-    const res = await fetch(`${base}/generate-success-response.bundle.json`)
-    const data = await res.json()
-    const manifest = {
-      assets: data.assetManifest.assets.map((a: { url: string }) => ({
-        ...a,
-        url: `${base}/${a.url}`,
-      })),
+    // `public/demo/artwork.json` + `public/demo/assets/<assetId>.<ext>` を読む。
+    // Vite が public/ 配下を自動配信してくれるので、ローカルサーバー起動は不要。
+    const res = await fetch('/demo/artwork.json')
+    const demoArtwork = await res.json()
+    const extByMime: Record<string, string> = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/webp': 'webp',
     }
-    setArtwork(data.artwork)
-    setManifest(manifest)
+    const assets: AssetManifestEntry[] = []
+    const addAsset = (asset: AssetRef) => {
+      const ext = extByMime[asset.mimeType] ?? 'png'
+      assets.push({ ...asset, url: `/demo/assets/${asset.assetId}.${ext}` })
+    }
+    for (const layer of demoArtwork.layers) {
+      addAsset(layer.asset)
+      for (const candidate of layer.replacementCandidates ?? []) addAsset(candidate.asset)
+    }
+    // 実際の生成フローと同じくローディング画面を経由させる（レイアウト確認・デモ用）。
+    setError(null)
+    setScreen('generating')
+    const demoStages: JobStage[] = ['analyzing', 'extracting', 'composing', 'finalizing']
+    for (const s of demoStages) {
+      setStage(s)
+      await new Promise((resolve) => setTimeout(resolve, 2500)) // 4段階 × 2.5秒 = 合計10秒
+    }
+    setArtwork(demoArtwork)
+    setManifest({ assets })
     setScreen('preview')
   }}
 >
-  実データを読む（デバッグ用）
+  サンプル作品を見る
 </button>
+      <p className="sample-load-note">
+        ※このボタンはAIによるリアルタイム生成ではなく、事前に生成したサンプル作品を表示します
+      </p>
+      </div>
       {screen ==='select' &&(
        <PhotoSelect
         onGenerated={(nextArtwork, nextManifest) => {
@@ -62,7 +86,7 @@ const [stage, setStage] = useState<JobStage | undefined>(undefined)
         }}
          onStart={() => { setError(null); setStage(undefined); setScreen('generating') }}
          onProgress={(next) => setStage(next.stage)}
-  onFailed={(message) => setError(message)}
+  onFailed={(message) => { setError(message); setScreen('select') }}
       />)}
       {screen === 'generating' && <GeneratingScreen stage={stage} />}
 <ErrorBoundary

@@ -4,14 +4,18 @@
   padding: 0;   
 }
 
-.app h1 {
-  margin: 0 0 0.25rem;
-  font-size: 2rem;
+
+.sample-load {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.app h2 {
-  font-size: 1.1rem;
-  margin: 2.5rem 0 0.75rem;
+.sample-load-note {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.6;
 }
 
 .tagline {

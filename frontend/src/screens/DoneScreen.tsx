@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import Breadcrumb from '../components/Breadcrumb'
 import ArtworkPreview from '../preview/ArtworkPreview'
-import { downloadArtworkBundle } from '../bundle/artworkBundle'
+import { exportPhysicalOutput } from '../api/exportPhysicalOutput'
+import { ApiError } from '../api/errors'
 import type { AssetIndex } from '../artwork/assetIndex'
 import type { Artwork } from '../types/artwork'
 import type { Screen } from '../App'
@@ -15,9 +16,22 @@ type Props = {
 
 type ExportStatus = 'idle' | 'building' | 'done' | 'error'
 
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
   const [stlStatus, setStlStatus] = useState<ExportStatus>('idle')
+  const [stlError, setStlError] = useState<string | null>(null)
   const [pdfStatus, setPdfStatus] = useState<ExportStatus>('idle')
+  const [pdfError, setPdfError] = useState<string | null>(null)
 
   const today = new Date().toLocaleDateString('ja-JP', {
     year: 'numeric',
@@ -26,41 +40,37 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
   })
 
   // 3Dプリンター用データ出力(STL一式ZIP)
-  // 仮実装: 本来はBackend/物理出力側でSTLを生成する想定。
-  // 現状は既存のPortable Artwork Bundle(artwork.json + assets/)を流用してダウンロードしている。
-  // TODO: ナンちゃんとエンドポイント確定後、実際のSTL生成APIに差し替える
+  // Backend(Physical Output)側の POST /api/v1/physical-output/exports を叩く。
+  // STL生成ロジック自体はBackend側の責務。Frontendは確定Artwork + 参照Assetを渡し、
+  // 返ってきたZIPをダウンロードさせるだけ（印藤さん共有分、#大阪_team-g）。
   const handleExportStl = async () => {
     setStlStatus('building')
+    setStlError(null)
     try {
-      await downloadArtworkBundle(artwork, assets)
+      const { blob, fileName } = await exportPhysicalOutput(artwork, assets, 'stlZip')
+      downloadBlob(blob, fileName)
       setStlStatus('done')
     } catch (e) {
+      setStlError(
+        e instanceof ApiError ? e.message : '3Dデータの出力に失敗しました。もう一度お試しください。',
+      )
       setStlStatus('error')
     }
   }
 
-  // 写真貼り付け用PDF出力(100%印刷用PDF)
-  // 仮実装: 実際のPDF生成APIが未確定のためダミー処理。
-  // TODO: エンドポイント確定後、fetch先を実際のAPIに差し替える
+  // 写真貼り付け用PDF出力
+  // 同じくBackend側の POST /api/v1/physical-output/exports を叩く（outputFormat: "photoPdf"）。
   const handleExportPdf = async () => {
     setPdfStatus('building')
+    setPdfError(null)
     try {
-      // TODO: 仮のエンドポイント。実際のパスが決まり次第差し替え
-      const res = await fetch('/api/v1/artworks/export/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ artwork }),
-      })
-      if (!res.ok) throw new Error('PDF export failed')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'omoi-print.pdf'
-      a.click()
-      URL.revokeObjectURL(url)
+      const { blob, fileName } = await exportPhysicalOutput(artwork, assets, 'photoPdf')
+      downloadBlob(blob, fileName)
       setPdfStatus('done')
     } catch (e) {
+      setPdfError(
+        e instanceof ApiError ? e.message : 'PDFの出力に失敗しました。もう一度お試しください。',
+      )
       setPdfStatus('error')
     }
   }
@@ -96,13 +106,17 @@ export default function DoneScreen({ artwork, assets, onSelectScreen }: Props) {
                 <p className="done-note">3Dプリンター用データをダウンロードしました！</p>
               )}
               {stlStatus === 'error' && (
-                <p className="done-note">3Dデータの出力に失敗しました。もう一度お試しください。</p>
+                <p className="done-note">
+                  {stlError ?? '3Dデータの出力に失敗しました。もう一度お試しください。'}
+                </p>
               )}
               {pdfStatus === 'done' && (
                 <p className="done-note">印刷用PDFをダウンロードしました！</p>
               )}
               {pdfStatus === 'error' && (
-                <p className="done-note">PDFの出力に失敗しました。もう一度お試しください。</p>
+                <p className="done-note">
+                  {pdfError ?? 'PDFの出力に失敗しました。もう一度お試しください。'}
+                </p>
               )}
             </div>
 

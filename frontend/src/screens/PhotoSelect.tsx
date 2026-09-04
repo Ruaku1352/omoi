@@ -1,15 +1,82 @@
 import { useEffect, useMemo, useState } from 'react'
+import heic2any from 'heic2any'
 import { ApiError } from '../api/errors'
 import { generateArtwork } from '../api/generateArtwork'
 import type { Artwork } from '../types/artwork'
 import type { AssetManifest } from '../types/assetManifest'
 import type { JobStage } from '../types/job'
-import { resizeImage } from '../image/resizeImage'
 import iconUpload from '../assets/icon-upload.svg'
 import iconCompose from '../assets/icon-compose.svg'
 import iconLayer from '../assets/icon-layer.svg'
 import iconRemove from '../assets/icon-remove.svg'
 import './PhotoSelect.css'
+
+// iPhone由来のHEIC/HEIFはブラウザによって<img>で表示できない（Android/Windows等）ため、
+// 選択直後にJPEGへ変換してから扱う。バックエンドの受け付け基準（JPEG/PNG/WebP）にも合わせる。
+const isHeic = (file: File) => {
+  const type = file.type.toLowerCase()
+  const name = file.name.toLowerCase()
+  return type === 'image/heic' || type === 'image/heif' || name.endsWith('.heic') || name.endsWith('.heif')
+}
+
+const isImageFile = (file: File) => file.type.startsWith('image/') || isHeic(file)
+
+const convertHeicIfNeeded = async (file: File): Promise<File> => {
+  if (!isHeic(file)) return file
+  try {
+    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
+    const blob = Array.isArray(converted) ? converted[0] : converted
+    const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg')
+    return new File([blob], newName, { type: 'image/jpeg' })
+  } catch (e) {
+    console.error('HEIC変換に失敗しました:', file.name, e)
+    return file
+  }
+}
+
+// スマホの写真（特にHEICから変換した直後のもの）はそのまま送るとCloud Runの
+// リクエストサイズ上限（32MB・固定）に引っかかることがあるため、最長辺を
+// MAX_DIMENSION に収まるまで縮小し、JPEGへ再圧縮してからアップロードする。
+const MAX_DIMENSION = 2048
+const JPEG_QUALITY = 0.85
+
+const resizeIfNeeded = async (file: File): Promise<File> => {
+  try {
+    const bitmap = await createImageBitmap(file)
+    const { width, height } = bitmap
+    if (width <= MAX_DIMENSION && height <= MAX_DIMENSION) {
+      bitmap.close()
+      return file
+    }
+    const scale = MAX_DIMENSION / Math.max(width, height)
+    const targetWidth = Math.round(width * scale)
+    const targetHeight = Math.round(height * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      bitmap.close()
+      return file
+    }
+    ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight)
+    bitmap.close()
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
+    )
+    if (!blob) return file
+    const newName = file.name.replace(/\.\w+$/, '.jpg')
+    return new File([blob], newName, { type: 'image/jpeg' })
+  } catch (e) {
+    console.error('画像の圧縮に失敗しました:', file.name, e)
+    return file
+  }
+}
+
+const prepareForUpload = async (file: File): Promise<File> => {
+  const displayable = await convertHeicIfNeeded(file)
+  return resizeIfNeeded(displayable)
+}
 
 export default function PhotoSelect({
   onGenerated,
@@ -25,6 +92,7 @@ export default function PhotoSelect({
   const [photos, setPhotos] = useState<File[]>([])
   const [memoryText, setMemoryText] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [isConverting, setIsConverting] = useState(false)
 
   const previews = useMemo(() => photos.map((file) => URL.createObjectURL(file)), [photos])
 
@@ -38,24 +106,22 @@ export default function PhotoSelect({
     setPhotos(photos.filter((_, i) => i !== index))
   }
 
-  const addPhotos = (files: FileList | File[]) => {
-    const added = Array.from(files).filter((f) => f.type.startsWith('image/'))
-    setPhotos((prev) => [...prev, ...added].slice(0, 10))
+  const addPhotos = async (files: FileList | File[]) => {
+    const incoming = Array.from(files).filter(isImageFile)
+    if (incoming.length === 0) return
+    setIsConverting(true)
+    try {
+      const prepared = await Promise.all(incoming.map(prepareForUpload))
+      setPhotos((prev) => [...prev, ...prepared].slice(0, 10))
+    } finally {
+      setIsConverting(false)
+    }
   }
 
   const handleGenerate = async () => {
     onStart()
     try {
-      const uploads = await Promise.all(
-        photos.map(async (file) => {
-          try {
-            return await resizeImage(file)
-          } catch {
-            return file
-          }
-        }),
-      )
-      const result = await generateArtwork({ photos: uploads, memoryText, onProgress })
+      const result = await generateArtwork({ photos, memoryText, onProgress })
       onGenerated(result.artwork, result.assetManifest)
     } catch (e) {
       onFailed(e instanceof ApiError ? e.message : '通信に失敗しました。')
@@ -119,7 +185,11 @@ export default function PhotoSelect({
           />
           <label htmlFor="photo-input" className={hasPhotos ? 's01-btn s01-btn-more' : 's01-btn'}>
             <img src={iconUpload} alt="" />
-            {hasPhotos ? '写真をドラッグしてアップロード' : '写真をドロップ、または選ぶ'}
+            {isConverting
+              ? '変換中…'
+              : hasPhotos
+                ? '写真をドラッグしてアップロード'
+                : '写真をドロップ、または選ぶ'}
           </label>
         </div>
 
