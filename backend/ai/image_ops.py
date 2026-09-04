@@ -7,6 +7,7 @@ from io import BytesIO
 
 import numpy as np
 from PIL import Image, ImageOps
+from scipy.ndimage import binary_fill_holes
 
 from ai.errors import AiError
 from ai.internal_models import Box2D
@@ -71,6 +72,69 @@ def union_masks(masks: list[np.ndarray]) -> np.ndarray:
     if len(shape) != 2 or any(mask.shape != shape for mask in masks):
         raise AiError("Maskのshapeが一致しません")
     return np.logical_or.reduce(masks).astype(bool, copy=False)
+
+
+def close_narrow_mask_gaps(mask: np.ndarray, *, max_gap_px: int) -> np.ndarray:
+    """Mask内外の細い透明な隙間を、機械的なclosingで閉じる。
+
+    ``max_gap_px`` は閉じる透明領域の最大幅である。0なら入力を変えない。
+    元写真の意味を解釈せず、Mask形状だけを処理する。呼び出し側が対象candidateを
+    制限し、PoCで背景混入や過剰な橋渡しがないことを確認してから採用する。
+    """
+
+    if max_gap_px < 0:
+        raise ValueError("max_gap_px must be non-negative")
+    if mask.ndim != 2:
+        raise AiError("Maskは2次元である必要があります")
+    result = np.asarray(mask, dtype=bool)
+    if max_gap_px == 0 or not result.size:
+        return result
+    radius = (max_gap_px + 1) // 2
+    return _binary_erode(_binary_dilate(result, radius), radius)
+
+
+def fill_closed_mask_holes(mask: np.ndarray) -> np.ndarray:
+    """外側の背景とつながらないMask内の透明な穴をすべて埋める。
+
+    窓や建築の開口部を含め、画像端の背景へ到達できない透明領域だけを
+    foregroundへ変える。外部に開いた隙間やMask間の空間は変えないため、
+    対象同士を橋渡しして結合する処理ではない。
+    """
+
+    if mask.ndim != 2:
+        raise AiError("Maskは2次元である必要があります")
+    result = np.asarray(mask, dtype=bool)
+    if not result.size:
+        return result
+
+    # `structure=3x3` は従来の8近傍flood fillと同じ接続性で外周背景を判定する。
+    return np.asarray(binary_fill_holes(result, structure=np.ones((3, 3), dtype=bool)), dtype=bool)
+
+
+def _binary_dilate(mask: np.ndarray, radius: int) -> np.ndarray:
+    height, width = mask.shape
+    padded = np.pad(mask, radius, mode="constant", constant_values=False)
+    result = np.zeros_like(mask, dtype=bool)
+    for delta_y in range(-radius, radius + 1):
+        for delta_x in range(-radius, radius + 1):
+            result |= padded[
+                radius + delta_y : radius + delta_y + height,
+                radius + delta_x : radius + delta_x + width,
+            ]
+    return result
+
+
+def _binary_erode(mask: np.ndarray, radius: int) -> np.ndarray:
+    height, width = mask.shape
+    padded = np.pad(mask, radius, mode="constant", constant_values=False)
+    result = np.ones_like(mask, dtype=bool)
+    for delta_y in range(-radius, radius + 1):
+        for delta_x in range(-radius, radius + 1):
+            result &= padded[
+                radius + delta_y : radius + delta_y + height,
+                radius + delta_x : radius + delta_x + width,
+            ]
+    return result
 
 
 def mask_to_rgba_png(

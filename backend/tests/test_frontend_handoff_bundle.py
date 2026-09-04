@@ -40,8 +40,7 @@ def _validator() -> jsonschema.Draft202012Validator:
         "generate-success-response.schema.json",
     )
     schemas = {
-        name: json.loads((CONTRACTS_DIR / name).read_text(encoding="utf-8"))
-        for name in names
+        name: json.loads((CONTRACTS_DIR / name).read_text(encoding="utf-8")) for name in names
     }
     registry = Registry().with_resources(
         (schema["$id"], Resource.from_contents(schema)) for schema in schemas.values()
@@ -67,9 +66,7 @@ def _mock_artwork_and_assets() -> tuple[Artwork, list[AssetBlob]]:
             width_px=entry["widthPx"],
             height_px=entry["heightPx"],
             data=(
-                CONTRACTS_DIR
-                / "assets"
-                / f"{entry['assetId']}.{extension[entry['mimeType']]}"
+                CONTRACTS_DIR / "assets" / f"{entry['assetId']}.{extension[entry['mimeType']]}"
             ).read_bytes(),
         )
         for entry in manifest["assets"]
@@ -178,9 +175,7 @@ def test_writer_creates_complete_api_and_local_bundle(tmp_path: Path) -> None:
         for entry in api_response["assetManifest"]["assets"]
     )
     assert all(
-        entry["url"].startswith("assets/")
-        and ".." not in entry["url"]
-        and "\\" not in entry["url"]
+        entry["url"].startswith("assets/") and ".." not in entry["url"] and "\\" not in entry["url"]
         for entry in bundle_response["assetManifest"]["assets"]
     )
     for entry in bundle_response["assetManifest"]["assets"]:
@@ -212,13 +207,65 @@ def test_debug_observer_writes_real_bbox_and_mask_previews(tmp_path: Path) -> No
     assert (tmp_path / "debug" / "bbox" / "source-01-bbox.png").is_file()
     assert (tmp_path / "debug" / "bbox" / "index.json").is_file()
     assert (tmp_path / "debug" / "masks" / "mask-001.png").is_file()
+    assert (tmp_path / "debug" / "masks" / "mask-001-preview.png").is_file()
     assert (tmp_path / "debug" / "masks" / "index.json").is_file()
     index_path = tmp_path / "debug" / "masks" / "index.json"
     attempts = json.loads(index_path.read_text(encoding="utf-8"))["attempts"]
     assert attempts[0]["diagnostics"]["componentCount"] == 1
-    assert "memoryTextと一致" in (tmp_path / "debug" / "summary.md").read_text(
-        encoding="utf-8"
+    assert attempts[0]["file"] == "mask-001.png"
+    assert attempts[0]["previewFile"] == "mask-001-preview.png"
+    with Image.open(tmp_path / "debug" / "masks" / attempts[0]["file"]) as saved_mask:
+        assert saved_mask.size == (100, 80)
+    assert "memoryTextと一致" in (tmp_path / "debug" / "summary.md").read_text(encoding="utf-8")
+
+
+def test_debug_observer_records_raw_and_normalized_mask_pair(tmp_path: Path) -> None:
+    module = _module()
+    plan = _write_observer_evidence(module, tmp_path / "plan")
+    observer = module.PocDebugObserver(tmp_path / "pair-debug")
+    image = Image.new("RGB", (100, 80), "white")
+    raw_mask = np.zeros((80, 100), dtype=bool)
+    raw_mask[20:60, 10:90] = True
+    raw_mask[35:37, 45:47] = False
+    normalized_mask = raw_mask.copy()
+    normalized_mask[35:37, 45:47] = True
+    component = plan.candidates[0].components[0]
+    raw = SegmentationResult(raw_mask, 0.9, (10, 16, 90, 64))
+    normalized = SegmentationResult(normalized_mask, 0.9, (10, 16, 90, 64))
+
+    observer.segmentation_attempt(
+        candidate=plan.candidates[0],
+        component=component,
+        source_photo_index=0,
+        image=image,
+        result=raw,
+        quality=assess_mask(raw_mask, raw.prompt_box_px, raw.score, diagnostics_max_side=100),
+        attempt=0,
+        stage="raw",
     )
+    observer.segmentation_attempt(
+        candidate=plan.candidates[0],
+        component=component,
+        source_photo_index=0,
+        image=image,
+        result=normalized,
+        quality=assess_mask(
+            normalized_mask,
+            normalized.prompt_box_px,
+            normalized.score,
+            diagnostics_max_side=100,
+        ),
+        attempt=0,
+        stage="normalized",
+        normalization={"closedHoleFillEnabled": True, "closedHoleFillAddedPixels": 4},
+    )
+
+    attempts = json.loads(
+        (tmp_path / "pair-debug" / "masks" / "index.json").read_text(encoding="utf-8")
+    )["attempts"]
+    assert [attempt["stage"] for attempt in attempts] == ["raw", "normalized"]
+    assert attempts[0]["file"].endswith("-raw.png")
+    assert attempts[1]["normalization"]["closedHoleFillAddedPixels"] == 4
 
 
 def test_debug_observer_keeps_physical_ready_diagnostics_private(tmp_path: Path) -> None:
@@ -238,6 +285,14 @@ def test_debug_observer_keeps_physical_ready_diagnostics_private(tmp_path: Path)
             recomposed=True,
             final_bottom_gaps=(("scene-anchor", 0.3),),
             y_corrections=(("scene-anchor", 0.2),),
+            composition_layers=(
+                {
+                    "candidate_id": "scene-anchor",
+                    "layer_index": 0,
+                    "scale": 1.0,
+                    "within_canvas": True,
+                },
+            ),
         ),
     )
 
@@ -247,10 +302,22 @@ def test_debug_observer_keeps_physical_ready_diagnostics_private(tmp_path: Path)
             "candidateId": "scene-anchor",
             "label": "庭園",
             "kind": "scene_anchor",
+            "semanticRole": None,
             "sourcePhotoIndex": 0,
         }
     ]
     assert payload["diagnostics"]["recomposed"] is True
+    assert payload["diagnostics"]["composition_layers"][0]["within_canvas"] is True
+    assert payload["layers"][0]["semanticRole"] is None
+    duplicate_note = (
+        "候補labelが完全一致する場合だけ観測する。"
+        "意味的な同義語や異なる写真の同一人物は自動判定しない。"
+    )
+    assert payload["semanticDuplicateDiagnostics"] == {
+        "method": "exact_normalized_label_only",
+        "pairs": [],
+        "note": duplicate_note,
+    }
 
 
 def test_writer_rejects_bundle_without_bbox_and_mask_evidence(tmp_path: Path) -> None:

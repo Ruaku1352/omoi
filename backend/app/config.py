@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     semantic_profile: str = "physical_layer_v2"
     segmentation_backend: str = "efficient_sam_onnx"
     efficientsam_model_path: Path | None = None
+    # 両方を明示した場合だけ、同一EfficientSAM-Tiの分離encoder / decoderを使う。
+    # 未設定時は従来のmonolithic ONNX経路を維持する。
+    efficientsam_encoder_model_path: Path | None = None
+    efficientsam_decoder_model_path: Path | None = None
     segmentation_max_retries: int = Field(default=1, ge=0, le=3)
     candidate_count: int = Field(default=12, ge=1, le=20)
     # MVP production profileは4層を成功条件にする。Schema自体の可変長性は維持する。
@@ -62,6 +66,15 @@ class Settings(BaseSettings):
     # physical_layer_v3_architectureだけで使う、主建物Maskの微小孤立成分除去上限。
     # 閾値を超える分離領域は結合せず不採用にする。
     architecture_micro_island_max_area_ratio: float = Field(default=0.001, ge=0, le=1)
+    # physical profileの一般subjectで除去できる微小孤立成分の面積比上限。
+    # 【PoC後FIX】暫定0.5%。主成分以外の合計がこの値を超えるMaskは不採用にする。
+    mask_micro_island_max_area_ratio: float = Field(default=0.005, ge=0, le=1)
+    # 物理Layerでは閉鎖穴と微小飛び地を残さない。大きな分離は結合せずcandidateを不採用にする。
+    closed_hole_fill_enabled: bool = True
+    micro_island_cleanup_enabled: bool = True
+    composition_overlap_instruction_enabled: bool = False
+    # 前景を下側へ寄せる緩い構図上の好み。出力を強制する規則にはしない。
+    composition_foreground_bottom_instruction_enabled: bool = True
     # Quality Gateは校正前は観測のみ。値はPoC後に環境変数で明示設定する。
     quality_gate_mode: str = "observe"
     quality_max_component_count: int | None = Field(default=None, ge=1)

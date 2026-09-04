@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.ndimage import label as connected_component_labels
 
 from ai.image_ops import BoxPx
 
@@ -32,12 +33,14 @@ class MaskDiagnostics:
     largest_component_ratio: float
     top_component_area_ratios: tuple[float, ...]
     tail_component_area_ratio: float
+    interior_hole_count: int
+    interior_hole_area_ratio: float
     analysis_scale: int
 
 
 @dataclass(frozen=True)
-class ArchitectureMaskCleanup:
-    """主建物Maskに対するfull-resolutionの孤立成分判定結果。"""
+class MicroIslandCleanup:
+    """主成分を残すfull-resolutionの微小孤立成分判定結果。"""
 
     mask: np.ndarray
     component_count: int
@@ -84,18 +87,21 @@ class QualityPolicy:
         *,
         bbox_coverage: float,
         border_touch: bool,
+        expected_multiple_components: bool = False,
     ) -> str | None:
         if self.mode != "enforce":
             return None
         if diagnostics is None:
             raise ValueError("enforced quality policy requires mask diagnostics")
         if (
-            self.max_component_count is not None
+            not expected_multiple_components
+            and self.max_component_count is not None
             and diagnostics.component_count > self.max_component_count
         ):
             return "quality_fragmented"
         if (
-            self.min_largest_component_ratio is not None
+            not expected_multiple_components
+            and self.min_largest_component_ratio is not None
             and diagnostics.largest_component_ratio < self.min_largest_component_ratio
         ):
             return "quality_no_dominant_component"
@@ -161,27 +167,46 @@ def diagnose_mask(mask: np.ndarray, *, max_side: int) -> MaskDiagnostics:
     """
 
     if mask.ndim != 2 or not mask.size or not mask.any():
-        return MaskDiagnostics(0, 0, (), 0, 1)
+        return MaskDiagnostics(0, 0, (), 0, 0, 0, 1)
     if max_side < 1:
         raise ValueError("max_side must be positive")
     scale = max(1, (max(mask.shape) + max_side - 1) // max_side)
     sampled = np.asarray(mask[::scale, ::scale], dtype=bool)
-    areas = _component_areas(sampled)
+    labels, _ = connected_component_labels(sampled, structure=np.ones((3, 3), dtype=bool))
+    areas = np.bincount(labels.ravel())[1:].tolist()
     foreground = sum(areas)
     ratios = tuple(sorted((area / foreground for area in areas), reverse=True))
     top = ratios[:5]
+    background_labels, background_count = connected_component_labels(
+        np.logical_not(sampled), structure=np.ones((3, 3), dtype=bool)
+    )
+    background_areas = np.bincount(background_labels.ravel(), minlength=background_count + 1)
+    border_labels = np.unique(
+        np.concatenate(
+            (
+                background_labels[0],
+                background_labels[-1],
+                background_labels[:, 0],
+                background_labels[:, -1],
+            )
+        )
+    )
+    hole_labels = np.setdiff1d(
+        np.arange(1, background_count + 1), border_labels, assume_unique=False
+    )
+    hole_pixels = int(background_areas[hole_labels].sum())
     return MaskDiagnostics(
         component_count=len(ratios),
         largest_component_ratio=top[0] if top else 0,
         top_component_area_ratios=top,
         tail_component_area_ratio=float(sum(ratios[5:])),
+        interior_hole_count=len(hole_labels),
+        interior_hole_area_ratio=hole_pixels / foreground,
         analysis_scale=scale,
     )
 
 
-def clean_architecture_micro_islands(
-    mask: np.ndarray, *, max_removed_area_ratio: float
-) -> ArchitectureMaskCleanup:
+def clean_micro_islands(mask: np.ndarray, *, max_removed_area_ratio: float) -> MicroIslandCleanup:
     """微小な孤立成分だけを最大成分から除去する。
 
     8近傍でfull-resolutionの連結成分を調べる。閾値超過の分離領域は残して
@@ -192,28 +217,30 @@ def clean_architecture_micro_islands(
     if not 0 <= max_removed_area_ratio <= 1:
         raise ValueError("max_removed_area_ratio must be between 0 and 1")
     if mask.ndim != 2 or not mask.size or not mask.any():
-        return ArchitectureMaskCleanup(mask, 0, 0, 0, False)
+        return MicroIslandCleanup(mask, 0, 0, 0, False)
 
-    components = _connected_components(mask)
-    foreground = sum(component.shape[0] for component in components)
-    largest = max(components, key=lambda component: component.shape[0])
-    largest_area = largest.shape[0]
+    labels, component_count = connected_component_labels(
+        np.asarray(mask, dtype=bool), structure=np.ones((3, 3), dtype=bool)
+    )
+    areas = np.bincount(labels.ravel())[1:]
+    foreground = int(areas.sum())
+    largest_label = int(np.argmax(areas)) + 1
+    largest_area = int(areas[largest_label - 1])
     removed_area_ratio = (foreground - largest_area) / foreground
-    if len(components) == 1:
-        return ArchitectureMaskCleanup(mask, 1, 1, 0, False)
+    if component_count == 1:
+        return MicroIslandCleanup(mask, 1, 1, 0, False)
     if removed_area_ratio > max_removed_area_ratio:
-        return ArchitectureMaskCleanup(
+        return MicroIslandCleanup(
             mask,
-            len(components),
+            component_count,
             largest_area / foreground,
             removed_area_ratio,
             False,
         )
-    cleaned = np.zeros_like(mask, dtype=bool)
-    cleaned[largest[:, 0], largest[:, 1]] = True
-    return ArchitectureMaskCleanup(
+    cleaned = labels == largest_label
+    return MicroIslandCleanup(
         cleaned,
-        len(components),
+        component_count,
         largest_area / foreground,
         removed_area_ratio,
         True,
@@ -224,6 +251,27 @@ def _component_areas(mask: np.ndarray) -> list[int]:
     """PoC診断だけで使うdependency-freeな8近傍連結成分の面積集計。"""
 
     return [component.shape[0] for component in _connected_components(mask)]
+
+
+def _interior_holes(mask: np.ndarray) -> list[np.ndarray]:
+    """外周と接続していない透明領域を返す。
+
+    これは縮小Maskの観測である。窓・アーチ等の意図的な開口部との区別はしないため、
+    この値だけでMaskを埋めたり候補を不合格にしたりしない。
+    """
+
+    background = _connected_components(np.logical_not(mask))
+    height, width = mask.shape
+    return [
+        component
+        for component in background
+        if not (
+            (component[:, 0] == 0).any()
+            or (component[:, 0] == height - 1).any()
+            or (component[:, 1] == 0).any()
+            or (component[:, 1] == width - 1).any()
+        )
+    ]
 
 
 def _connected_components(mask: np.ndarray) -> list[np.ndarray]:

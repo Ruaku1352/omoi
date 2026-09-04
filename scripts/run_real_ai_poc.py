@@ -7,25 +7,23 @@ import asyncio
 import json
 import sys
 from dataclasses import asdict
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
+
+from pydantic import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = REPO_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-from frontend_handoff_bundle import (  # noqa: E402
-    PocDebugObserver,
-    write_frontend_handoff_bundle,
-)
-
-from ai.gemini import GeminiArtworkGenerator  # noqa: E402
-from ai.types import InputPhoto  # noqa: E402
-from app.config import Settings  # noqa: E402
-from app.models.artwork import Artwork  # noqa: E402
-from app.services.generator import build_generator  # noqa: E402
-from app.services.validation import check_artwork_rules, check_assets_present  # noqa: E402
+from ai.gemini import GeminiArtworkGenerator
+from ai.types import InputPhoto
+from app.config import Settings
+from app.models.artwork import Artwork
+from app.services.generator import build_generator
+from app.services.validation import check_artwork_rules, check_assets_present
+from frontend_handoff_bundle import PocDebugObserver, write_frontend_handoff_bundle
 
 MIME_TYPES = {
     ".jpg": "image/jpeg",
@@ -33,6 +31,26 @@ MIME_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
+
+
+def _safe_error_record(exc: Exception) -> dict[str, object]:
+    """Secretやprovider応答を保存せず、再実行に必要な失敗stageだけを残す。"""
+    record: dict[str, object] = {
+        "type": type(exc).__name__,
+        "causeType": type(exc.__cause__).__name__ if exc.__cause__ else None,
+        "category": "generation_failed",
+        "message": "Real AI pipelineの実行に失敗しました",
+    }
+    if isinstance(exc, ValidationError):
+        record["validationErrors"] = [
+            {
+                "location": list(item["loc"]),
+                "type": item["type"],
+                "message": item["msg"],
+            }
+            for item in exc.errors()
+        ]
+    return record
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,7 +91,7 @@ async def run(args: argparse.Namespace) -> int:
     if args.preview_width_px <= 0:
         raise SystemExit("--preview-width-pxは正の値にしてください")
 
-    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_id = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     staging = args.output_dir / f".frontend-debug-bundle-{run_id}-{uuid4().hex}.tmp"
     settings = Settings()
@@ -87,19 +105,16 @@ async def run(args: argparse.Namespace) -> int:
     try:
         result = await generator.generate(photos, args.memory_text)
         artwork = Artwork.model_validate(result.artwork)
-        errors = check_artwork_rules(artwork) + check_assets_present(artwork, result.assets)
+        errors = check_artwork_rules(artwork) + check_assets_present(
+            artwork, result.assets
+        )
         if errors:
             raise RuntimeError("; ".join(errors))
         success = True
         error = None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         success = False
-        error = {
-            "type": type(exc).__name__,
-            "causeType": type(exc.__cause__).__name__ if exc.__cause__ else None,
-            "category": "generation_failed",
-            "message": "Real AI pipelineの実行に失敗しました",
-        }
+        error = _safe_error_record(exc)
     record = {
         "success": success,
         "error": error,
@@ -122,13 +137,10 @@ async def run(args: argparse.Namespace) -> int:
                 selected_photo_files=[photo.filename for photo in photos],
                 preview_width_px=args.preview_width_px,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             success = False
-            error = {
-                "type": type(exc).__name__,
-                "causeType": type(exc.__cause__).__name__ if exc.__cause__ else None,
-                "message": "Frontend handoff bundleの検証または出力に失敗しました",
-            }
+            error = _safe_error_record(exc)
+            error["message"] = "Frontend handoff bundleの検証または出力に失敗しました"
             record.update({"success": False, "error": error})
     if success:
         output = args.output_dir / f"frontend-debug-bundle-{run_id}"

@@ -4,20 +4,34 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from PIL import Image
+from pydantic import BaseModel
 
+import ai.gemini as gemini_module
 from ai.assembly import AcceptedLayer, normalize_composition
 from ai.errors import AiError, AiNotConfiguredError
-from ai.gemini import GeminiArtworkGenerator, _semantic_plan_schema
-from ai.image_ops import gemini_box_to_px, mask_to_rgba_png, union_masks
+from ai.gemini import (
+    GeminiArtworkGenerator,
+    GeminiComposer,
+    _generate_structured,
+    _semantic_plan_schema,
+)
+from ai.image_ops import (
+    close_narrow_mask_gaps,
+    fill_closed_mask_holes,
+    gemini_box_to_px,
+    mask_to_rgba_png,
+    union_masks,
+)
 from ai.internal_models import CompositionPlan, SemanticPlan
 from ai.quality import (
     QualityPolicy,
     assess_mask,
-    clean_architecture_micro_islands,
+    clean_micro_islands,
     diagnose_mask,
 )
 from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult, SegmentationTimings
@@ -32,6 +46,65 @@ def _photo(color: tuple[int, int, int]) -> InputPhoto:
     output = BytesIO()
     image.save(output, format="PNG")
     return InputPhoto(filename="test.png", mime_type="image/png", data=output.getvalue())
+
+
+@pytest.mark.anyio
+async def test_structured_generation_disables_automatic_function_calling() -> None:
+    captured: dict[str, object] = {}
+
+    class Result(BaseModel):
+        value: str
+
+    class FakeModels:
+        def generate_content(self, **kwargs: object) -> SimpleNamespace:
+            captured.update(kwargs)
+            return SimpleNamespace(parsed={"value": "ok"})
+
+    class FakeClient:
+        models = FakeModels()
+
+    result = await _generate_structured(
+        FakeClient(),  # type: ignore[arg-type]
+        "gemini-3.5-flash-lite",
+        ["prompt"],
+        Result,
+        {"type": "object"},
+        1_234,
+    )
+
+    assert result == Result(value="ok")
+    config = captured["config"]
+    assert config.automatic_function_calling is not None
+    assert config.automatic_function_calling.disable is True
+    assert config.http_options is not None
+    assert config.http_options.timeout == 1_234
+    assert config.http_options.retry_options is not None
+    assert config.http_options.retry_options.attempts == 1
+
+
+@pytest.mark.anyio
+async def test_composer_defaults_to_gentle_foreground_bottom_instruction(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_generate(*args, **kwargs):
+        del kwargs
+        captured["parts"] = args[2]
+        return {"layers": [{"candidate_id": "front", "x": 0.5, "y": 0.7, "scale": 0.2, "order": 0}]}
+
+    monkeypatch.setattr(gemini_module, "_generate_structured", fake_generate)
+    composer = GeminiComposer(
+        object(),  # type: ignore[arg-type]
+        "gemini-3.5-flash-lite",
+        1_000,
+        178 / 127,
+    )
+    asset = AssetBlob("layer", "image/png", 80, 60, _photo((1, 2, 3)).data)
+
+    await composer.compose([AcceptedLayer("front", "Front", 0, "source", asset, 1)])
+
+    parts = captured["parts"]
+    assert isinstance(parts, list)
+    assert "gentle compositional cue" in parts[0]
 
 
 class FakePlanner:
@@ -159,6 +232,44 @@ class FakeSegmenter:
         return SegmentationResult(mask=mask, score=0.9, prompt_box_px=box_px)
 
 
+class PreparedFakeSegmenter(FakeSegmenter):
+    def __init__(self) -> None:
+        self.prepare_calls: list[Image.Image] = []
+        self.segment_prepared_calls = 0
+
+    def prepare(self, image: Image.Image) -> Image.Image:
+        self.prepare_calls.append(image)
+        return image
+
+    def segment_prepared(self, prepared: Image.Image, box_px) -> SegmentationResult:
+        self.segment_prepared_calls += 1
+        return super().segment(prepared, box_px)
+
+
+class PerforatedSegmenter(FakeSegmenter):
+    def segment(self, image: Image.Image, box_px) -> SegmentationResult:
+        result = super().segment(image, box_px)
+        mask = result.mask.copy()
+        x0, y0, x1, y1 = box_px
+        hole_x0 = x0 + (x1 - x0) // 3
+        hole_x1 = x0 + (x1 - x0) * 2 // 3
+        hole_y0 = y0 + (y1 - y0) // 3
+        hole_y1 = y0 + (y1 - y0) * 2 // 3
+        mask[hole_y0:hole_y1, hole_x0:hole_x1] = False
+        return SegmentationResult(mask=mask, score=result.score, prompt_box_px=box_px)
+
+
+class CapturingObserver:
+    def __init__(self) -> None:
+        self.records: list[dict[str, object]] = []
+
+    def semantic_plan(self, plan, images) -> None:
+        del plan, images
+
+    def segmentation_attempt(self, **kwargs: object) -> None:
+        self.records.append(kwargs)
+
+
 class RejectFirstSegmenter(FakeSegmenter):
     def __init__(self) -> None:
         self.calls = 0
@@ -229,6 +340,52 @@ class MicroIslandFirstSegmenter(FakeSegmenter):
         return super().segment(image, box_px)
 
 
+class CoherentGroupPlanner:
+    async def plan(self, images, memory_text) -> SemanticPlan:
+        del images, memory_text
+        return SemanticPlan.model_validate(
+            {
+                "memory_summary": "ドリブルの思い出",
+                "candidates": [
+                    {
+                        "candidate_id": "dribbler-and-ball",
+                        "label": "ドリブルする選手とボール",
+                        "source_photo_index": 0,
+                        "importance": 1,
+                        "selection_reason": "選手とボールで動作が成立する",
+                        "extraction_intent": "coherent_group",
+                        "components": [
+                            {
+                                "component_id": "player",
+                                "label": "選手",
+                                "box_2d": {
+                                    "y_min": 100,
+                                    "x_min": 100,
+                                    "y_max": 700,
+                                    "x_max": 450,
+                                },
+                                "required": True,
+                                "relation_to_primary": "primary",
+                            },
+                            {
+                                "component_id": "ball",
+                                "label": "ボール",
+                                "box_2d": {
+                                    "y_min": 100,
+                                    "x_min": 700,
+                                    "y_max": 300,
+                                    "x_max": 900,
+                                },
+                                "required": True,
+                                "relation_to_primary": "attached",
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+
+
 def test_bbox_mask_union_and_rgba_png() -> None:
     assert gemini_box_to_px(
         SemanticPlan.model_validate(
@@ -270,6 +427,97 @@ def test_bbox_mask_union_and_rgba_png() -> None:
         assert output.getchannel("A").getextrema() == (0, 255)
 
 
+def test_close_narrow_mask_gaps_closes_only_configured_width() -> None:
+    mask = np.zeros((9, 15), dtype=bool)
+    mask[2:7, 1:6] = True
+    mask[2:7, 7:12] = True
+
+    unchanged = close_narrow_mask_gaps(mask, max_gap_px=0)
+    closed = close_narrow_mask_gaps(mask, max_gap_px=1)
+
+    assert np.array_equal(unchanged, mask)
+    assert not unchanged[4, 6]
+    assert closed[4, 6]
+    assert not closed[0, 0]
+    with pytest.raises(ValueError, match="non-negative"):
+        close_narrow_mask_gaps(mask, max_gap_px=-1)
+
+
+def test_fill_closed_mask_holes_fills_windows_but_preserves_openings() -> None:
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[1:9, 1:9] = True
+    mask[3:5, 3:5] = False
+    mask[6:8, 6:8] = False
+
+    filled = fill_closed_mask_holes(mask)
+
+    assert filled[4, 4]
+    assert filled[7, 7]
+    assert not filled[0, 0]
+    assert filled.sum() == mask.sum() + 8
+
+    open_mask = mask.copy()
+    open_mask[1:4, 4] = False
+    preserved = fill_closed_mask_holes(open_mask)
+    assert not preserved[4, 4]
+    assert not preserved[0, 4]
+
+
+def test_fill_closed_mask_holes_removes_hole_created_by_gap_closing() -> None:
+    mask = np.zeros((20, 20), dtype=bool)
+    mask[2:18, 2:18] = True
+    mask[6:14, 6:14] = False
+    # 外部へ開いている1 pxの通路。closing前は中央の透明領域が閉鎖穴ではない。
+    mask[1:7, 9] = False
+
+    closed = close_narrow_mask_gaps(mask, max_gap_px=1)
+    filled = fill_closed_mask_holes(closed)
+
+    assert diagnose_mask(mask, max_side=20).interior_hole_count == 0
+    assert diagnose_mask(closed, max_side=20).interior_hole_count == 1
+    assert diagnose_mask(filled, max_side=20).interior_hole_count == 0
+
+
+def test_fill_closed_mask_holes_matches_previous_eight_neighbor_fill() -> None:
+    rng = np.random.default_rng(20260904)
+    for height, width in ((1, 1), (2, 7), (13, 9), (31, 37)):
+        for foreground_probability in (0.1, 0.5, 0.9):
+            mask = rng.random((height, width)) < foreground_probability
+            assert np.array_equal(fill_closed_mask_holes(mask), _previous_hole_fill(mask))
+
+
+def _previous_hole_fill(mask: np.ndarray) -> np.ndarray:
+    """最適化前の8近傍flood fill。parity test専用。"""
+
+    result = np.asarray(mask, dtype=bool)
+    height, width = result.shape
+    exterior = np.zeros_like(result, dtype=bool)
+    pending: list[tuple[int, int]] = []
+
+    def mark_exterior(y: int, x: int) -> None:
+        if not result[y, x] and not exterior[y, x]:
+            exterior[y, x] = True
+            pending.append((y, x))
+
+    for x in range(width):
+        mark_exterior(0, x)
+        mark_exterior(height - 1, x)
+    for y in range(1, height - 1):
+        mark_exterior(y, 0)
+        mark_exterior(y, width - 1)
+    while pending:
+        y, x = pending.pop()
+        for delta_y in (-1, 0, 1):
+            for delta_x in (-1, 0, 1):
+                if delta_y == 0 and delta_x == 0:
+                    continue
+                next_y = y + delta_y
+                next_x = x + delta_x
+                if 0 <= next_y < height and 0 <= next_x < width:
+                    mark_exterior(next_y, next_x)
+    return np.logical_or(result, ~exterior)
+
+
 def test_quality_gate_rejects_empty_and_full_masks() -> None:
     box = (2, 2, 8, 8)
     assert not assess_mask(np.zeros((10, 10), dtype=bool), box, None).accepted
@@ -290,22 +538,36 @@ def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
     assert diagnostics.largest_component_ratio == pytest.approx(100 / 104)
     assert diagnostics.top_component_area_ratios == pytest.approx((100 / 104, 4 / 104))
     assert diagnostics.tail_component_area_ratio == 0
+    assert diagnostics.interior_hole_count == 0
+    assert diagnostics.interior_hole_area_ratio == 0
     quality = assess_mask(mask, (0, 0, 20, 20), 0.9, diagnostics_max_side=20)
     assert quality.accepted
     assert quality.diagnostics == diagnostics
     assert (
         QualityPolicy().rejection_reason(diagnostics, bbox_coverage=1, border_touch=False) is None
     )
+
+
+def test_mask_diagnostics_observes_interior_holes_without_rejecting_mask() -> None:
+    mask = np.zeros((20, 20), dtype=bool)
+    mask[2:18, 2:18] = True
+    mask[7:13, 7:13] = False
+
+    diagnostics = diagnose_mask(mask, max_side=20)
+
+    assert diagnostics.interior_hole_count == 1
+    assert diagnostics.interior_hole_area_ratio == pytest.approx(36 / 220)
+    assert assess_mask(mask, (2, 2, 18, 18), 0.9, diagnostics_max_side=20).accepted
     with pytest.raises(ValueError, match="at least one"):
         QualityPolicy(mode="enforce")
 
 
-def test_architecture_cleanup_removes_only_micro_islands_at_full_resolution() -> None:
+def test_micro_island_cleanup_removes_only_micro_islands_at_full_resolution() -> None:
     mask = np.zeros((100, 100), dtype=bool)
     mask[10:50, 10:50] = True
     mask[90, 90] = True
 
-    cleaned = clean_architecture_micro_islands(mask, max_removed_area_ratio=0.001)
+    cleaned = clean_micro_islands(mask, max_removed_area_ratio=0.001)
 
     assert cleaned.component_count == 2
     assert cleaned.applied
@@ -315,7 +577,7 @@ def test_architecture_cleanup_removes_only_micro_islands_at_full_resolution() ->
 
     detached = np.array(mask, copy=True)
     detached[90:92, 90:92] = True
-    rejected = clean_architecture_micro_islands(detached, max_removed_area_ratio=0.001)
+    rejected = clean_micro_islands(detached, max_removed_area_ratio=0.001)
     assert rejected.component_count == 2
     assert not rejected.applied
     assert rejected.removed_area_ratio > 0.001
@@ -330,6 +592,128 @@ def test_architecture_profile_schema_requires_semantic_role() -> None:
 
     assert "semantic_role" not in default_candidate["required"]
     assert "semantic_role" in architecture_candidate["required"]
+
+
+def test_coherent_group_schema_requires_intent_and_component_relation() -> None:
+    default_schema = _semantic_plan_schema()
+    schema = _semantic_plan_schema(require_extraction_plan=True)
+    default_candidate = default_schema["properties"]["candidates"]["items"]
+    candidate = schema["properties"]["candidates"]["items"]
+    default_component = default_candidate["properties"]["components"]["items"]
+    component = candidate["properties"]["components"]["items"]
+
+    assert "extraction_intent" not in default_candidate["properties"]
+    assert "relation_to_primary" not in default_component["properties"]
+    assert "extraction_intent" in candidate["required"]
+    assert "relation_to_primary" in component["required"]
+
+
+def test_coherent_group_requires_one_required_primary_component() -> None:
+    payload = {
+        "memory_summary": "食事の思い出",
+        "candidates": [
+            {
+                "candidate_id": "meal-set",
+                "label": "meal set",
+                "source_photo_index": 0,
+                "importance": 0.9,
+                "selection_reason": "食事の中心",
+                "extraction_intent": "coherent_group",
+                "components": [
+                    {
+                        "component_id": "tray",
+                        "label": "tray",
+                        "box_2d": {"y_min": 100, "x_min": 100, "y_max": 700, "x_max": 700},
+                        "required": True,
+                        "relation_to_primary": "primary",
+                    },
+                    {
+                        "component_id": "food",
+                        "label": "food",
+                        "box_2d": {"y_min": 200, "x_min": 200, "y_max": 500, "x_max": 500},
+                        "required": True,
+                        "relation_to_primary": "contained",
+                    },
+                ],
+            }
+        ],
+    }
+
+    plan = SemanticPlan.model_validate(payload)
+
+    assert plan.candidates[0].extraction_intent == "coherent_group"
+    invalid = plan.model_dump()
+    invalid["candidates"][0]["components"][1]["relation_to_primary"] = "primary"
+    with pytest.raises(ValueError, match="exactly one primary"):
+        SemanticPlan.model_validate(invalid)
+
+
+def test_scene_anchor_canonicalizes_legacy_subject_metadata() -> None:
+    payload = {
+        "memory_summary": "庭園の思い出",
+        "candidates": [
+            {
+                "candidate_id": "garden",
+                "label": "garden",
+                "source_photo_index": 0,
+                "importance": 1,
+                "selection_reason": "背景として残す",
+                "kind": "scene_anchor",
+                "semantic_role": "general",
+                "extraction_intent": "scene_anchor",
+                "components": [
+                    {
+                        "component_id": "range",
+                        "label": "garden range",
+                        "box_2d": {"y_min": 0, "x_min": 0, "y_max": 900, "x_max": 900},
+                    }
+                ],
+            }
+        ],
+    }
+
+    candidate = SemanticPlan.model_validate(payload).candidates[0]
+
+    assert candidate.kind == "scene_anchor"
+    assert candidate.semantic_role is None
+    assert candidate.extraction_intent is None
+
+
+@pytest.mark.parametrize(
+    ("semantic_role", "extraction_intent"),
+    [
+        ("architecture_primary", None),
+        (None, "coherent_group"),
+    ],
+)
+def test_scene_anchor_rejects_subject_only_metadata(
+    semantic_role: str | None, extraction_intent: str | None
+) -> None:
+    payload = {
+        "memory_summary": "庭園の思い出",
+        "candidates": [
+            {
+                "candidate_id": "garden",
+                "label": "garden",
+                "source_photo_index": 0,
+                "importance": 1,
+                "selection_reason": "背景として残す",
+                "kind": "scene_anchor",
+                "semantic_role": semantic_role,
+                "extraction_intent": extraction_intent,
+                "components": [
+                    {
+                        "component_id": "range",
+                        "label": "garden range",
+                        "box_2d": {"y_min": 0, "x_min": 0, "y_max": 900, "x_max": 900},
+                    }
+                ],
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="scene_anchor must not have subject metadata"):
+        SemanticPlan.model_validate(payload)
 
 
 def test_layout_normalization_uses_contiguous_layer_indexes() -> None:
@@ -390,7 +774,7 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
     generator = GeminiArtworkGenerator(
         api_key="test-key",
         model="test-model",
-        segmenter=FakeSegmenter(),
+        segmenter=PerforatedSegmenter(),
         candidate_count=8,
         target_layer_min=4,
         target_layer_max=4,
@@ -401,6 +785,7 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
         layout_max_scale=1.0,
         canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
+        closed_hole_fill_enabled=False,
         semantic_planner=planner,
         composer=FakeComposer(),
     )
@@ -427,9 +812,38 @@ async def test_real_pipeline_with_fakes_returns_valid_contract_and_rgba_layers()
         if asset.asset_id.startswith("layer-"):
             with Image.open(BytesIO(asset.data)) as image:
                 assert image.mode == "RGBA"
-                assert image.getchannel("A").getextrema()[0] == 0
+                alpha = np.asarray(image.getchannel("A"), dtype=np.uint8) > 0
+                assert alpha.any()
+                assert diagnose_mask(alpha, max_side=80).interior_hole_count == 1
     assert generator.last_metrics.semantic_planning_elapsed_ms >= 0
     assert all(metric.success for metric in generator.last_metrics.candidates)
+
+
+@pytest.mark.anyio
+async def test_pipeline_prepares_each_source_photo_once_when_segmenter_supports_it() -> None:
+    segmenter = PreparedFakeSegmenter()
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=segmenter,
+        candidate_count=4,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_planner=FakePlanner(candidate_count=4),
+        composer=FakeComposer(),
+    )
+
+    await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    assert len(segmenter.prepare_calls) == 2
+    assert segmenter.segment_prepared_calls == 4
 
 
 @pytest.mark.anyio
@@ -620,6 +1034,7 @@ async def test_physical_v2_uses_rectangular_scene_anchor_and_limits_floating() -
         canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
         semantic_profile="physical_layer_v2",
+        subject_overlap_diagnostics=True,
         semantic_planner=PhysicalPlanner(candidate_count=4),
         composer=composer,
     )
@@ -634,6 +1049,11 @@ async def test_physical_v2_uses_rectangular_scene_anchor_and_limits_floating() -
     assert diagnostics.scene_anchor_candidate_id == "scene-anchor"
     assert not diagnostics.background_missing
     assert diagnostics.recomposed
+    assert len(diagnostics.subject_overlap_pairs) == 3
+    assert all(pair["back_obscured_ratio"] == 1 for pair in diagnostics.subject_overlap_pairs)
+    assert [layer["layer_index"] for layer in diagnostics.composition_layers] == [0, 1, 2, 3]
+    assert all(layer["within_canvas"] for layer in diagnostics.composition_layers)
+    assert all(layer["display_height"] > 0 for layer in diagnostics.composition_layers)
     assert composer.compose_calls == 1
     assert composer.recompose_calls == 1
     assert diagnostics.y_corrections
@@ -676,10 +1096,129 @@ async def test_physical_v2_rejects_fragmented_subject_without_bridge() -> None:
     result = await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
 
     assert len(result.artwork["layers"]) == 4
-    assert generator.last_metrics.physical_ready is not None
-    assert generator.last_metrics.physical_ready.background_missing
+    diagnostics = generator.last_metrics.physical_ready
+    assert diagnostics is not None
+    assert diagnostics.background_missing
+    assert diagnostics.subject_overlap_pairs == ()
     first = generator.last_metrics.candidates[0]
     assert first.failure_reason == "not_single_component"
+
+
+@pytest.mark.anyio
+async def test_observer_receives_raw_and_normalized_masks_without_changing_fill_rule() -> None:
+    observer = CapturingObserver()
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=PerforatedSegmenter(),
+        candidate_count=1,
+        target_layer_min=1,
+        target_layer_max=1,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v2",
+        closed_hole_fill_enabled=True,
+        semantic_planner=FakePlanner(candidate_count=1),
+        composer=FakeComposer(),
+        observer=observer,
+    )
+
+    await generator.generate([_photo((0, 0, 0))], "memory")
+
+    assert [record["stage"] for record in observer.records] == ["raw", "normalized"]
+    raw = observer.records[0]["result"]
+    normalized = observer.records[1]["result"]
+    assert isinstance(raw, SegmentationResult)
+    assert isinstance(normalized, SegmentationResult)
+    assert np.count_nonzero(normalized.mask & ~raw.mask) > 0
+    normalization = observer.records[1]["normalization"]
+    assert isinstance(normalization, dict)
+    assert normalization["closedHoleFillAddedPixels"] > 0
+
+
+@pytest.mark.anyio
+async def test_physical_v2_keeps_subject_and_cleans_micro_island() -> None:
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=MicroIslandFirstSegmenter(),
+        candidate_count=4,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v2",
+        micro_island_cleanup_enabled=True,
+        semantic_planner=FakePlanner(candidate_count=4),
+        composer=FakeComposer(),
+    )
+
+    result = await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    assert len(result.artwork["layers"]) == 4
+    first = generator.last_metrics.candidates[0]
+    assert first.success
+    assert first.mask_cleanup.startswith("removed_micro_islands:")
+
+
+@pytest.mark.anyio
+async def test_physical_v2_retains_approved_coherent_group_without_bridge() -> None:
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=PerforatedSegmenter(),
+        candidate_count=1,
+        target_layer_min=1,
+        target_layer_max=1,
+        segmentation_max_retries=0,
+        analysis_max_side=512,
+        layer_padding_px=0,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_profile="physical_layer_v2",
+        closed_hole_fill_enabled=True,
+        semantic_planner=CoherentGroupPlanner(),
+        composer=FakeComposer(),
+    )
+
+    result = await generator.generate([_photo((0, 0, 0))], "memory")
+
+    assert len(result.artwork["layers"]) == 1
+    metric = generator.last_metrics.candidates[0]
+    assert metric.success
+    assert metric.mask_cleanup == "retained_coherent_group:2"
+    assert metric.mask_component_count == 2
+    assert metric.coherent_group_required_component_count == 2
+    assert metric.coherent_group_required_component_accepted_count == 2
+    assert metric.coherent_group_component_exclusive_area_ratios is not None
+    assert [
+        component_id for component_id, _ in metric.coherent_group_component_exclusive_area_ratios
+    ] == [
+        "player",
+        "ball",
+    ]
+    assert sum(
+        ratio for _, ratio in metric.coherent_group_component_exclusive_area_ratios
+    ) == pytest.approx(1)
+    layer_asset_id = result.artwork["layers"][0]["asset"]["assetId"]
+    layer_asset = next(asset for asset in result.assets if asset.asset_id == layer_asset_id)
+    with Image.open(BytesIO(layer_asset.data)) as image:
+        alpha = np.asarray(image.getchannel("A"), dtype=np.uint8) > 0
+    diagnostics = diagnose_mask(alpha, max_side=80)
+    assert diagnostics.component_count == 2
+    assert diagnostics.interior_hole_count == 0
 
 
 @pytest.mark.anyio
@@ -699,6 +1238,7 @@ async def test_architecture_profile_keeps_primary_building_and_cleans_micro_isla
         canvas_aspect_ratio=178 / 127,
         gemini_request_timeout_ms=10_000,
         semantic_profile="physical_layer_v3_architecture",
+        micro_island_cleanup_enabled=True,
         semantic_planner=ArchitecturePlanner(candidate_count=4),
         composer=FakeComposer(),
     )
@@ -708,6 +1248,6 @@ async def test_architecture_profile_keeps_primary_building_and_cleans_micro_isla
     assert len(result.artwork["layers"]) == 4
     primary = generator.last_metrics.candidates[0]
     assert primary.semantic_role == "architecture_primary"
-    assert primary.architecture_cleanup.startswith("removed_micro_islands:")
+    assert primary.mask_cleanup.startswith("removed_micro_islands:")
     assert primary.success
     assert any(layer["label"] == "main historic building" for layer in result.artwork["layers"])
