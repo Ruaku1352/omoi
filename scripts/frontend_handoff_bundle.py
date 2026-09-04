@@ -57,7 +57,9 @@ class PocDebugObserver(GenerationObserver):
         self._mask_records: list[dict[str, Any]] = []
 
     def semantic_plan(self, plan: SemanticPlan, images: Sequence[Image.Image]) -> None:
-        _write_json(self._debug_dir / "semantic-plan.json", plan.model_dump(mode="json"))
+        _write_json(
+            self._debug_dir / "semantic-plan.json", plan.model_dump(mode="json")
+        )
         bbox_records: list[dict[str, Any]] = []
         for source_index, source in enumerate(images):
             preview = _thumbnail(source.convert("RGB"), 1200)
@@ -79,7 +81,9 @@ class PocDebugObserver(GenerationObserver):
                         round(box.x_max / 1000 * preview.width),
                         round(box.y_max / 1000 * preview.height),
                     )
-                    draw.rectangle(coords, outline=color, width=max(2, preview.width // 400))
+                    draw.rectangle(
+                        coords, outline=color, width=max(2, preview.width // 400)
+                    )
                     bbox_records.append(
                         {
                             "candidateId": candidate.candidate_id,
@@ -107,37 +111,52 @@ class PocDebugObserver(GenerationObserver):
         result: SegmentationResult,
         quality: MaskQuality,
         attempt: int,
+        stage: str = "normalized",
+        normalization: dict[str, object] | None = None,
     ) -> None:
         del image
         sequence = len(self._mask_records) + 1
-        filename = f"mask-{sequence:03d}.png"
+        suffix = "" if stage == "normalized" else f"-{stage}"
+        filename = f"mask-{sequence:03d}{suffix}.png"
+        preview_filename = f"mask-{sequence:03d}{suffix}-preview.png"
         mask_image = Image.fromarray(result.mask.astype(np.uint8) * 255, mode="L")
-        _thumbnail(mask_image, 1200).save(self._masks_dir / filename)
+        # 段階分離評価では元解像度の連結成分面積を再計算する必要がある。
+        # 目視用縮小PNGと同じ名前にしない。
+        mask_image.save(self._masks_dir / filename)
+        _thumbnail(mask_image, 1200).save(self._masks_dir / preview_filename)
         record = {
-                "file": filename,
-                "candidateId": candidate.candidate_id,
-                "candidateLabel": candidate.label,
-                "candidateKind": candidate.kind,
-                "componentId": component.component_id,
-                "componentLabel": component.label,
-                "sourcePhotoIndex": source_photo_index,
-                "attempt": attempt,
-                "promptBoxPx": list(result.prompt_box_px),
-                "accepted": quality.accepted,
-                "failureReason": quality.reason,
-                "score": quality.score,
-                "areaRatio": quality.area_ratio,
-                "bboxCoverage": quality.bbox_coverage,
-                "borderTouch": quality.border_touch,
+            "file": filename,
+            "previewFile": preview_filename,
+            "candidateId": candidate.candidate_id,
+            "candidateLabel": candidate.label,
+            "candidateKind": candidate.kind,
+            "componentId": component.component_id,
+            "componentLabel": component.label,
+            "sourcePhotoIndex": source_photo_index,
+            "attempt": attempt,
+            "stage": stage,
+            "promptBoxPx": list(result.prompt_box_px),
+            "accepted": quality.accepted,
+            "failureReason": quality.reason,
+            "score": quality.score,
+            "areaRatio": quality.area_ratio,
+            "bboxCoverage": quality.bbox_coverage,
+            "borderTouch": quality.border_touch,
         }
         if quality.diagnostics is not None:
             record["diagnostics"] = {
                 "componentCount": quality.diagnostics.component_count,
                 "largestComponentRatio": quality.diagnostics.largest_component_ratio,
-                "topComponentAreaRatios": list(quality.diagnostics.top_component_area_ratios),
+                "topComponentAreaRatios": list(
+                    quality.diagnostics.top_component_area_ratios
+                ),
                 "tailComponentAreaRatio": quality.diagnostics.tail_component_area_ratio,
+                "interiorHoleCount": quality.diagnostics.interior_hole_count,
+                "interiorHoleAreaRatio": quality.diagnostics.interior_hole_area_ratio,
                 "analysisScale": quality.diagnostics.analysis_scale,
             }
+        if normalization is not None:
+            record["normalization"] = normalization
         self._mask_records.append(record)
         _write_json(self._masks_dir / "index.json", {"attempts": self._mask_records})
 
@@ -149,6 +168,22 @@ class PocDebugObserver(GenerationObserver):
     ) -> None:
         """physical_layer_v2のprivate診断をPoC bundle内だけへ保存する。"""
 
+        duplicate_pairs: list[dict[str, str]] = []
+        seen_by_normalized_label: dict[str, AcceptedLayer] = {}
+        for layer in accepted:
+            normalized_label = " ".join(layer.label.casefold().split())
+            previous = seen_by_normalized_label.get(normalized_label)
+            if previous is not None:
+                duplicate_pairs.append(
+                    {
+                        "backCandidateId": previous.candidate_id,
+                        "frontCandidateId": layer.candidate_id,
+                        "normalizedLabel": normalized_label,
+                        "signal": "exact_normalized_label",
+                    }
+                )
+            else:
+                seen_by_normalized_label[normalized_label] = layer
         _write_json(
             self._debug_dir / "physical-ready.json",
             {
@@ -157,11 +192,20 @@ class PocDebugObserver(GenerationObserver):
                         "candidateId": layer.candidate_id,
                         "label": layer.label,
                         "kind": layer.kind,
+                        "semanticRole": layer.semantic_role,
                         "sourcePhotoIndex": layer.source_photo_index,
                     }
                     for layer in accepted
                 ],
                 "diagnostics": asdict(diagnostics) if diagnostics is not None else None,
+                "semanticDuplicateDiagnostics": {
+                    "method": "exact_normalized_label_only",
+                    "pairs": duplicate_pairs,
+                    "note": (
+                        "候補labelが完全一致する場合だけ観測する。"
+                        "意味的な同義語や異なる写真の同一人物は自動判定しない。"
+                    ),
+                },
             },
         )
 
@@ -185,7 +229,9 @@ class PocDebugObserver(GenerationObserver):
                     f"  - components: {len(candidate.components)}",
                 ]
             )
-        (self._debug_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        (self._debug_dir / "summary.md").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8"
+        )
 
 
 def write_frontend_handoff_bundle(
@@ -205,7 +251,9 @@ def write_frontend_handoff_bundle(
         raise ValueError("入力ファイル一覧とArtwork sourcePhotosが一致しません")
     if len(artwork.source_photos) != 5 or len(artwork.layers) != 4:
         raise ValueError("MVP Frontend handoffは写真5枚・4層である必要があります")
-    if not math.isclose(artwork.canvas.aspect_ratio, 178 / 127, rel_tol=0, abs_tol=1e-12):
+    if not math.isclose(
+        artwork.canvas.aspect_ratio, 178 / 127, rel_tol=0, abs_tol=1e-12
+    ):
         raise ValueError("MVP Frontend handoffは2L判Landscapeである必要があります")
     if not memory_text.strip():
         raise ValueError("MVP Frontend handoffにはmemoryTextが必要です")
@@ -273,11 +321,15 @@ def write_frontend_handoff_bundle(
     api_manifest = AssetManifest(assets=api_entries)
     bundle_manifest = AssetManifest(assets=bundle_entries)
     api_response = GenerateSuccessResponse(artwork=artwork, asset_manifest=api_manifest)
-    bundle_response = GenerateSuccessResponse(artwork=artwork, asset_manifest=bundle_manifest)
+    bundle_response = GenerateSuccessResponse(
+        artwork=artwork, asset_manifest=bundle_manifest
+    )
 
     artwork_payload = artwork.model_dump(by_alias=True, exclude_none=True)
     _write_json(output_dir / "artwork.json", artwork_payload)
-    _write_json(output_dir / "asset-manifest.json", api_manifest.model_dump(by_alias=True))
+    _write_json(
+        output_dir / "asset-manifest.json", api_manifest.model_dump(by_alias=True)
+    )
     _write_json(
         output_dir / "asset-manifest.bundle.json",
         bundle_manifest.model_dump(by_alias=True),
@@ -290,7 +342,9 @@ def write_frontend_handoff_bundle(
         output_dir / "generate-success-response.bundle.json",
         bundle_response.model_dump(by_alias=True, exclude_none=True),
     )
-    (output_dir / "memory-text.txt").write_text(memory_text.rstrip() + "\n", encoding="utf-8")
+    (output_dir / "memory-text.txt").write_text(
+        memory_text.rstrip() + "\n", encoding="utf-8"
+    )
     _write_json(output_dir / "metrics.json", dict(metrics))
 
     _write_debug_previews(
@@ -321,7 +375,9 @@ def render_composition_preview(
             image = source.convert("RGBA")
         display_width = max(1, round(layer.scale * width_px))
         display_height = max(1, round(display_width * image.height / image.width))
-        resized = image.resize((display_width, display_height), Image.Resampling.LANCZOS)
+        resized = image.resize(
+            (display_width, display_height), Image.Resampling.LANCZOS
+        )
         left = round(layer.x * width_px - display_width / 2)
         top = round(layer.y * height_px - display_height / 2)
         canvas.alpha_composite(resized, (left, top))
@@ -378,7 +434,9 @@ def _validate_debug_evidence(output_dir: Path) -> None:
         debug_dir / "masks" / "index.json",
     )
     if not all(path.is_file() for path in required_files):
-        raise ValueError("Frontend handoffに必要なSemantic/bbox/mask記録が不足しています")
+        raise ValueError(
+            "Frontend handoffに必要なSemantic/bbox/mask記録が不足しています"
+        )
     if not any((debug_dir / "bbox").glob("*-bbox.png")):
         raise ValueError("Frontend handoffにbbox previewがありません")
     if not any((debug_dir / "masks").glob("mask-*.png")):
@@ -389,7 +447,9 @@ def _asset_filename(asset_id: str, extension: str) -> str:
     """現在のAI生成IDをportableな単一filenameとして検証する。"""
 
     forbidden = '<>:"/\\|?*'
-    if any(character in asset_id for character in forbidden) or asset_id.endswith((".", " ")):
+    if any(character in asset_id for character in forbidden) or asset_id.endswith(
+        (".", " ")
+    ):
         raise ValueError(f"Bundle filenameに使えないassetIdです: {asset_id}")
     reserved = {"CON", "PRN", "AUX", "NUL"} | {
         f"{prefix}{number}" for prefix in ("COM", "LPT") for number in range(1, 10)
