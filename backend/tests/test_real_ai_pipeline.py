@@ -682,11 +682,15 @@ def test_scene_anchor_canonicalizes_legacy_subject_metadata() -> None:
 @pytest.mark.parametrize(
     ("semantic_role", "extraction_intent"),
     [
+        ("general", None),
         ("architecture_primary", None),
+        ("architecture_detail", None),
+        (None, "single_form"),
         (None, "coherent_group"),
+        ("architecture_primary", "single_form"),
     ],
 )
-def test_scene_anchor_rejects_subject_only_metadata(
+def test_scene_anchor_canonicalizes_any_subject_only_metadata(
     semantic_role: str | None, extraction_intent: str | None
 ) -> None:
     payload = {
@@ -712,8 +716,95 @@ def test_scene_anchor_rejects_subject_only_metadata(
         ],
     }
 
-    with pytest.raises(ValueError, match="scene_anchor must not have subject metadata"):
+    candidate = SemanticPlan.model_validate(payload).candidates[0]
+
+    assert candidate.kind == "scene_anchor"
+    assert candidate.semantic_role is None
+    assert candidate.extraction_intent is None
+
+
+def test_scene_anchor_still_requires_exactly_one_component() -> None:
+    payload = {
+        "memory_summary": "庭園の思い出",
+        "candidates": [
+            {
+                "candidate_id": "garden",
+                "label": "garden",
+                "source_photo_index": 0,
+                "importance": 1,
+                "selection_reason": "背景として残す",
+                "kind": "scene_anchor",
+                "semantic_role": "architecture_primary",
+                "components": [
+                    {
+                        "component_id": "range-1",
+                        "label": "garden range",
+                        "box_2d": {"y_min": 0, "x_min": 0, "y_max": 400, "x_max": 900},
+                    },
+                    {
+                        "component_id": "range-2",
+                        "label": "sky range",
+                        "box_2d": {"y_min": 400, "x_min": 0, "y_max": 900, "x_max": 900},
+                    },
+                ],
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="scene_anchor requires one component"):
         SemanticPlan.model_validate(payload)
+
+
+def test_subject_metadata_remains_required_and_is_not_canonicalized_away() -> None:
+    valid = {
+        "candidate_id": "building",
+        "label": "building",
+        "source_photo_index": 0,
+        "importance": 1,
+        "selection_reason": "思い出の中心",
+        "kind": "subject",
+        "semantic_role": "architecture_primary",
+        "extraction_intent": "single_form",
+        "components": [
+            {
+                "component_id": "building",
+                "label": "building",
+                "box_2d": {"y_min": 0, "x_min": 0, "y_max": 900, "x_max": 900},
+            }
+        ],
+    }
+
+    candidate = SemanticPlan.model_validate(
+        {"memory_summary": "建物の思い出", "candidates": [valid]}
+    ).candidates[0]
+    assert candidate.semantic_role == "architecture_primary"
+    assert candidate.extraction_intent == "single_form"
+
+    defaulted = dict(valid)
+    defaulted.pop("semantic_role")
+    defaulted.pop("extraction_intent")
+    defaulted_candidate = SemanticPlan.model_validate(
+        {"memory_summary": "建物の思い出", "candidates": [defaulted]}
+    ).candidates[0]
+    assert defaulted_candidate.semantic_role == "general"
+    assert defaulted_candidate.extraction_intent == "single_form"
+
+    invalid = dict(valid, semantic_role=None, extraction_intent=None)
+    with pytest.raises(ValueError, match="subject requires semantic_role and extraction_intent"):
+        SemanticPlan.model_validate({"memory_summary": "建物の思い出", "candidates": [invalid]})
+
+
+@pytest.mark.parametrize(
+    "profile",
+    ["physical_layer_v2", "physical_layer_v3_architecture", "coherent_group_planning"],
+)
+def test_scene_anchor_prompts_forbid_subject_only_metadata(profile: str) -> None:
+    instruction = gemini_module._semantic_profile_instruction(profile)
+
+    assert "scene_anchor must have exactly one" in instruction
+    assert "semantic_role" in instruction
+    assert "extraction_intent" in instruction
+    assert "subject-only metadata" in instruction
 
 
 def test_layout_normalization_uses_contiguous_layer_indexes() -> None:
