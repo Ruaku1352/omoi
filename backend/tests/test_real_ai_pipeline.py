@@ -546,6 +546,8 @@ def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
     assert (
         QualityPolicy().rejection_reason(diagnostics, bbox_coverage=1, border_touch=False) is None
     )
+
+
 def test_mask_diagnostics_observes_interior_holes_without_rejecting_mask() -> None:
     mask = np.zeros((20, 20), dtype=bool)
     mask[2:18, 2:18] = True

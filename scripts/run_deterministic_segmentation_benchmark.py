@@ -13,7 +13,7 @@ import math
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +24,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = REPO_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-from ai.image_ops import gemini_box_to_px  # noqa: E402
-from ai.internal_models import SemanticPlan  # noqa: E402
-from ai.segmentation import (  # noqa: E402
+from ai.image_ops import gemini_box_to_px
+from ai.internal_models import SemanticPlan
+from ai.segmentation import (
     EfficientSamOnnxSegmenter,
     EfficientSamSplitOnnxSegmenter,
     SegmentationResult,
@@ -49,7 +49,9 @@ SOURCE_PREPARATION_FIELDS = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--plan", type=Path, required=True, help="SemanticPlan JSONへのpath")
+    parser.add_argument(
+        "--plan", type=Path, required=True, help="SemanticPlan JSONへのpath"
+    )
     parser.add_argument(
         "--photo",
         type=Path,
@@ -99,7 +101,9 @@ def main() -> int:
         raise SystemExit("Saved PlanにEfficientSAM対象のcomponentがありません")
 
     output_dir = args.output_dir or (
-        REPO_ROOT / "poc-output" / f"performance-optimization-{datetime.now():%Y%m%d-%H%M%S}"
+        REPO_ROOT
+        / "poc-output"
+        / f"performance-optimization-{datetime.now(tz=UTC):%Y%m%d-%H%M%S}"
     )
     output_dir.mkdir(parents=True, exist_ok=False)
 
@@ -161,7 +165,9 @@ def main() -> int:
         },
     }
     output_file = output_dir / "benchmark.json"
-    output_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_file.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(f"output={output_file}")
     print(json.dumps(payload["summary"], ensure_ascii=False))
     return 0
@@ -174,7 +180,9 @@ def _load_rgb(path: Path) -> Image.Image:
         return ImageOps.exif_transpose(source).convert("RGB")
 
 
-def _build_attempts(plan: SemanticPlan, images: list[Image.Image]) -> list[dict[str, Any]]:
+def _build_attempts(
+    plan: SemanticPlan, images: list[Image.Image]
+) -> list[dict[str, Any]]:
     attempts: list[dict[str, Any]] = []
     for candidate in plan.candidates:
         if candidate.kind == "scene_anchor":
@@ -240,7 +248,9 @@ def _run_once(
             result = segmenter.segment_prepared(prepared, attempt["promptBoxPx"])
         else:
             result = segmenter.segment(attempt["image"], attempt["promptBoxPx"])
-        results.append(_record_attempt(attempt, result, used_prepared_image=reuse_prepared_images))
+        results.append(
+            _record_attempt(attempt, result, used_prepared_image=reuse_prepared_images)
+        )
     return {
         "totalElapsedMs": _elapsed_ms(started),
         "sourcePreparations": source_preparations,
@@ -275,7 +285,9 @@ def _assert_self_parity(runs: list[dict[str, Any]]) -> None:
     reference = _mask_index(runs[0])
     for run_number, run in enumerate(runs[1:], start=2):
         if _mask_index(run) != reference:
-            raise RuntimeError(f"同一条件のrun 1とrun {run_number}でbinary Mask hashが一致しません")
+            raise RuntimeError(
+                f"同一条件のrun 1とrun {run_number}でbinary Mask hashが一致しません"
+            )
 
 
 def _assert_reference_parity(run: dict[str, Any], reference: dict[str, Any]) -> None:
@@ -323,7 +335,13 @@ def _summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
 def _distribution(samples: list[float]) -> dict[str, float | int | None]:
     ordered = sorted(samples)
     if not ordered:
-        return {"count": 0, "minMs": None, "medianMs": None, "maxMs": None, "p95Ms": None}
+        return {
+            "count": 0,
+            "minMs": None,
+            "medianMs": None,
+            "maxMs": None,
+            "p95Ms": None,
+        }
     return {
         "count": len(ordered),
         "minMs": ordered[0],
