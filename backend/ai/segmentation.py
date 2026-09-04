@@ -267,7 +267,8 @@ class EfficientSamSplitOnnxSegmenter:
             image_embedding, *_ = self._encoder_session.run(None, {self._INPUT_IMAGE: input_image})
         except Exception as exc:
             logger.info(
-                "ai.performance stage=efficient_sam.encoder_inference elapsed_ms=%.1f outcome=error",
+                "ai.performance stage=efficient_sam.encoder_inference "
+                "elapsed_ms=%.1f outcome=error",
                 _elapsed_ms(encoder_started),
             )
             raise AiError("EfficientSAM encoderの推論に失敗しました") from exc
@@ -315,7 +316,8 @@ class EfficientSamSplitOnnxSegmenter:
             )
         except Exception as exc:
             logger.info(
-                "ai.performance stage=efficient_sam.decoder_inference elapsed_ms=%.1f outcome=error",
+                "ai.performance stage=efficient_sam.decoder_inference "
+                "elapsed_ms=%.1f outcome=error",
                 _elapsed_ms(decoder_started),
             )
             raise AiError("EfficientSAM decoderの推論に失敗しました") from exc
