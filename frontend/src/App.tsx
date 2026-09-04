@@ -2,6 +2,7 @@ import { useState } from 'react'
 import './App.css'
 import { buildAssetIndex } from './artwork/assetIndex'
 import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
+import { buildDemoSampleZip } from './dev/exportDemoSample'
 import PhotoSelect from './screens/PhotoSelect'
 import Navbar from './components/Navbar'
 import Breadcrumb from './components/Breadcrumb'
@@ -75,6 +76,34 @@ const [stage, setStage] = useState<JobStage | undefined>(undefined)
 </button>
       <p className="sample-load-note">
         ※このボタンはAIによるリアルタイム生成ではなく、事前に生成したサンプル作品を表示します
+      </p>
+      <button
+        type="button"
+        className="debug-load-btn"
+        onClick={async () => {
+          // 今読み込まれている artwork + assets を public/demo/ 用のZIPとして書き出す。
+          // サンプル作品(public/demo/artwork.json + public/demo/assets/)を
+          // 差し替えたいときに使うローカル運用ツール(2026-09-04、まなみん依頼)。
+          try {
+            const blob = await buildDemoSampleZip(artwork, assets)
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'demo-sample.zip'
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            URL.revokeObjectURL(url)
+          } catch (e) {
+            setError(e instanceof Error ? e.message : 'サンプル用ZIPの書き出しに失敗しました。')
+          }
+        }}
+      >
+        今の作品をサンプル用にエクスポート
+      </button>
+      <p className="sample-load-note">
+        ※今画面に出ている作品を artwork.json + assets/ のZIPでダウンロードします。
+        展開して frontend/public/demo/ の中身を置き換えるとサンプル作品を差し替えられます
       </p>
       </div>
       {screen ==='select' &&(
