@@ -162,6 +162,35 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
                 {i === 0 && <span className="lp-depth-tag">手前</span>}
                 {i === layers.length - 1 && <span className="lp-depth-tag">奥</span>}
               </span>
+              {/* 前後の入れ替えボタン。HTML5のドラッグ&ドロップはスマホのタッチでは
+                  反応しないため、狭い画面のときだけこのボタンで前後を変えられるようにする
+                  （2026-09-04、まなみん指示: 画面幅で操作方法を切り替える）。
+                  表示/非表示の切り替えは LayerPanel.css の `.lp-move` 側で行う。
+                  PC幅ではこのボタンを隠し、今まで通りドラッグで並び替える。 */}
+              <button
+                type="button"
+                className="lp-pill lp-move"
+                aria-label="ひとつ手前へ"
+                disabled={i === 0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  reorderLayers(i, i - 1)
+                }}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="lp-pill lp-move"
+                aria-label="ひとつ奥へ"
+                disabled={i === layers.length - 1}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  reorderLayers(i, i + 1)
+                }}
+              >
+                ↓
+              </button>
               {layer.replacementCandidates.length > 0 && (
                 <button
                   type="button"
@@ -182,9 +211,14 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
       <div className="lp-hint">
         <div className="lp-hint-card">
           <img src={iconUpdown} alt="" />
-          <p>
+          {/* 操作方法の説明も画面幅に合わせて出し分ける（表示切り替えはCSS側） */}
+          <p className="lp-hint-pc">
             ドラッグで前後が入れ替わります。<br />
             上が手前です。
+          </p>
+          <p className="lp-hint-sp">
+            ↑↓ボタンで前後が<br />
+            入れ替わります。上が手前です。
           </p>
         </div>
       </div>

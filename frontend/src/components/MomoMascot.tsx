@@ -12,7 +12,6 @@ const CONFIG = {
   BLINK_HOLD: 140,
   TYPE_SPEED: 55,
   MOUTH_MS: 150,
-  HOLD_AFTER_LINE: 1600,
   LOOP: true,
 }
 
@@ -38,6 +37,9 @@ export default function MomoMascot() {
   const [frame, setFrame] = useState<Frame>('base')
   const [lineIndex, setLineIndex] = useState(0)
   const [displayedText, setDisplayedText] = useState('')
+  // 打ち終わって「タップ待ち」になっているか。次のセリフへは自動では進まない
+  // （2026-09-04、まなみん指示: ユーザーがタップするまで次の説明を言わないようにする）
+  const [waitingForTap, setWaitingForTap] = useState(false)
   const isTypingRef = useRef(false)
   const timers = useRef<number[]>([])
   const skipRef = useRef<() => void>(() => {})
@@ -70,10 +72,11 @@ export default function MomoMascot() {
     return () => { cancelled = true }
   }, [])
 
-  // セリフのタイプライター表示 → 自動送り（タップで早送りも可）
+  // セリフのタイプライター表示 → タップで次へ（自動送りはしない）
   useEffect(() => {
     clearTimers()
     isTypingRef.current = true
+    setWaitingForTap(false)
     setDisplayedText('')
     const line = MESSAGES[lineIndex]
     let mouthToggle = false
@@ -91,8 +94,9 @@ export default function MomoMascot() {
       setDisplayedText(line)
       const isLast = lineIndex === MESSAGES.length - 1
       setFrame(isLast ? 'happy' : 'base')
-      skipRef.current = goNextLine // 打ち終わった後は「タップで次へ」
-      addTimer(goNextLine, CONFIG.HOLD_AFTER_LINE)
+      // 打ち終わったらここで止めて、タップされるまで次のセリフへ進まない
+      skipRef.current = goNextLine
+      setWaitingForTap(true)
     }
 
     skipRef.current = finishTyping // タイプ中は「タップで一気に表示」
@@ -121,6 +125,14 @@ export default function MomoMascot() {
       <img className="momo-sprite" src={FRAME_SRC[frame]} alt="もも" />
       <div className="momo-bubble">
         <p className="momo-bubble-text">{displayedText}</p>
+        {waitingForTap && (
+          <p
+            className="momo-bubble-text"
+            style={{ margin: '4px 0 0', opacity: 0.55, fontSize: '0.75em', textAlign: 'right' }}
+          >
+            ▼ タップで次へ
+          </p>
+        )}
       </div>
     </div>
   )

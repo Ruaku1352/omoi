@@ -83,6 +83,24 @@
   cursor: pointer;
 }
 
+/* 一番手前/一番奥のレイヤーでは、対応する↑↓ボタンを押せないことを見た目で示す */
+.lp-pill:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* 画面幅で操作方法を切り替える（2026-09-04、まなみん指示）。
+   PC幅ではドラッグで並び替えるので↑↓ボタンは隠す。
+   狭い画面（max-width: 600px）ではタッチでドラッグが効かないため、
+   ↑↓ボタンを出してドラッグ用のハンドルは隠す。 */
+.lp-move {
+  display: none;
+}
+
+.lp-hint-sp {
+  display: none;
+}
+
 .lp-hint-card {
   display: flex;
   align-items: center;
@@ -197,4 +215,9 @@
   .lp-hint-card { padding: 5px 6px; gap: 6px; }
   .lp-hint-card img { width: 18px; height: 18px; }
   .lp-hint-card p { font-size: 10.5px; line-height: 1.3; }
+  /* 狭い画面ではタッチでドラッグできないので、↑↓ボタンを出してハンドルは隠す */
+  .lp-move { display: inline-block; }
+  .lp-handle { display: none; }
+  .lp-hint-pc { display: none; }
+  .lp-hint-sp { display: block; }
 }
