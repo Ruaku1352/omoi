@@ -6,6 +6,7 @@ import { resolveAssetUrl, type AssetIndex } from '../artwork/assetIndex'
 import { toLayerPlane } from '../artwork/geometry'
 import { sortByLayerIndex } from '../artwork/layerOrder'
 import {
+  previewCameraDistance,
   previewDepthStep,
   previewLayerSheets,
   previewLayerThickness,
@@ -64,6 +65,13 @@ export default function ArtworkPreview({
   // （2026-09-04、まなみん指摘: 土台だけ先に出て写真が後から乗るのを無くしたい）
   const [ready, setReady] = useState(false)
 
+  // カメラのz。一番手前のLayerから一定距離だけ離して置く。
+  // 固定値にすると、Layerが増えたり間隔を広げたときに手前のLayerが目の前へ来てしまう
+  // （2026-09-04、まなみん指摘: 最初の表示が近すぎて圧迫感がある）。
+  const frontLayerZ =
+    layers.length > 0 ? Math.max(...layers.map((l) => l.layerIndex)) * previewDepthStep : 0
+  const cameraZ = frontLayerZ + previewCameraDistance
+
   return (
     <div className="preview3d">
       <div className="preview3d-head">
@@ -81,7 +89,7 @@ export default function ArtworkPreview({
       </div>
 
       <div className="preview3d-canvas" style={{ position: 'relative' }}>
-        <Canvas camera={{ position: [0, 0, 1.0] }}>
+        <Canvas camera={{ position: [0, 0, cameraZ] }}>
           <OrbitControls ref={controlsRef} makeDefault />
           {/* 土台もSuspenseの内側へ入れる。外に置くとテクスチャ待ちの影響を受けず
               先に描画されてしまい、「土台だけ先に出て写真が後から乗る」状態になる。

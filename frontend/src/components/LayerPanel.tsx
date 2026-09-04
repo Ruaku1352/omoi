@@ -47,14 +47,16 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
     setDragIndex(index)
     e.dataTransfer.effectAllowed = 'move'
 
-    // ドラッグ中にカーソルへ追従するプレビュー画像から番号を除外する。
-    // 何もしないと行全体（番号バッジ込み）のスナップショットがそのまま
-    // プレビューになり、番号がドラッグ対象と一緒に動いているように見えてしまう。
-    // 番号は常に「上から何番目か」という位置を表す値であって、
+    // ドラッグ中にカーソルへ追従するプレビュー画像は「写真名だけ」にする
+    // (2026-09-04、まなみん指示)。何もしないと行全体(番号・三本線・ボタン込み)の
+    // スナップショットがそのままプレビューになり、番号までドラッグ対象と一緒に
+    // 動いているように見えてしまう。番号は常に「上から何番目か」という位置を表す値であって、
     // ドラッグ中のレイヤーに付随するものではないため。
     const row = e.currentTarget as HTMLElement
     const clone = row.cloneNode(true) as HTMLElement
     clone.querySelector('.lp-order')?.remove()
+    clone.querySelector('.lp-handle')?.remove()
+    clone.querySelectorAll('.lp-pill').forEach((el) => el.remove())
     clone.style.position = 'absolute'
     clone.style.top = '-9999px'
     clone.style.left = '-9999px'
@@ -155,8 +157,9 @@ export default function LayerPanel({ artwork, onChange, selectedLayerId, onSelec
               onDrop={handleRowDrop(i)}
               onDragEnd={handleDragEnd}
             >
-              <span className="lp-handle" aria-label="ドラッグで並び替え">≡</span>
+              {/* 並びは「番号 → 三本線 → 写真名」(2026-09-04、まなみん指示で入れ替え) */}
               <span className="lp-order">{i + 1}</span>
+              <span className="lp-handle" aria-label="ドラッグで並び替え">≡</span>
               <span className="lp-label">
                 {layer.label}
                 {i === 0 && <span className="lp-depth-tag">手前</span>}

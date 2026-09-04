@@ -52,14 +52,27 @@ export const exportMaxAssetDimension = numberFromEnv(
 /**
  * 3D Preview の Layer 間隔。表示値であって物理厚みではない。【PoC後FIX】
  *
- * 既定値は「実機の土台で隣り合う行の間隔（行中心どうしで約34.35mm）を、
- * 2L判の幅178mmを1.0とした正規化値へ直したときの見た目」に合わせている（34.35 / 178 ≒ 0.193）。
- * 2026-09-04、まなみん指摘（3D Preview上のレイヤー間隔が実物に比べて狭い）を受けて
- * 0.02 から変更した。mm値そのものをここへ持ち込んでいるわけではなく、
+ * 実機の土台で隣り合う行の間隔（行中心どうしで約34.35mm）を2L判の幅178mmを1.0とした
+ * 正規化値へ直すと 34.35 / 178 ≒ 0.193 になる。そこを起点に見た目を確認したうえで、
+ * 少しだけ詰めた 0.16 を既定値とする（2026-09-04、まなみんが実機と見比べて決定）。
+ *
+ * 3D Preview の穴の行・横レール・土台の奥行きはすべてこの値に連動するので、
+ * 変更してもLayerとの位置ズレは起きない。mm値そのものをここへ持ち込んでいるわけではなく、
  * あくまで見た目を実物へ寄せるための表示値であり、Artwork Dataには一切入らない（AGENTS.md §7）。
  */
-export const previewDepthStep = numberFromEnv(import.meta.env.VITE_PREVIEW_DEPTH_STEP, 0.193)
-
+export const previewDepthStep = numberFromEnv(import.meta.env.VITE_PREVIEW_DEPTH_STEP, 0.16)
+/**
+ * 3D Preview のカメラを、一番手前のLayerからどれだけ離すか。【PoC後FIX】
+ *
+ * カメラ位置を固定値にすると、Layerが増えたり間隔を広げたりしたときに
+ * 一番手前のLayerがカメラの目の前へ来て圧迫感が出る（2026-09-04、まなみん指摘）。
+ * 「一番手前のLayerのz + この値」をカメラのzにすることで、枚数や間隔が変わっても
+ * 見えかたの余裕が変わらないようにする。大きくすると引きの画になる。
+ */
+export const previewCameraDistance = numberFromEnv(
+  import.meta.env.VITE_PREVIEW_CAMERA_DISTANCE,
+  0.75,
+)
 
 /** 3D Preview の Layer 1枚の見かけの厚み。表示値であって物理厚みではない。【PoC後FIX】 */
 export const previewLayerThickness = numberFromEnv(
