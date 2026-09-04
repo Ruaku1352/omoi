@@ -58,6 +58,9 @@ Mermaid構成図と sequenceDiagram の2枚固定は必須ではない。必要�
 │  └─ assets/                               # Mockが参照するダミーAsset
 ├─ skills/            # AI Coding Agent向けSkills（7領域）
 ├─ scripts/           # 開発補助
+├─ docs/              # Deploy手順等（人間向け運用メモ）
+├─ Dockerfile         # Cloud Run Image（default=Mock / real-ai=ONNX同梱）
+├─ cloudbuild.real-ai.yaml  # Real AI ImageのCloud Build設定（docs/deploy.md §3.5）
 ├─ AGENTS.md
 └─ README.md
 ```
