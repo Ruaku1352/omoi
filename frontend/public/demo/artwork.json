@@ -1,66 +1,123 @@
 {
   "schemaVersion": "1.0",
-  "artworkId": "artwork-9b00c36b3b8349448a7e7d913a8e3a54",
+  "artworkId": "artwork-dd2b0e8e3f88496798efd369dfc45133",
   "canvas": {
     "aspectRatio": 1.4015748031496063
   },
   "sourcePhotos": [
     {
       "sourcePhotoId": "source-photo-1",
-      "asset": { "assetId": "source-3bf5ca697dee40049e80ab7dbfb067a7", "mimeType": "image/jpeg", "widthPx": 3024, "heightPx": 4032 }
+      "asset": {
+        "assetId": "source-183e0df423fd46078967cfb8460fa11d",
+        "mimeType": "image/jpeg",
+        "widthPx": 3024,
+        "heightPx": 4032
+      }
     },
     {
       "sourcePhotoId": "source-photo-2",
-      "asset": { "assetId": "source-92af649aec6443bda409e9c49c51c411", "mimeType": "image/png", "widthPx": 4032, "heightPx": 3024 }
+      "asset": {
+        "assetId": "source-b84aa8fcf9824328bf5d518f7daeb94d",
+        "mimeType": "image/jpeg",
+        "widthPx": 4284,
+        "heightPx": 5712
+      }
     },
     {
       "sourcePhotoId": "source-photo-3",
-      "asset": { "assetId": "source-8efd050dce644545807efbd1d3494052", "mimeType": "image/jpeg", "widthPx": 3024, "heightPx": 4032 }
+      "asset": {
+        "assetId": "source-e3cf84b928b244b795b84d0536350cf6",
+        "mimeType": "image/jpeg",
+        "widthPx": 3024,
+        "heightPx": 4032
+      }
     },
     {
       "sourcePhotoId": "source-photo-4",
-      "asset": { "assetId": "source-c32571969dfa465db829d8a66fdb4b59", "mimeType": "image/jpeg", "widthPx": 4032, "heightPx": 3024 }
+      "asset": {
+        "assetId": "source-bcabeb85606d49e7a2a1c15eaf37f4a2",
+        "mimeType": "image/jpeg",
+        "widthPx": 4032,
+        "heightPx": 3024
+      }
     },
     {
       "sourcePhotoId": "source-photo-5",
-      "asset": { "assetId": "source-83570121c78743dc84c551b05142feb5", "mimeType": "image/png", "widthPx": 4032, "heightPx": 3024 }
+      "asset": {
+        "assetId": "source-95e8e51a95684671af38a36d8ea4112e",
+        "mimeType": "image/jpeg",
+        "widthPx": 4032,
+        "heightPx": 3024
+      }
     }
   ],
   "layers": [
     {
-      "layerId": "layer-7899a8fa6c1149918a6b404cc78736f8",
+      "layerId": "layer-864c30bf96944f6fbbaa259171916e27",
       "sourcePhotoId": "source-photo-5",
-      "sourceLayerId": "source-layer-c490a778e334208e",
-      "asset": { "assetId": "layer-0070ae0ba3784fc385bd7d3dc987eb88", "mimeType": "image/png", "widthPx": 3280, "heightPx": 1485 },
-      "label": "金沢城の木組み復元模型",
-      "x": 0.48, "y": 0.7, "scale": 0.86, "layerIndex": 1,
+      "sourceLayerId": "source-layer-df196dd04ddfdd8c",
+      "asset": {
+        "assetId": "layer-d9e405e2361b496d9e925e1440eb1459",
+        "mimeType": "image/png",
+        "widthPx": 4032,
+        "heightPx": 3024
+      },
+      "label": "Shinsekai Night Street Scene",
+      "x": 0.5,
+      "y": 0.5000000000000001,
+      "scale": 0.9513108614232211,
+      "layerIndex": 0,
       "replacementCandidates": []
     },
     {
-      "layerId": "layer-0e8230229adc45f88d231f5eb888e16f",
-      "sourcePhotoId": "source-photo-3",
-      "sourceLayerId": "source-layer-4741392ba6b30d12",
-      "asset": { "assetId": "layer-a7bd0d48330b4f1e8b749013246f4752", "mimeType": "image/png", "widthPx": 2807, "heightPx": 2512 },
-      "label": "金箔蒔絵の漆塗り銘々皿",
-      "x": 0.76, "y": 0.42, "scale": 0.44, "layerIndex": 3,
+      "layerId": "layer-7ad3ac454618425a84b9809d9eb5db2a",
+      "sourcePhotoId": "source-photo-1",
+      "sourceLayerId": "source-layer-3129584e41275327",
+      "asset": {
+        "assetId": "layer-d320d89888cd4673a1233236f60af321",
+        "mimeType": "image/png",
+        "widthPx": 2583,
+        "heightPx": 1890
+      },
+      "label": "Box of Takoyaki",
+      "x": 0.22,
+      "y": 0.78,
+      "scale": 0.35,
+      "layerIndex": 3,
       "replacementCandidates": []
     },
     {
-      "layerId": "layer-382459ea430a4c8fa95c5b6b786a68b9",
+      "layerId": "layer-8cc1704b50d04fbcbe90f719ee00fee3",
       "sourcePhotoId": "source-photo-2",
-      "sourceLayerId": "source-layer-7b7addbe375f01a3",
-      "asset": { "assetId": "layer-dde2bfb996314a4797c04063135c8eed", "mimeType": "image/png", "widthPx": 291, "heightPx": 862 },
-      "label": "夜間ライトアップの石塔",
-      "x": 0.15, "y": 0.48, "scale": 0.18, "layerIndex": 2,
+      "sourceLayerId": "source-layer-635d7dc547e656e6",
+      "asset": {
+        "assetId": "layer-3391336bbbf94c99bac1953e5708768f",
+        "mimeType": "image/png",
+        "widthPx": 2554,
+        "heightPx": 4233
+      },
+      "label": "Man posing at Dotonbori",
+      "x": 0.35,
+      "y": 0.5121762373673533,
+      "scale": 0.42,
+      "layerIndex": 1,
       "replacementCandidates": []
     },
     {
-      "layerId": "layer-3ffc68a7671f4cdab76892db9e52c4f0",
-      "sourcePhotoId": "source-photo-4",
-      "sourceLayerId": "source-layer-ca00fe8451fe270e",
-      "asset": { "assetId": "layer-b0062e16fa9f45b9b23e1c69ab269281", "mimeType": "image/png", "widthPx": 2122, "heightPx": 1331 },
-      "label": "武家屋敷の日本庭園と母屋",
-      "x": 0.52, "y": 0.3, "scale": 0.65, "layerIndex": 0,
+      "layerId": "layer-6b922ff0dc124603b8c6db2868f567b7",
+      "sourcePhotoId": "source-photo-3",
+      "sourceLayerId": "source-layer-18872d2ecd1b713a",
+      "asset": {
+        "assetId": "layer-ccd3e8cd84bf4cd2b8e5b59a59fe9a2b",
+        "mimeType": "image/png",
+        "widthPx": 2181,
+        "heightPx": 2406
+      },
+      "label": "Team member looking at Tsutenkaku",
+      "x": 0.72,
+      "y": 0.62,
+      "scale": 0.38,
+      "layerIndex": 2,
       "replacementCandidates": []
     }
   ]
