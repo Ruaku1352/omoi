@@ -12,7 +12,7 @@ import iconRemove from '../assets/icon-remove.svg'
 import './PhotoSelect.css'
 
 // iPhone由来のHEIC/HEIFはブラウザによって<img>で表示できない（Android/Windows等）ため、
-// 選択直後にJPEGへ変換してから扱う。バックエンドの受け付け基準（JPEG/PNG/WebP）にも合わせる。
+// 選択直後に扱える形式へ変換してから使う。バックエンドの受け付け基準（JPEG/PNG/WebP）にも合わせる。
 const isHeic = (file: File) => {
   const type = file.type.toLowerCase()
   const name = file.name.toLowerCase()
@@ -21,6 +21,12 @@ const isHeic = (file: File) => {
 
 const isImageFile = (file: File) => file.type.startsWith('image/') || isHeic(file)
 
+// HEIC/HEIFの変換先。2026-09-04、まなみん指示でJPEGからPNGへ変更。
+// PNGは写真だとJPEGより大幅に容量が増えるため、生成APIへのアップロードが
+// Cloud Runのリクエスト上限（32MB）に当たるようなら 'image/jpeg' へ戻す。
+const HEIC_CONVERT_TO: 'image/png' | 'image/jpeg' = 'image/png'
+const HEIC_CONVERT_EXT = HEIC_CONVERT_TO === 'image/png' ? 'png' : 'jpg'
+
 // 変換に失敗したときは null を返す。元のHEICをそのまま使い続けると、
 // 一覧のサムネイルが表示できず（Windows等の<img>はHEIC非対応）、
 // アップロードもBackendの受け付け基準から外れる。何が起きたか分かるように
@@ -28,10 +34,10 @@ const isImageFile = (file: File) => file.type.startsWith('image/') || isHeic(fil
 const convertHeicIfNeeded = async (file: File): Promise<File | null> => {
   if (!isHeic(file)) return file
   try {
-    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
+    const converted = await heic2any({ blob: file, toType: HEIC_CONVERT_TO, quality: 0.9 })
     const blob = Array.isArray(converted) ? converted[0] : converted
-    const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg')
-    return new File([blob], newName, { type: 'image/jpeg' })
+    const newName = file.name.replace(/\.(heic|heif)$/i, `.${HEIC_CONVERT_EXT}`)
+    return new File([blob], newName, { type: HEIC_CONVERT_TO })
   } catch (e) {
     console.error('HEIC変換に失敗しました:', file.name, e)
     return null
@@ -40,11 +46,17 @@ const convertHeicIfNeeded = async (file: File): Promise<File | null> => {
 
 // スマホの写真（特にHEICから変換した直後のもの）はそのまま送るとCloud Runの
 // リクエストサイズ上限（32MB・固定）に引っかかることがあるため、最長辺を
-// MAX_DIMENSION に収まるまで縮小し、JPEGへ再圧縮してからアップロードする。
+// MAX_DIMENSION に収まるまで縮小してからアップロードする。
 const MAX_DIMENSION = 2048
 const JPEG_QUALITY = 0.85
 
 const resizeIfNeeded = async (file: File): Promise<File> => {
+  // 元の形式を引き継ぐ。HEICからPNGへ変換したファイルを、ここでJPEGへ
+  // 再圧縮し直してしまうと「PNGにしたい」という意図が失われるため
+  // （2026-09-04、まなみん指示）。
+  const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+  const outputExt = outputType === 'image/png' ? 'png' : 'jpg'
+
   try {
     const bitmap = await createImageBitmap(file)
     const { width, height } = bitmap
@@ -65,12 +77,13 @@ const resizeIfNeeded = async (file: File): Promise<File> => {
     }
     ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight)
     bitmap.close()
+    // PNGは quality 引数を無視する（可逆圧縮のため）。JPEGのときだけ効く
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
+      canvas.toBlob(resolve, outputType, JPEG_QUALITY),
     )
     if (!blob) return file
-    const newName = file.name.replace(/\.\w+$/, '.jpg')
-    return new File([blob], newName, { type: 'image/jpeg' })
+    const newName = file.name.replace(/\.\w+$/, `.${outputExt}`)
+    return new File([blob], newName, { type: outputType })
   } catch (e) {
     console.error('画像の圧縮に失敗しました:', file.name, e)
     return file
