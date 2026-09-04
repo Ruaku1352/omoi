@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, ValidationError
 
 from ai.errors import AiNotConfiguredError, AiTimeoutError
 from ai.types import GenerationResult, InputPhoto
@@ -116,3 +117,25 @@ async def test_cloud_tasks_style_retryable_failure_still_propagates(tmp_path: Pa
     assert excinfo.value.retryable is True
     job = await job_store.get("job-3")
     assert job.status == "processing"  # まだfailedへ確定していない
+
+
+@pytest.mark.anyio
+async def test_structured_output_validation_failure_is_terminal(tmp_path: Path, photos) -> None:
+    """Gemini Structured OutputのPydantic検証失敗は再送で解消しない。
+
+    Cloud Tasks経路の``allow_retry=True``でも、raw ValidationErrorを漏らして
+    processingのまま残さず、既存AI_FAILEDへ変換してfailedへ確定する。
+    """
+
+    class _StructuredOutput(BaseModel):
+        value: int
+
+    with pytest.raises(ValidationError) as excinfo:
+        _StructuredOutput.model_validate({"value": "not-an-int"})
+
+    job = await _run_with(tmp_path, excinfo.value, photos, allow_retry=True)
+
+    assert job is not None
+    assert job.status == "failed"
+    assert job.error["code"] == "AI_FAILED"
+    assert job.error["retryable"] is False
