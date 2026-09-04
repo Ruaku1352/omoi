@@ -16,11 +16,3 @@
 body {
   margin: 0;
 }
-
-/* 実データ読み込み用のデバッグボタン（App.tsx）。スマホ幅では場所を取りすぎるので隠す。
-   デスクトップ表示ではそのまま残す。 */
-@media (max-width: 600px) {
-  .debug-load-btn {
-    display: none;
-  }
-}
