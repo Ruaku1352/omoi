@@ -49,7 +49,7 @@ curl -F photos=@../contracts/assets/source-p1.jpg -F memoryText=海に行った�
 - Request: `multipart/form-data`
   - `artwork`: 確定Artwork Data JSON
   - `assets`: 現在の `layers[]` が参照するLayer Asset画像。元写真や差し替え候補Assetは任意
-  - `outputFormat`: `stlZip` または `photoPdf`。未指定時は `stlZip`
+  - `outputFormat`: `stlZip` / `photoPdf` / `photoJpegZip`。未指定時は `stlZip`
   - `physicalOutputConfig`: 任意JSON。未指定ならBackend側のPoC既定値（rail / 2L Landscape / 4行 x 3穴）
 - Response:
   - `outputFormat=stlZip`: `application/zip`
@@ -59,6 +59,9 @@ curl -F photos=@../contracts/assets/source-p1.jpg -F memoryText=海に行った�
   - `outputFormat=photoPdf`: `application/pdf`
     - 2L Landscape（178 x 127mm）写真紙100%印刷用の `flat-photo-print-layout.pdf`
     - 全面不透明の `layerIndex: 0` 背景は既定で2L全面へcover cropする
+  - `outputFormat=photoJpegZip`: `application/zip`
+    - `photo/`: コンビニ2L写真プリント用のJPEG一式
+    - 既定は2L Landscape 300dpi（2102 x 1500px）。PDFが普通紙文書扱いになる環境ではこちらを使う
 
 このEndpointは2026-09-02時点のPhysical Output PoC候補。入力境界はDrive仕様どおり
 確定Artwork Data + Assetsで、Artwork Dataへmm値を混ぜない。複数成果物を返すため

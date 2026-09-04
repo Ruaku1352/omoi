@@ -18,6 +18,9 @@ EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 POINTS_PER_MM = 72.0 / 25.4
 PHOTO_2L_LANDSCAPE_WIDTH_MM = 178.0
 PHOTO_2L_LANDSCAPE_HEIGHT_MM = 127.0
+PHOTO_PRINT_DPI = 300.0
+PHOTO_IMAGE_WIDTH_PX = round(PHOTO_2L_LANDSCAPE_WIDTH_MM * PHOTO_PRINT_DPI / 25.4)
+PHOTO_IMAGE_HEIGHT_PX = round(PHOTO_2L_LANDSCAPE_HEIGHT_MM * PHOTO_PRINT_DPI / 25.4)
 MEDIA_BOX_PATTERN = re.compile(
     rb"/MediaBox\s*\[\s*(?:0|0\.0+)\s+(?:0|0\.0+)\s+([0-9.]+)\s+([0-9.]+)\s*\]"
 )
@@ -331,6 +334,54 @@ def test_physical_output_exports_photo_pdf_from_artwork_and_assets(
     for width, height in media_boxes:
         assert abs(width - expected_width) < 0.25
         assert abs(height - expected_height) < 0.25
+
+
+def test_physical_output_exports_photo_jpeg_zip_from_artwork_and_assets(
+    client: TestClient,
+) -> None:
+    artwork = _mock_artwork()
+
+    response = client.post(
+        "/api/v1/physical-output/exports",
+        data={
+            "artwork": json.dumps(artwork),
+            "outputFormat": "photoJpegZip",
+        },
+        files=_layer_asset_uploads(artwork),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"].startswith(
+        'attachment; filename="omoi-photo-print-images-mock-artwork-001'
+    )
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        names = archive.namelist()
+        photo_names = sorted(
+            name
+            for name in names
+            if name.startswith("photo/") and name.endswith(".jpg")
+        )
+        report = json.loads(archive.read("flat-photo-parts-report.json"))
+
+        assert photo_names
+        assert not any(name.startswith("stl/") for name in names)
+        assert report["outputs"]["photoJpegFiles"] == photo_names
+        assert report["outputs"]["stlFiles"] == []
+        assert report["outputs"]["printLayoutPdf"] is None
+        assert report["printLayout"]["photoImageFormat"] == "JPEG"
+        assert report["printLayout"]["photoImageDpi"] == PHOTO_PRINT_DPI
+        assert report["printLayout"]["photoImagePixelSize"] == {
+            "widthPx": PHOTO_IMAGE_WIDTH_PX,
+            "heightPx": PHOTO_IMAGE_HEIGHT_PX,
+        }
+
+        with archive.open(photo_names[0]) as image_file, Image.open(image_file) as image:
+            image.load()
+            assert image.format == "JPEG"
+            assert image.mode == "RGB"
+            assert image.size == (PHOTO_IMAGE_WIDTH_PX, PHOTO_IMAGE_HEIGHT_PX)
 
 
 def test_physical_output_config_stays_separate_from_artwork(client: TestClient) -> None:

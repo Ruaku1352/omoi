@@ -201,13 +201,15 @@ Prefix: `/api/v1`
 - Request: `multipart/form-data`
   - `artwork`: 確定Artwork Data JSON
   - `assets`: 現在の `layers[]` が参照するLayer Asset画像。元写真や差し替え候補Assetは任意
-  - `outputFormat`: `stlZip` または `photoPdf`。未指定時は `stlZip`
+  - `outputFormat`: `stlZip` / `photoPdf` / `photoJpegZip`。未指定時は `stlZip`
   - `physicalOutputConfig`: 任意JSON。未指定ならBackend側のPoC既定値（rail / 2L Landscape / 4行 x 3穴）
 - Response:
   - `outputFormat=stlZip`: `application/zip`
     - 平面パーツSTL、番号付きスロット土台STL、設定、レポート
   - `outputFormat=photoPdf`: `application/pdf`
     - 写真紙100%印刷用PDF
+  - `outputFormat=photoJpegZip`: `application/zip`
+    - コンビニ2L写真プリントへ渡すためのJPEG一式、設定、レポート
 - Artwork Dataへmm値を混ぜない。製造条件はPhysicalOutputConfigへ分離する
 - STL Responseは複数成果物を束ねるためZIPだが、入力をPortable Artwork Bundle ZIPへ固定しない
 - SVGはユーザー向け主要Downloadにしない。必要なら開発確認・手修正用の生成物として扱う

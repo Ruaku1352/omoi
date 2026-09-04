@@ -656,14 +656,14 @@ Endpointは `POST /api/v1/physical-output/exports`。入力はZIPではなく、
 
 - `artwork`: 確定Artwork Data JSON文字列
 - `assets`: 現在の `layers[]` が参照するLayer Asset画像
-- `outputFormat`: `stlZip` または `photoPdf`。未指定時は `stlZip`
+- `outputFormat`: `stlZip` / `photoPdf` / `photoJpegZip`。未指定時は `stlZip`
 - `physicalOutputConfig`: 任意JSON。未指定ならBackend側のPoC既定値（rail / 2L Landscape / 4行 x 3穴）
 
-`sourcePhotos[]` や `replacementCandidates[]` が参照する元写真・候補画像は、物理出力STL/PDF生成では必須にしない。Frontend側のBundleに含まれていても、今回のEndpointでは余分なAssetとして受け取り可能だが、STL/PDF生成は現在のLayer Assetだけで行う。
+`sourcePhotos[]` や `replacementCandidates[]` が参照する元写真・候補画像は、物理出力STL/PDF/JPEG生成では必須にしない。Frontend側のBundleに含まれていても、今回のEndpointでは余分なAssetとして受け取り可能だが、STL/PDF/JPEG生成は現在のLayer Assetだけで行う。
 
 Layer PNGは生成入力写真より大きくなることがあるため、生成APIの `maxPhotoBytes` ではなく、Physical Output専用の `maxPhysicalAssetBytes` / `maxPhysicalTotalAssetBytes` で検証する。とくに背景Layerは透過なしPNGになりやすく、2L相当の背景画像が15MiBを超えても物理出力上は正常な入力である。
 
-Responseは `outputFormat` で分ける。これは、まなみん側Frontendの完成画面にある「3Dプリンター用データを出力」と「写真貼り付け用PDFを出力」の2ボタン導線に合わせるためである。
+Responseは `outputFormat` で分ける。これは、まなみん側Frontendの完成画面から用途別に「3Dプリンター用データ」「写真紙PDF」「コンビニ写真プリント用JPEG」を取得できるようにするためである。
 
 `outputFormat=stlZip` のResponseは `application/zip`。これは入力導線をZIPに固定する意味ではなく、STL、製造条件、レポートを1回のダウンロードにまとめるための成果物コンテナである。
 
@@ -673,6 +673,8 @@ Responseは `outputFormat` で分ける。これは、まなみん側Frontendの
 - `artwork.json`: 入力Artwork Dataの控え
 
 `outputFormat=photoPdf` のResponseは `application/pdf`。写真紙を100%印刷して切るための `flat-photo-print-layout.pdf` を単体で返す。PDFの用紙サイズは既定で2L Landscape、178 x 127mmにする。各ページにはLayerの写真貼り込み面を1面ずつ原寸配置し、A4前提の余白紙面にはしない。SVGはユーザー向けの主要Downloadにしない。必要なら開発確認・手修正用の生成物として扱う。
+
+`outputFormat=photoJpegZip` のResponseは `application/zip`。PDFが普通紙文書プリント扱いになりやすいコンビニ写真プリント向けに、2L LandscapeのJPEGを `photo/` にまとめて返す。既定は178 x 127mm、300dpi、2102 x 1500px。ZIPには `artwork.json`、`physical-output-config.json`、`flat-photo-parts-report.json`、READMEを含めるが、STLは含めない。
 
 実装は `backend/app/api/v1/physical_output.py` と `backend/app/services/physical_output.py` に置く。生成処理の正本はまだ `scripts/flat_photo_parts_poc.py` のままで、Cloud Run ImageではDockerfileから `scripts/` を同梱して呼び出す。正式FIX時には、Physical Output runtimeをBackend内Packageへ移すか、独立Local Toolに切り出すかを改めて決める。
 

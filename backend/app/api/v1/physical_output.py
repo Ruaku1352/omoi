@@ -1,7 +1,7 @@
 """POST /api/v1/physical-output/exports
 
 Physical Output候補Endpoint。入力は確定Artwork Data + Assetsで、
-出力は3Dプリント用STL ZIP、または写真紙用PDF。
+出力は3Dプリント用STL ZIP、写真紙用PDF、または2L写真紙用JPEG ZIP。
 
 Artwork Dataを物理mm値で上書きしない。製造条件はBackend側のPoC既定値
 （rail / 2L Landscape / 4行 x 3穴）を使い、physicalOutputConfig JSONは
@@ -25,6 +25,7 @@ from app.services.physical_output import (
     build_asset_blobs,
     build_physical_output_archive,
     build_physical_output_pdf,
+    build_physical_output_photo_jpeg_zip,
     parse_artwork_payload,
     parse_physical_output_config,
     required_layer_asset_ids,
@@ -47,7 +48,7 @@ def get_settings_dep(request: Request) -> Settings:
                 "application/zip": {},
                 "application/pdf": {},
             },
-            "description": "3Dプリンター用STL ZIP、または写真紙用PDF",
+            "description": "3Dプリンター用STL ZIP、写真紙用PDF、または2L写真紙用JPEG ZIP",
         }
     },
 )
@@ -60,7 +61,10 @@ async def create_physical_output_export(
         str,
         Form(
             alias="outputFormat",
-            description="stlZip は3Dプリンター用ZIP、photoPdf は写真紙用PDF",
+            description=(
+                "stlZip は3Dプリンター用ZIP、photoPdf は写真紙用PDF、"
+                "photoJpegZip は2L写真紙用JPEG ZIP"
+            ),
         ),
     ] = "stlZip",
     physical_output_config: Annotated[
@@ -73,8 +77,10 @@ async def create_physical_output_export(
 ) -> Response:
     del request
     try:
-        if output_format not in {"stlZip", "photoPdf"}:
-            raise PhysicalOutputInputError(["outputFormat must be stlZip or photoPdf"])
+        if output_format not in {"stlZip", "photoPdf", "photoJpegZip"}:
+            raise PhysicalOutputInputError(
+                ["outputFormat must be stlZip, photoPdf, or photoJpegZip"]
+            )
         parsed_artwork = parse_artwork_payload(artwork)
         config = parse_physical_output_config(physical_output_config)
         layer_asset_ids = required_layer_asset_ids(parsed_artwork)
@@ -93,6 +99,12 @@ async def create_physical_output_export(
         asset_blobs = build_asset_blobs(parsed_artwork, uploaded_assets, settings)
         if output_format == "photoPdf":
             archive = build_physical_output_pdf(
+                artwork=parsed_artwork,
+                assets=asset_blobs,
+                config=config,
+            )
+        elif output_format == "photoJpegZip":
+            archive = build_physical_output_photo_jpeg_zip(
                 artwork=parsed_artwork,
                 assets=asset_blobs,
                 config=config,
