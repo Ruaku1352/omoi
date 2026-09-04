@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omoi.example/contracts/job-status-response.schema.json",
+  "title": "omoi Job Status Response",
+  "description": "GET /api/v1/jobs/{jobId} のレスポンス正本。技術設計 §14.2 の非同期Contract に対応する。生成はCloud Run実測で数分規模のため非同期化し、Frontendはこの Endpoint で Job の状態を取得する。status=completed のときの result は、同期方式で返していた生成成功Responseと**同一の形**（contracts/generate-success-response.schema.json）であり、ここで再定義せず $ref で参照する。同期 / 非同期のどちらでも最終成功Resultの形は変わらない（AGENTS.md §4）。進捗率（percentage / progress 等）は持たない。実処理時間と一致しない疑似progressを共通契約にしないため（技術設計 §12.1）。ユーザーへ見せる段階表現は status / stage からFrontend側でMappingする。",
+  "type": "object",
+  "required": ["jobId", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "jobId": {
+      "description": "Jobの識別子。POST /api/v1/artworks/generate の 202 レスポンスで返る jobId と同じ値。",
+      "$ref": "https://omoi.example/contracts/artwork.schema.json#/$defs/opaqueId"
+    },
+    "status": {
+      "description": "Jobの状態。pending=受付済みで未着手 / processing=処理中 / completed=成功 / failed=失敗。",
+      "type": "string",
+      "enum": ["pending", "processing", "completed", "failed"]
+    },
+    "stage": {
+      "description": "processing 中の処理段階。任意。内部処理名をそのままユーザーへ表示せず、Frontendがユーザー向け文言へMappingする（AGENTS.md §7 / 技術設計 §12.5）。この4つ以外の値を追加しない。",
+      "type": "string",
+      "enum": ["analyzing", "extracting", "composing", "finalizing"]
+    },
+    "result": {
+      "description": "status=completed のときの生成成功Result。Artwork Data + Asset Manifest。定義は generate-success-response.schema.json が正本で、ここでは再定義しない。",
+      "$ref": "https://omoi.example/contracts/generate-success-response.schema.json"
+    },
+    "error": {
+      "description": "status=failed のときの失敗内容。AGENTS.md §4 の Error形式に合わせる。Stack Trace / API Key / Providerの生Response / 内部File Path を含めない。",
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "description": "Machine Readable な UPPER_SNAKE_CASE のError Code。共通Codeは AGENTS.md §4 を参照。",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "message": {
+          "description": "そのままユーザーへ出せる説明。内部情報を含めない。",
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "description": "再試行可能性。",
+          "type": "boolean"
+        },
+        "details": {
+          "description": "任意の補足。無い場合は null。"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "pending: result / error / stage をまだ持たない。",
+      "if": { "properties": { "status": { "const": "pending" } }, "required": ["status"] },
+      "then": {
+        "not": { "anyOf": [
+          { "required": ["result"] },
+          { "required": ["error"] },
+          { "required": ["stage"] }
+        ] }
+      }
+    },
+    {
+      "$comment": "processing: stage は任意で持てる。result / error はまだ持たない。",
+      "if": { "properties": { "status": { "const": "processing" } }, "required": ["status"] },
+      "then": {
+        "not": { "anyOf": [
+          { "required": ["result"] },
+          { "required": ["error"] }
+        ] }
+      }
+    },
+    {
+      "$comment": "completed: result が必須。error は持たない。stage は processing 用なので持たない。",
+      "if": { "properties": { "status": { "const": "completed" } }, "required": ["status"] },
+      "then": {
+        "required": ["result"],
+        "not": { "anyOf": [
+          { "required": ["error"] },
+          { "required": ["stage"] }
+        ] }
+      }
+    },
+    {
+      "$comment": "failed: error が必須。result は持たない。stage は processing 用なので持たない。",
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": {
+        "required": ["error"],
+        "not": { "anyOf": [
+          { "required": ["result"] },
+          { "required": ["stage"] }
+        ] }
+      }
+    }
+  ]
+}

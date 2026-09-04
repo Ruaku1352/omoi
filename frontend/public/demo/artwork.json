@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0",
+  "artworkId": "artwork-9b00c36b3b8349448a7e7d913a8e3a54",
+  "canvas": {
+    "aspectRatio": 1.4015748031496063
+  },
+  "sourcePhotos": [
+    {
+      "sourcePhotoId": "source-photo-1",
+      "asset": { "assetId": "source-3bf5ca697dee40049e80ab7dbfb067a7", "mimeType": "image/jpeg", "widthPx": 3024, "heightPx": 4032 }
+    },
+    {
+      "sourcePhotoId": "source-photo-2",
+      "asset": { "assetId": "source-92af649aec6443bda409e9c49c51c411", "mimeType": "image/png", "widthPx": 4032, "heightPx": 3024 }
+    },
+    {
+      "sourcePhotoId": "source-photo-3",
+      "asset": { "assetId": "source-8efd050dce644545807efbd1d3494052", "mimeType": "image/jpeg", "widthPx": 3024, "heightPx": 4032 }
+    },
+    {
+      "sourcePhotoId": "source-photo-4",
+      "asset": { "assetId": "source-c32571969dfa465db829d8a66fdb4b59", "mimeType": "image/jpeg", "widthPx": 4032, "heightPx": 3024 }
+    },
+    {
+      "sourcePhotoId": "source-photo-5",
+      "asset": { "assetId": "source-83570121c78743dc84c551b05142feb5", "mimeType": "image/png", "widthPx": 4032, "heightPx": 3024 }
+    }
+  ],
+  "layers": [
+    {
+      "layerId": "layer-7899a8fa6c1149918a6b404cc78736f8",
+      "sourcePhotoId": "source-photo-5",
+      "sourceLayerId": "source-layer-c490a778e334208e",
+      "asset": { "assetId": "layer-0070ae0ba3784fc385bd7d3dc987eb88", "mimeType": "image/png", "widthPx": 3280, "heightPx": 1485 },
+      "label": "金沢城の木組み復元模型",
+      "x": 0.48, "y": 0.7, "scale": 0.86, "layerIndex": 1,
+      "replacementCandidates": []
+    },
+    {
+      "layerId": "layer-0e8230229adc45f88d231f5eb888e16f",
+      "sourcePhotoId": "source-photo-3",
+      "sourceLayerId": "source-layer-4741392ba6b30d12",
+      "asset": { "assetId": "layer-a7bd0d48330b4f1e8b749013246f4752", "mimeType": "image/png", "widthPx": 2807, "heightPx": 2512 },
+      "label": "金箔蒔絵の漆塗り銘々皿",
+      "x": 0.76, "y": 0.42, "scale": 0.44, "layerIndex": 3,
+      "replacementCandidates": []
+    },
+    {
+      "layerId": "layer-382459ea430a4c8fa95c5b6b786a68b9",
+      "sourcePhotoId": "source-photo-2",
+      "sourceLayerId": "source-layer-7b7addbe375f01a3",
+      "asset": { "assetId": "layer-dde2bfb996314a4797c04063135c8eed", "mimeType": "image/png", "widthPx": 291, "heightPx": 862 },
+      "label": "夜間ライトアップの石塔",
+      "x": 0.15, "y": 0.48, "scale": 0.18, "layerIndex": 2,
+      "replacementCandidates": []
+    },
+    {
+      "layerId": "layer-3ffc68a7671f4cdab76892db9e52c4f0",
+      "sourcePhotoId": "source-photo-4",
+      "sourceLayerId": "source-layer-ca00fe8451fe270e",
+      "asset": { "assetId": "layer-b0062e16fa9f45b9b23e1c69ab269281", "mimeType": "image/png", "widthPx": 2122, "heightPx": 1331 },
+      "label": "武家屋敷の日本庭園と母屋",
+      "x": 0.52, "y": 0.3, "scale": 0.65, "layerIndex": 0,
+      "replacementCandidates": []
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+.navbar {
+  height: clamp(48px, 8vh, 64px);
+  padding: 0 24px;
+  background: var(--omoi-bg);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.navbar-logo {
+  width: 32px;
+  height: 32px;
+  background: var(--omoi-brown);
+}
+
+.navbar-name {
+  font-family: "Roboto", sans-serif;
+  font-weight: 500;
+  font-size: 24px;
+  color: var(--omoi-brown);
+}
+
+@media (max-width: 768px) {
+  .navbar {
+    height: 44px;
+    padding: 0 16px;
+  }
+  .navbar-logo {
+    width: 24px;
+    height: 24px;
+  }
+  .navbar-name {
+    font-size: 20px;
+  }
+}

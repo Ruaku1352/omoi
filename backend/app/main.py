@@ -11,11 +11,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api.internal.artworks import router as internal_artworks_router
+from app.api.internal.jobs import router as internal_jobs_router
 from app.api.v1.artworks import router as artworks_router
+from app.api.v1.jobs import router as jobs_router
+from app.api.v1.physical_output import router as physical_output_router
 from app.config import Settings, get_settings
 from app.errors import register_exception_handlers
-from app.services.asset_store import LocalDirAssetStore
+from app.services.asset_store import build_asset_store
 from app.services.generator import build_generator
+from app.services.job_input_store import build_job_input_store
+from app.services.job_runner import JobRunner
+from app.services.job_store import build_job_store
+from app.services.stage_observer import JobStageObserver
+from app.services.task_queue import build_task_queue
 
 API_V1_PREFIX = "/api/v1"
 
@@ -44,29 +53,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=settings.allowed_origins,
             allow_methods=["POST", "GET", "OPTIONS"],
             allow_headers=["*"],
+            expose_headers=["Content-Disposition", "X-Omoi-Physical-Warning-Count"],
         )
     else:
         logger.warning("CORS_ORIGINS が空。別OriginのFrontendからは呼べない。")
 
     register_exception_handlers(app)
 
-    app.state.generator = build_generator(settings)
-    app.state.asset_store = LocalDirAssetStore(
-        root=settings.asset_dir,
-        mount_path=settings.asset_mount_path,
-        public_base_url=settings.asset_public_base_url,
-    )
+    app.state.asset_store = build_asset_store(settings)
 
-    # Asset Binary Storage方式が決まるまでの暫定静的配信。
-    # Product API Contract（/api/v1 配下）ではない。
-    settings.asset_dir.mkdir(parents=True, exist_ok=True)
-    app.mount(
-        settings.asset_mount_path,
-        StaticFiles(directory=settings.asset_dir),
-        name="dev-assets",
+    if settings.asset_backend == "local":
+        # Asset Binary Storage方式が決まるまでの暫定静的配信。
+        # Product API Contract（/api/v1 配下）ではない。
+        settings.asset_dir.mkdir(parents=True, exist_ok=True)
+        app.mount(
+            settings.asset_mount_path,
+            StaticFiles(directory=settings.asset_dir),
+            name="dev-assets",
+        )
+
+    # ---- 非同期化: Job Store / Job Input Store / Task Queue ----
+    # job_storeはGeneratorのstage通知Observerが使うため、Generatorより先に作る。
+    app.state.job_store = build_job_store(settings)
+    app.state.generator = build_generator(settings, observer=JobStageObserver(app.state.job_store))
+    app.state.job_input_store = build_job_input_store(settings)
+    if settings.job_input_backend == "local":
+        settings.job_input_dir.mkdir(parents=True, exist_ok=True)
+    app.state.job_runner = JobRunner(
+        generator=app.state.generator,
+        asset_store=app.state.asset_store,
+        job_store=app.state.job_store,
+    )
+    app.state.task_queue = build_task_queue(
+        settings, app.state.job_runner, app.state.job_input_store
     )
 
     app.include_router(artworks_router, prefix=API_V1_PREFIX)
+    app.include_router(jobs_router, prefix=API_V1_PREFIX)
+    app.include_router(physical_output_router, prefix=API_V1_PREFIX)
+    app.include_router(internal_jobs_router)
+    app.include_router(internal_artworks_router)
 
     # Health Checkは担当裁量。Product API Contractには含めない（AGENTS.md §4）。
     @app.get("/health", include_in_schema=False)

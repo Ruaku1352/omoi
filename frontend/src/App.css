@@ -1,17 +1,21 @@
 .app {
-  max-width: 52rem;
-  margin: 0 auto;
-  padding: 2.5rem 1.5rem 4rem;
+  max-width: none;
+  margin: 0;
+  padding: 0;   
 }
 
-.app h1 {
-  margin: 0 0 0.25rem;
-  font-size: 2rem;
+
+.sample-load {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.app h2 {
-  font-size: 1.1rem;
-  margin: 2.5rem 0 0.75rem;
+.sample-load-note {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.6;
 }
 
 .tagline {
@@ -105,4 +109,14 @@ code {
 
 footer {
   margin-top: 3rem;
+}
+.app-error {
+  max-width: 1120px;
+  margin: 8px auto 0;
+  padding: 12px 16px;
+  background: #fdeaea;
+  border: 1px solid #c00;
+  border-radius: 8px;
+  color: #c00;
+  font-size: 14px;
 }

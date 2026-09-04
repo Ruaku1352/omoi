@@ -15,6 +15,7 @@ npm-debug.log*
 
 # Python / Backend
 backend/.dev-assets/
+backend/.dev-job-input/
 __pycache__/
 *.py[cod]
 .venv/

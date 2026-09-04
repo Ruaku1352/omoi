@@ -1,7 +1,12 @@
 :root {
   font-family: system-ui, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
   line-height: 1.7;
-  color-scheme: light dark;
+  color-scheme: light;
+  --omoi-bg: #f9e5d4;
+  --omoi-brown: #a7724c;
+  --omoi-orange: #c24b03;
+  --omoi-gray: #6e6e6e;
+  --omoi-accent: #f56600;
 }
 
 * {
