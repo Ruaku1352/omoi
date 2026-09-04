@@ -12,6 +12,8 @@ dependencies = [
     "pillow~=12.0",
     "pydantic~=2.13",
     "pydantic-settings~=2.15",
+    # full-resolution binary Maskの8近傍hole fillを品質非変更で高速化する。
+    "scipy~=1.16",
     # multipart/form-data の受け口に必要
     "python-multipart~=0.0.32",
     "uvicorn[standard]~=0.52",

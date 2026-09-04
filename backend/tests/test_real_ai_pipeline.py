@@ -461,6 +461,46 @@ def test_fill_closed_mask_holes_removes_hole_created_by_gap_closing() -> None:
     assert diagnose_mask(filled, max_side=20).interior_hole_count == 0
 
 
+def test_fill_closed_mask_holes_matches_previous_eight_neighbor_fill() -> None:
+    rng = np.random.default_rng(20260904)
+    for height, width in ((1, 1), (2, 7), (13, 9), (31, 37)):
+        for foreground_probability in (0.1, 0.5, 0.9):
+            mask = rng.random((height, width)) < foreground_probability
+            assert np.array_equal(fill_closed_mask_holes(mask), _previous_hole_fill(mask))
+
+
+def _previous_hole_fill(mask: np.ndarray) -> np.ndarray:
+    """最適化前の8近傍flood fill。parity test専用。"""
+
+    result = np.asarray(mask, dtype=bool)
+    height, width = result.shape
+    exterior = np.zeros_like(result, dtype=bool)
+    pending: list[tuple[int, int]] = []
+
+    def mark_exterior(y: int, x: int) -> None:
+        if not result[y, x] and not exterior[y, x]:
+            exterior[y, x] = True
+            pending.append((y, x))
+
+    for x in range(width):
+        mark_exterior(0, x)
+        mark_exterior(height - 1, x)
+    for y in range(1, height - 1):
+        mark_exterior(y, 0)
+        mark_exterior(y, width - 1)
+    while pending:
+        y, x = pending.pop()
+        for delta_y in (-1, 0, 1):
+            for delta_x in (-1, 0, 1):
+                if delta_y == 0 and delta_x == 0:
+                    continue
+                next_y = y + delta_y
+                next_x = x + delta_x
+                if 0 <= next_y < height and 0 <= next_x < width:
+                    mark_exterior(next_y, next_x)
+    return np.logical_or(result, ~exterior)
+
+
 def test_quality_gate_rejects_empty_and_full_masks() -> None:
     box = (2, 2, 8, 8)
     assert not assess_mask(np.zeros((10, 10), dtype=bool), box, None).accepted
