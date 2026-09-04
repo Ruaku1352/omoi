@@ -23,6 +23,9 @@ export type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
  */
 export default function App() {
 const [artwork, setArtwork] = useState(mockArtwork)
+// 生成直後（2D編集する前）のArtwork Data。3D Previewで「最初の状態」を見比べるために保持する
+// （2026-09-04、まなみん依頼）。2D編集では更新せず、新しい作品を読み込んだときだけ差し替える。
+const [initialArtwork, setInitialArtwork] = useState(mockArtwork)
 const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
 const [screen, setScreen] = useState<Screen>('select')
 const [error, setError] = useState<string | null>(null)
@@ -67,6 +70,7 @@ const [stage, setStage] = useState<JobStage | undefined>(undefined)
       await new Promise((resolve) => setTimeout(resolve, 2500)) // 4段階 × 2.5秒 = 合計10秒
     }
     setArtwork(demoArtwork)
+        setInitialArtwork(demoArtwork)
     setManifest({ assets })
     setScreen('preview')
   }}
@@ -81,6 +85,7 @@ const [stage, setStage] = useState<JobStage | undefined>(undefined)
        <PhotoSelect
         onGenerated={(nextArtwork, nextManifest) => {
           setArtwork(nextArtwork)
+          setInitialArtwork(nextArtwork)
           setManifest(nextManifest)
           setScreen('preview')
         }}
@@ -98,6 +103,7 @@ const [stage, setStage] = useState<JobStage | undefined>(undefined)
 {screen === 'preview' && (
   <PreviewScreen
     artwork={artwork}
+    initialArtwork={initialArtwork}
     assets={assets}
     onSelectScreen={setScreen}
   />
