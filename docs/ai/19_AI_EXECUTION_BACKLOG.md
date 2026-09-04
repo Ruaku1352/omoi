@@ -2182,3 +2182,9 @@ Real E2Eした。**4 Layer**、Contract validation成功、total **65,816.47 ms�
 Composition 7,960.68 ms、12 candidateで成功した。private artifactは
 `poc-output/performance-optimization-p2-scipy-real-e2e-3-20260904/`に保存し、AC sleepは3600秒へ復帰した。
 品質フェーズ**97%**、速度改善フェーズ**100%**とする。
+
+### 8.76 精度確認用5 pattern artifact（2026-09-04）
+
+人間確認用にprivate datasetの3 caseを2回ずつ、`gemini-3.5-flash-lite`、`physical_layer_v2`、P2 split ONNX、
+SciPy後処理で実行した。6 run中**5成功／1失敗**であり、成功した5件だけのcomposition previewとArtwork / debug artifactを
+`poc-output/accuracy-validation-five-patterns-20260904/`へ保存した。失敗runを成功証跡へ混ぜず、previewの人間レビューを依頼する。
