@@ -34,6 +34,21 @@ export const maxScale = numberFromEnv(import.meta.env.VITE_MAX_SCALE, 1)
  */
 export const maxOutOfCanvasRatio = numberFromEnv(import.meta.env.VITE_MAX_OUT_OF_CANVAS, 0)
 
+/**
+ * Physical Output（STL / 写真プリント）へ送るLayer Asset画像の長辺の上限px。【PoC後FIX】
+ *
+ * AIが返す透過PNGは実寸大（2L判300dpi相当＝2102x1500px級）で、そのまま数枚まとめて
+ * multipartで送るとCloud Runのリクエスト上限（32MB）を超えて 413 Content Too Large になる
+ * （2026-09-04、まなみん報告）。送信前にこのサイズまで縮小して回避する。
+ *
+ * 出力物の精細さに影響する値なので、最終的な数値は Physical Output 担当（印藤さん）と
+ * 合わせて決める。0 以下にすると縮小しない。
+ */
+export const exportMaxAssetDimension = numberFromEnv(
+  import.meta.env.VITE_EXPORT_MAX_ASSET_DIMENSION,
+  1400,
+)
+
 /** 3D Preview の Layer 間隔。表示値であって物理厚みではない。【PoC後FIX】 */
 export const previewDepthStep = numberFromEnv(import.meta.env.VITE_PREVIEW_DEPTH_STEP, 0.02)
 
