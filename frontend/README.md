@@ -48,7 +48,7 @@ Cloud RunのUpload制限に当たらないよう、Frontendは送信直前に
 
 物理出力の正本はBackend/FastAPI側の `POST /api/v1/physical-output/exports`。
 Frontendは確定Artwork Data + Assetsを渡し、Backendが3Dプリンター用STL ZIP、
-2L写真紙用PDF、またはコンビニ2L写真プリント用の貼り付けレイヤーJPEG ZIPを返す。
+2L写真紙用PDF、またはコンビニ2L写真プリント用の背景を含む貼り付けレイヤーJPEG ZIPを返す。
 
 ```
 src/

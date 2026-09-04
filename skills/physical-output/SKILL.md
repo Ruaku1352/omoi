@@ -25,7 +25,7 @@ FastAPI側に `POST /api/v1/physical-output/exports` をPoC候補として置く
 `outputFormat=photoPdf` で2L Landscape（178 x 127mm）写真紙100%印刷用PDF、
 `outputFormat=photoJpegZip` でコンビニ2L写真プリント用の貼り付けレイヤーJPEG ZIPへ分ける。SVGは主要Downloadにせず、
 必要なら開発確認・手修正用の生成物として扱う。
-`photoJpegZip` には2L全面cover背景パネルを含めず、切り取ってパーツへ貼る前景レイヤーだけを含める。
+`photoJpegZip` には背景板へ貼る2L全面cover背景パネルも含める。
 
 ## 入力境界【FIX】
 確定Artwork Data + Assets。実行場所が変わってもこの境界は維持する。
