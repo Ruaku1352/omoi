@@ -663,7 +663,7 @@ Endpointは `POST /api/v1/physical-output/exports`。入力はZIPではなく、
 
 Layer PNGは生成入力写真より大きくなることがあるため、生成APIの `maxPhotoBytes` ではなく、Physical Output専用の `maxPhysicalAssetBytes` / `maxPhysicalTotalAssetBytes` で検証する。とくに背景Layerは透過なしPNGになりやすく、2L相当の背景画像が15MiBを超えても物理出力上は正常な入力である。
 
-Responseは `outputFormat` で分ける。これは、まなみん側Frontendの完成画面から用途別に「3Dプリンター用データ」「写真紙PDF」「貼り付け用レイヤーJPEG」を取得できるようにするためである。
+Responseは `outputFormat` で分ける。これは、まなみん側Frontendの完成画面から用途別に「3Dプリンター用データ」「写真紙PDF」「背景を含む貼り付け用レイヤーJPEG」を取得できるようにするためである。
 
 `outputFormat=stlZip` のResponseは `application/zip`。これは入力導線をZIPに固定する意味ではなく、STL、製造条件、レポートを1回のダウンロードにまとめるための成果物コンテナである。
 
@@ -676,7 +676,7 @@ Responseは `outputFormat` で分ける。これは、まなみん側Frontendの
 
 `outputFormat=photoJpegZip` のResponseは `application/zip`。PDFが普通紙文書プリント扱いになりやすいコンビニ写真プリント向けに、2L LandscapeのJPEGを `photo/` にまとめて返す。既定は178 x 127mm、300dpi、2102 x 1500px。ZIPには `artwork.json`、`physical-output-config.json`、`flat-photo-parts-report.json`、READMEを含めるが、STLは含めない。
 
-2026-09-04に、`photoJpegZip` の用途を貼り付け用レイヤー写真へ修正した。背景LayerはSTL/PDF上では背景パネルとして扱うが、コンビニで写真印刷して切り取り、パーツへ貼る対象は前景の切り抜きレイヤーである。そのため `photoJpegZip` には2L全面cover背景パネルを入れず、前景レイヤーのJPEGだけを入れる。
+2026-09-04に、`photoJpegZip` の用途を貼り付け用レイヤー写真へ修正した。背景Layerも背景板へ貼る写真であるため、`photoJpegZip` には2L全面cover背景パネルを含める。前景の切り抜きレイヤーと背景レイヤーを同じ `photo/` に入れ、印刷後に各パーツへ貼る。
 
 実装は `backend/app/api/v1/physical_output.py` と `backend/app/services/physical_output.py` に置く。生成処理の正本はまだ `scripts/flat_photo_parts_poc.py` のままで、Cloud Run ImageではDockerfileから `scripts/` を同梱して呼び出す。正式FIX時には、Physical Output runtimeをBackend内Packageへ移すか、独立Local Toolに切り出すかを改めて決める。
 

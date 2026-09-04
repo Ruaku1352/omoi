@@ -356,7 +356,7 @@ def test_physical_output_exports_photo_jpeg_zip_from_artwork_and_assets(
         'attachment; filename="omoi-photo-print-images-mock-artwork-001'
     )
 
-    expected_photo_count = sum(1 for layer in artwork["layers"] if layer["layerIndex"] > 0)
+    expected_photo_count = len(artwork["layers"])
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         names = archive.namelist()
         photo_names = sorted(
@@ -367,7 +367,7 @@ def test_physical_output_exports_photo_jpeg_zip_from_artwork_and_assets(
         report = json.loads(archive.read("flat-photo-parts-report.json"))
 
         assert len(photo_names) == expected_photo_count
-        assert not any("layer-0-" in name for name in photo_names)
+        assert any("layer-0-" in name for name in photo_names)
         assert not any(name.startswith("stl/") for name in names)
         assert report["outputs"]["photoJpegFiles"] == photo_names
         assert report["outputs"]["stlFiles"] == []

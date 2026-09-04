@@ -598,12 +598,11 @@ for traceability and is not rewritten with physical millimeter values.
 
 ## Files
 
-- `photo/`: 2L landscape JPEG files for foreground paste layers
+- `photo/`: 2L landscape JPEG files for paste layers, including background
 - `physical-output-config.json`: manufacturing values used for this export
 - `flat-photo-parts-report.json`: dimensions, warnings, and layout metadata
 
-Background panel images are excluded from this ZIP. Print each JPEG at 2L /
-landscape / no scaling where possible. The default page size is
+Print each JPEG at 2L / landscape / no scaling where possible. The default page size is
 {page_size.get("widthMm")} x {page_size.get("heightMm")} mm,
 {layout.get("photoImageDpi")} dpi, {pixel_size.get("widthPx")} x {pixel_size.get("heightPx")} px.
 
