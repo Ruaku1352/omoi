@@ -33,6 +33,10 @@ class ErrorCode(StrEnum):
     AI_FAILED = "AI_FAILED"
     ASSET_BUILD_FAILED = "ASSET_BUILD_FAILED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    # 該当ResourceがJobとして実在するため追加可（AGENTS.md §4）。
+    # 存在しないjobId、およびAPI上の有効期限を過ぎたjobIdの両方に使う
+    # （物理削除タイミングと有効期限判定は分離するため、どちらも同じ404扱いでよい）。
+    JOB_NOT_FOUND = "JOB_NOT_FOUND"
 
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
@@ -45,6 +49,7 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.AI_FAILED: 502,
     ErrorCode.ASSET_BUILD_FAILED: 500,
     ErrorCode.INTERNAL_ERROR: 500,
+    ErrorCode.JOB_NOT_FOUND: 404,
 }
 
 _RETRYABLE: frozenset[ErrorCode] = frozenset(

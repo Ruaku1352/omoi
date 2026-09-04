@@ -23,6 +23,17 @@ export const maxScale = numberFromEnv(import.meta.env.VITE_MAX_SCALE, 2)
 /** 3D Preview の Layer 間隔。表示値であって物理厚みではない。【PoC後FIX】 */
 export const previewDepthStep = numberFromEnv(import.meta.env.VITE_PREVIEW_DEPTH_STEP, 0.02)
 
+
+/** 3D Preview の Layer 1枚の見かけの厚み。表示値であって物理厚みではない。【PoC後FIX】 */
+export const previewLayerThickness = numberFromEnv(
+  import.meta.env.VITE_PREVIEW_LAYER_THICKNESS,
+  0.01,
+)
+
+/** 厚みを何枚の板で表現するか。多いほど滑らかだが描画は重くなる。 */
+export const previewLayerSheets = 5
+
 export function clampScale(scale: number): number {
   return Math.min(maxScale, Math.max(minScale, scale))
 }
+

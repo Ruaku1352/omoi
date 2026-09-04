@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -33,7 +34,7 @@ from ai.quality import (
     clean_micro_islands,
     diagnose_mask,
 )
-from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult
+from ai.segmentation import EfficientSamOnnxSegmenter, SegmentationResult, SegmentationTimings
 from ai.types import AssetBlob, InputPhoto
 from app.config import Settings
 from app.models.artwork import Artwork
@@ -284,6 +285,22 @@ class RejectFirstSegmenter(FakeSegmenter):
         return super().segment(image, box_px)
 
 
+class TimedRetrySegmenter(RejectFirstSegmenter):
+    def segment(self, image: Image.Image, box_px) -> SegmentationResult:
+        result = super().segment(image, box_px)
+        return SegmentationResult(
+            mask=result.mask,
+            score=result.score,
+            prompt_box_px=result.prompt_box_px,
+            timings=SegmentationTimings(
+                resize_elapsed_ms=1,
+                tensor_preparation_elapsed_ms=2,
+                onnx_inference_elapsed_ms=3,
+                mask_restore_elapsed_ms=4,
+            ),
+        )
+
+
 class FragmentedFirstSegmenter(FakeSegmenter):
     """最初の候補だけを意味のない2島にし、次候補への置換を検証する。"""
 
@@ -529,8 +546,6 @@ def test_mask_diagnostics_describe_components_without_rejecting_them() -> None:
     assert (
         QualityPolicy().rejection_reason(diagnostics, bbox_coverage=1, border_touch=False) is None
     )
-
-
 def test_mask_diagnostics_observes_interior_holes_without_rejecting_mask() -> None:
     mask = np.zeros((20, 20), dtype=bool)
     mask[2:18, 2:18] = True
@@ -900,6 +915,94 @@ async def test_enforced_quality_policy_replaces_fragmented_candidate_with_next_c
 def test_efficient_sam_missing_model_fails_without_download(tmp_path) -> None:
     with pytest.raises(AiNotConfiguredError):
         EfficientSamOnnxSegmenter(tmp_path / "missing.onnx", 1024)
+
+
+def test_efficient_sam_records_separate_internal_timings(tmp_path, monkeypatch) -> None:
+    class FakeInput:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class FakeSession:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def get_inputs(self):
+            return [
+                FakeInput("batched_images"),
+                FakeInput("batched_point_coords"),
+                FakeInput("batched_point_labels"),
+            ]
+
+        def run(self, _outputs, _inputs):
+            return (
+                np.ones((1, 1, 1, 2, 4), dtype=np.float32),
+                np.array([[[0.9]]], dtype=np.float32),
+            )
+
+    model_path = tmp_path / "model.onnx"
+    model_path.touch()
+    monkeypatch.setattr("ai.segmentation.ort.InferenceSession", FakeSession)
+
+    result = EfficientSamOnnxSegmenter(model_path, max_side=4).segment(
+        Image.new("RGB", (8, 4), "white"), (1, 1, 7, 3)
+    )
+
+    assert result.timings.resize_elapsed_ms is not None
+    assert result.timings.tensor_preparation_elapsed_ms is not None
+    assert result.timings.onnx_inference_elapsed_ms is not None
+    assert result.timings.mask_restore_elapsed_ms is not None
+    assert all(
+        elapsed >= 0
+        for elapsed in (
+            result.timings.resize_elapsed_ms,
+            result.timings.tensor_preparation_elapsed_ms,
+            result.timings.onnx_inference_elapsed_ms,
+            result.timings.mask_restore_elapsed_ms,
+        )
+    )
+
+
+@pytest.mark.anyio
+async def test_performance_logs_separate_retry_and_candidate_pipeline(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="ai.gemini")
+    generator = GeminiArtworkGenerator(
+        api_key="test-key",
+        model="test-model",
+        segmenter=TimedRetrySegmenter(),
+        candidate_count=4,
+        target_layer_min=4,
+        target_layer_max=4,
+        segmentation_max_retries=1,
+        analysis_max_side=512,
+        layer_padding_px=2,
+        layout_min_scale=0.1,
+        layout_max_scale=1.0,
+        canvas_aspect_ratio=178 / 127,
+        gemini_request_timeout_ms=10_000,
+        semantic_planner=FakePlanner(),
+        composer=FakeComposer(),
+    )
+
+    await generator.generate([_photo((index * 20, 0, 0)) for index in range(5)], "memory")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("stage=input.decode_preprocess" in message for message in messages)
+    assert any("stage=source_asset_build" in message for message in messages)
+    assert any("stage=candidate.bbox_convert" in message for message in messages)
+    assert any(
+        "stage=candidate.segmentation_attempt" in message
+        and "candidate_id=candidate-0" in message
+        and "component_id=component-0" in message
+        and "attempt=1" in message
+        for message in messages
+    )
+    assert any("stage=efficient_sam.onnx_inference" in message for message in messages)
+    assert any("stage=candidate.mask_union" in message for message in messages)
+    assert any("stage=candidate.rgba_layer_build" in message for message in messages)
+    assert any("stage=layer_selection" in message for message in messages)
+    assert any("stage=composition.normalize_constraint" in message for message in messages)
+    assert any("stage=artwork_assembly" in message for message in messages)
+    assert any("stage=ai.total" in message and "outcome=ok" in message for message in messages)
 
 
 def test_mvp_settings_default_to_four_layers_and_2l_landscape() -> None:

@@ -1,0 +1,100 @@
+.gen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  background: #fff;
+}
+
+.gen-stage {
+  position: relative;
+  width: 100%;
+  max-width: 1120px;
+  height: min(716px, 68vh);
+  padding: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: var(--omoi-bg);
+  overflow: hidden;
+}
+.gen-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../assets/wood.png') center / cover;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.gen-card {
+  position: relative;
+  width: 100%;
+  max-width: 930px;
+  padding: clamp(16px, 3vh, 32px) 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2vh, 24px);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+}
+.gen-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.gen-title {
+  margin: 0;
+  font-family: Roboto, sans-serif;
+  font-weight: 500;
+  font-size: 40px;
+  color: #000;
+}
+
+.gen-lead {
+  margin: 0;
+  font-family: Roboto, sans-serif;
+  font-weight: 500;
+  font-size: 20px;
+  color: var(--omoi-gray);
+}
+
+.gen-spinner {
+  width: clamp(72px, 14vh, 128px);
+  height: clamp(72px, 14vh, 128px);
+  border: 8px solid #d9d9d9;
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: gen-spin 1s linear infinite;
+}
+
+@keyframes gen-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 600px) {
+  .gen {
+    padding: 12px 16px;
+  }
+  .gen-stage {
+    height: auto;
+    min-height: 60vh;
+    padding: 16px;
+  }
+  .gen-card {
+    padding: 20px 16px;
+    gap: 16px;
+  }
+  .gen-title {
+    font-size: 22px;
+  }
+  .gen-lead {
+    font-size: 14px;
+  }
+}

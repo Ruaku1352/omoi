@@ -1,0 +1,248 @@
+.done { display: flex; flex-direction: column; }
+
+.done-flow {
+  background: #fff;
+  padding: clamp(4px, 1vh, 8px) 50px;
+}
+
+.done-stage {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: clamp(10px, 2vh, 20px);
+  border: 1px solid #000;
+  background: var(--omoi-bg);
+  overflow: hidden;
+}
+.done-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../assets/wood.png') center / cover;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.done-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  box-shadow: 4px 8px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- 左（プレビュー） ---- */
+.done-left {
+  flex: 2 1 420px;
+  max-width: 928px;
+  padding: clamp(8px, 1.5vh, 16px) 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.5vh, 16px);
+}
+
+.done-left .preview3d {
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 16px;
+  width: 100%;
+}
+.done-left .preview3d-head { width: 100%; }
+.done-left .preview3d-canvas { width: 100%; max-width: 616px; aspect-ratio: 616 / 491; height: auto; }
+
+.done-caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  min-height: 40px;
+  width: 100%;
+  padding: clamp(4px, 1vh, 8px) clamp(16px, 8vw, 115px);
+  background: #f8f1ec;
+  border: 1px solid var(--omoi-orange);
+  border-radius: 8px;
+  box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.25);
+}
+.done-caption-title {
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: 4.8px;
+  color: #000;
+}
+.done-caption-date {
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--omoi-gray);
+}
+
+/* ---- 右（確定パネル） ---- */
+/* ---- 右（確定パネル） ---- */
+.done-right {
+  flex: 1 1 280px;
+  max-width: 900px;
+  padding: clamp(12px, 2.5vh, 32px) 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.done-panel {
+  width: 100%;
+  background: #fff;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.done-panel-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.5vh, 16px);
+  text-align: center;
+  padding: clamp(12px, 2.5vh, 32px) 0;
+}
+.done-title { margin: 0; font-weight: 700; font-size: 32px; color: #000; }
+.done-lead { margin: 0; font-weight: 500; font-size: 20px; line-height: 1.5; color: #000; }
+.done-note { margin: 0; font-size: 16px; line-height: 1.5; color: red; }
+
+.done-panel-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: clamp(12px, 2vh, 24px);
+  padding: clamp(8px, 1.5vh, 16px) 24px;
+}
+
+.done-restart {
+  padding: 0 8px;
+  border: none;
+  border-bottom: 1px solid red;
+  background: none;
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  color: red;
+  cursor: pointer;
+}
+.done-again {
+  flex: 0 1 176px;
+  min-width: 140px;
+  padding: 0 8px;
+  border: none;
+  border-bottom: 1px solid var(--omoi-gray);
+  background: none;
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 500;
+  font-size: 20px;
+  color: var(--omoi-gray);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.done-confirm {
+  flex: 0 1 auto;
+  min-height: 64px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 24px;
+  background: var(--omoi-orange);
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-weight: 900;
+  font-size: clamp(16px, 1.6vw, 24px);
+  line-height: 1.3;
+  color: #fff;
+  box-shadow: 4px 4px 2px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* ==== スマホ版（Figma: スマホ・完成 相当）==== */
+@media (max-width: 600px) {
+  /* パンくずは今回のスマホデザインに無いので隠す */
+  .done-flow { display: none; }
+
+  .done-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
+    border: none;
+    background: #fff;
+    overflow: visible;
+  }
+  .done-stage::before { display: none; }
+
+  /* カード構造をやめて中身を1列に並べ直すために箱を消す */
+  .done-right,
+  .done-panel,
+  .done-panel-top {
+    display: contents;
+  }
+
+  .done-title {
+    order: 1;
+    margin: 0;
+    font-size: 22px;
+    text-align: center;
+  }
+  .done-lead {
+    order: 2;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .done-left {
+    order: 3;
+    max-width: none;
+    width: 100%;
+    padding: 12px;
+    background: var(--omoi-bg);
+    box-shadow: none;
+    gap: 8px;
+  }
+  .done-caption { display: none; }
+
+  .done-panel-actions {
+    order: 4;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0;
+  }
+  .done-confirm {
+    min-height: 48px;
+    padding: 8px 20px;
+    font-size: 14px;
+  }
+  .done-restart,
+  .done-again {
+    flex: 0 0 auto;
+  }
+  .done-confirm {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .done-note {
+    order: 5;
+    width: 100%;
+    margin: 0;
+    text-align: center;
+    font-size: 11px;
+  }
+}

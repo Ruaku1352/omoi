@@ -1,9 +1,19 @@
+import { useState } from 'react'
 import './App.css'
-import { buildAssetIndex, resolveAssetUrl } from './artwork/assetIndex'
-import { layerHeightRatio } from './artwork/geometry'
-import { sortByLayerIndex } from './artwork/layerOrder'
-import { apiBaseUrl } from './config/env'
+import { buildAssetIndex } from './artwork/assetIndex'
 import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
+import PhotoSelect from './screens/PhotoSelect'
+import Navbar from './components/Navbar'
+import Breadcrumb from './components/Breadcrumb'
+import PreviewScreen from './screens/PreviewScreen'
+import EditScreen from './screens/EditScreen'
+import GeneratingScreen from './screens/GeneratingScreen'
+import DoneScreen from './screens/DoneScreen'
+import ErrorBoundary from './components/ErrorBoundary'
+import type { JobStage } from './types/job'
+import type { AssetRef } from './types/artwork'
+import type { AssetManifestEntry } from './types/assetManifest'
+export type Screen = 'select' | 'generating' | 'preview' | 'edit' | 'done'
 
 /**
  * 共通Mockの `layers[]` を **layerIndex 昇順（0が最背面）** で並べて確認するページ。
@@ -12,19 +22,99 @@ import { buildMockAssetManifest, mockArtwork } from './mock/mockArtwork'
  * それらは Frontend担当が `skills/frontend/SKILL.md` の実装順で積む。
  */
 export default function App() {
-  const artwork = mockArtwork
+const [artwork, setArtwork] = useState(mockArtwork)
+const [manifest, setManifest] = useState(buildMockAssetManifest(mockArtwork))
+const [screen, setScreen] = useState<Screen>('select')
+const [error, setError] = useState<string | null>(null)
+const [stage, setStage] = useState<JobStage | undefined>(undefined) 
   // `layers[]` の配列位置は奥行き順ではない。必ず layerIndex で並べ替える。
-  const layers = sortByLayerIndex(artwork.layers)
-  const assets = buildAssetIndex(buildMockAssetManifest(artwork))
+  const assets = buildAssetIndex(manifest)
 
   return (
     <main className="app">
-      <header>
-        <h1>omoi</h1>
-        <p className="tagline">Our Memories, One Image — Frontend Scaffold</p>
-      </header>
-
-      <section className="meta">
+      <Navbar />
+      {error && <p className="app-error">{error}</p>}
+{(screen === 'select' || screen === 'generating') && <Breadcrumb current={screen} />}
+      <div className="sample-load">
+      <button
+  type="button"
+  className="debug-load-btn"
+  onClick={async () => {
+    // `public/demo/artwork.json` + `public/demo/assets/<assetId>.<ext>` を読む。
+    // Vite が public/ 配下を自動配信してくれるので、ローカルサーバー起動は不要。
+    const res = await fetch('/demo/artwork.json')
+    const demoArtwork = await res.json()
+    const extByMime: Record<string, string> = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/webp': 'webp',
+    }
+    const assets: AssetManifestEntry[] = []
+    const addAsset = (asset: AssetRef) => {
+      const ext = extByMime[asset.mimeType] ?? 'png'
+      assets.push({ ...asset, url: `/demo/assets/${asset.assetId}.${ext}` })
+    }
+    for (const layer of demoArtwork.layers) {
+      addAsset(layer.asset)
+      for (const candidate of layer.replacementCandidates ?? []) addAsset(candidate.asset)
+    }
+    // 実際の生成フローと同じくローディング画面を経由させる（レイアウト確認・デモ用）。
+    setError(null)
+    setScreen('generating')
+    const demoStages: JobStage[] = ['analyzing', 'extracting', 'composing', 'finalizing']
+    for (const s of demoStages) {
+      setStage(s)
+      await new Promise((resolve) => setTimeout(resolve, 2500)) // 4段階 × 2.5秒 = 合計10秒
+    }
+    setArtwork(demoArtwork)
+    setManifest({ assets })
+    setScreen('preview')
+  }}
+>
+  サンプル作品を見る
+</button>
+      <p className="sample-load-note">
+        ※このボタンはAIによるリアルタイム生成ではなく、事前に生成したサンプル作品を表示します
+      </p>
+      </div>
+      {screen ==='select' &&(
+       <PhotoSelect
+        onGenerated={(nextArtwork, nextManifest) => {
+          setArtwork(nextArtwork)
+          setManifest(nextManifest)
+          setScreen('preview') 
+        }}
+         onStart={() => { setError(null); setStage(undefined); setScreen('generating') }}
+         onProgress={(next) => setStage(next.stage)}
+  onFailed={(message) => { setError(message); setScreen('select') }}
+      />)}
+      {screen === 'generating' && <GeneratingScreen stage={stage} />}
+<ErrorBoundary
+  onReset={() => {
+    setError('表示中にエラーが発生したため、最初からやり直してください。')
+    setScreen('select')
+  }}
+>
+{screen === 'preview' && (
+  <PreviewScreen
+    artwork={artwork}
+    assets={assets}
+    onSelectScreen={setScreen}
+  />
+)}
+{screen === 'edit' && (
+  <EditScreen
+    artwork={artwork}
+    assets={assets}
+    onChange={setArtwork}
+    onSelectScreen={setScreen}
+  />
+)}
+{screen === 'done' && (
+  <DoneScreen artwork={artwork} assets={assets} onSelectScreen={setScreen} />
+)}
+</ErrorBoundary>
+      {/* <section className="meta">
         <dl>
           <dt>Source</dt>
           <dd>
@@ -49,9 +139,9 @@ export default function App() {
             <code>{apiBaseUrl === '' ? '(未設定 / 同一Origin相対)' : apiBaseUrl}</code>
           </dd>
         </dl>
-      </section>
+      </section> */}
 
-      <section>
+      {/* <section>
         <h2>
           layers <span className="muted">— layerIndex 昇順（0が最背面）／{layers.length} 層</span>
         </h2>
@@ -103,11 +193,11 @@ export default function App() {
             </li>
           ))}
         </ol>
-      </section>
+      </section> */}
 
-      <footer className="muted">
+      {/*<footer className="muted">
         Artwork Data はURLを持たない。画像は Asset Manifest 経由で <code>assetId</code> を解決している。
-      </footer>
+      </footer>*/}
     </main>
   )
 }

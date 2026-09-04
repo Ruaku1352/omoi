@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,8 @@ from PIL import Image
 
 from ai.errors import AiError, AiNotConfiguredError
 from ai.image_ops import BoxPx
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -158,6 +161,10 @@ class EfficientSamOnnxSegmenter:
                 },
             )
         except Exception as exc:
+            logger.info(
+                "ai.performance stage=efficient_sam.onnx_inference elapsed_ms=%.1f outcome=error",
+                _elapsed_ms(inference_started),
+            )
             raise AiError("EfficientSAMの推論に失敗しました") from exc
         onnx_inference_elapsed_ms = _elapsed_ms(inference_started)
 
@@ -259,6 +266,10 @@ class EfficientSamSplitOnnxSegmenter:
         try:
             image_embedding, *_ = self._encoder_session.run(None, {self._INPUT_IMAGE: input_image})
         except Exception as exc:
+            logger.info(
+                "ai.performance stage=efficient_sam.encoder_inference elapsed_ms=%.1f outcome=error",
+                _elapsed_ms(encoder_started),
+            )
             raise AiError("EfficientSAM encoderの推論に失敗しました") from exc
         return PreparedSplitSegmentationImage(
             original_size=image.size,
@@ -303,6 +314,10 @@ class EfficientSamSplitOnnxSegmenter:
                 },
             )
         except Exception as exc:
+            logger.info(
+                "ai.performance stage=efficient_sam.decoder_inference elapsed_ms=%.1f outcome=error",
+                _elapsed_ms(decoder_started),
+            )
             raise AiError("EfficientSAM decoderの推論に失敗しました") from exc
 
         restore_started = time.perf_counter()
