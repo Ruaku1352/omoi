@@ -37,7 +37,7 @@ Physical OutputはまだRuntime/配置がFIXではない。ただしPoC候補と
 7. Physical Output PoCは `artwork` JSON + `assets[]` を入力にし、製造条件は
    `physicalOutputConfig` に分離する。未指定時はBackend側のPoC既定値
    （rail / 2L Landscape / 4行 x 3穴）を使う。`outputFormat` で
-   `stlZip` / `photoPdf` を分け、入力をPortable Bundle ZIPへ固定しない。
+   `stlZip` / `photoPdf` / `photoJpegZip` を分け、入力をPortable Bundle ZIPへ固定しない。
    生成入力写真とPhysical Output用Layer PNGのUpload制限は分ける
 8. CORS を `CORS_ORIGINS` から設定して Cloud Run へDeploy
 

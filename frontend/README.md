@@ -44,11 +44,11 @@ Cloud RunのUpload制限に当たらないよう、Frontendは送信直前に
 
 写真選択、生成中、3D Preview、微調整、完成画面までの画面PoCを持つ。
 完成画面のBundle ZIP出力は、確定Artwork Data + Assetsを手渡し検証するための
-補助機能であり、STL / PDF / G-codeはFrontendでは生成しない。
+補助機能であり、STL / PDF / JPEG / G-codeはFrontendでは生成しない。
 
 物理出力の正本はBackend/FastAPI側の `POST /api/v1/physical-output/exports`。
-Frontendは確定Artwork Data + Assetsを渡し、Backendが3Dプリンター用STL ZIPと
-2L写真紙用PDFを返す。
+Frontendは確定Artwork Data + Assetsを渡し、Backendが3Dプリンター用STL ZIP、
+2L写真紙用PDF、またはコンビニ2L写真プリント用JPEG ZIPを返す。
 
 ```
 src/

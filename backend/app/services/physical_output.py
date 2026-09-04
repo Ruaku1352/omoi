@@ -1,7 +1,7 @@
 """Physical Output export builder.
 
 FastAPIから確定Artwork Data + Assetsを受け取り、2.5D物理出力用の
-STL / 貼り込みPDF / SVGを生成する。Artwork DataはSSOTとして読み取り専用で扱い、
+STL / 貼り込みPDF / 写真紙JPEGを生成する。Artwork DataはSSOTとして読み取り専用で扱い、
 mm値や製造条件はPhysicalOutputConfig側へ分離する。
 """
 
@@ -215,6 +215,20 @@ def build_physical_output_pdf(
     )
 
 
+def build_physical_output_photo_jpeg_zip(
+    *,
+    artwork: Artwork,
+    assets: Sequence[AssetBlob],
+    config: Any,
+) -> PhysicalOutputArchive:
+    return _build_physical_output_export(
+        artwork=artwork,
+        assets=assets,
+        config=config,
+        output_format="photoJpegZip",
+    )
+
+
 def _build_physical_output_export(
     *,
     artwork: Artwork,
@@ -253,7 +267,11 @@ def _build_physical_output_export(
             raise PhysicalOutputBuildError("physical output generator produced no parts")
 
         if output_format == "stlZip":
-            archive_report = _sanitize_report_for_archive(report, include_print_files=False)
+            archive_report = _sanitize_report_for_archive(
+                report,
+                include_print_files=False,
+                include_stl_files=True,
+            )
             content = _zip_output(
                 artwork=artwork_payload,
                 report=archive_report,
@@ -270,6 +288,25 @@ def _build_physical_output_export(
             content = pdf_path.read_bytes()
             filename = f"omoi-photo-print-layout-{_safe_slug(artwork.artwork_id)}.pdf"
             media_type = "application/pdf"
+        elif output_format == "photoJpegZip":
+            archive_report = _sanitize_report_for_archive(
+                report,
+                include_print_files=False,
+                include_stl_files=False,
+                include_photo_jpeg_files=True,
+            )
+            photo_jpeg_dir = output_dir / "photo-jpeg"
+            photo_jpeg_paths = sorted(photo_jpeg_dir.glob("*.jpg"))
+            if not photo_jpeg_paths:
+                raise PhysicalOutputBuildError("photo print JPEG files were not generated")
+            content = _zip_photo_jpeg_output(
+                artwork=artwork_payload,
+                report=archive_report,
+                photo_jpeg_paths=photo_jpeg_paths,
+                config_json=archive_report["flatPhotoPartConfig"],
+            )
+            filename = f"omoi-photo-print-images-{_safe_slug(artwork.artwork_id)}.zip"
+            media_type = "application/zip"
         else:
             raise PhysicalOutputBuildError("unknown physical output format")
 
@@ -306,6 +343,7 @@ def _validate_config(config: Any) -> list[str]:
         "part_slot_label_digit_height_mm",
         "print_layout_page_width_mm",
         "print_layout_page_height_mm",
+        "print_layout_dpi",
     )
     for field_name in positive_fields:
         value = getattr(config, field_name)
@@ -348,6 +386,13 @@ def _validate_config(config: Any) -> list[str]:
         issues.append("alphaThreshold must be an integer")
     elif not 0 <= config.alpha_threshold <= 255:
         issues.append("alphaThreshold must be between 0 and 255")
+    if not isinstance(config.photo_jpeg_quality, int) or isinstance(
+        config.photo_jpeg_quality,
+        bool,
+    ):
+        issues.append("photoJpegQuality must be an integer")
+    elif not 1 <= config.photo_jpeg_quality <= 100:
+        issues.append("photoJpegQuality must be between 1 and 100")
     return issues
 
 
@@ -408,6 +453,8 @@ def _sanitize_report_for_archive(
     report: dict[str, Any],
     *,
     include_print_files: bool,
+    include_stl_files: bool = True,
+    include_photo_jpeg_files: bool = False,
 ) -> dict[str, Any]:
     sanitized = copy.deepcopy(report)
     sanitized["archiveLayoutVersion"] = "physical-output-api-v1"
@@ -422,16 +469,30 @@ def _sanitize_report_for_archive(
     sanitized["outputs"]["printLayoutPdf"] = (
         "print/flat-photo-print-layout.pdf" if include_print_files else None
     )
+    sanitized["outputs"]["photoJpegFiles"] = (
+        [
+            f"photo/{_basename(path)}"
+            for path in sanitized["outputs"].get("photoJpegFiles", [])
+        ]
+        if include_photo_jpeg_files
+        else []
+    )
 
     stl_files = []
     for part in sanitized["parts"]:
-        part["outputStl"] = f"stl/{_basename(part['outputStl'])}"
+        if include_stl_files:
+            part["outputStl"] = f"stl/{_basename(part['outputStl'])}"
+            stl_files.append(part["outputStl"])
+        else:
+            part["outputStl"] = None
         part["inputAsset"] = f"assets/{part['assetId']}"
         part.pop("assetPath", None)
-        stl_files.append(part["outputStl"])
     if sanitized.get("base"):
-        sanitized["base"]["outputStl"] = f"stl/{_basename(sanitized['base']['outputStl'])}"
-        stl_files.append(sanitized["base"]["outputStl"])
+        if include_stl_files:
+            sanitized["base"]["outputStl"] = f"stl/{_basename(sanitized['base']['outputStl'])}"
+            stl_files.append(sanitized["base"]["outputStl"])
+        else:
+            sanitized["base"]["outputStl"] = None
     sanitized["outputs"]["stlFiles"] = stl_files
     return sanitized
 
@@ -471,6 +532,37 @@ def _zip_output(
     return buffer.getvalue()
 
 
+def _zip_photo_jpeg_output(
+    *,
+    artwork: dict[str, Any],
+    report: dict[str, Any],
+    photo_jpeg_paths: Sequence[pathlib.Path],
+    config_json: dict[str, Any],
+) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "artwork.json",
+            json.dumps(artwork, ensure_ascii=False, indent=2) + "\n",
+        )
+        archive.writestr(
+            "physical-output-config.json",
+            json.dumps(config_json, ensure_ascii=False, indent=2) + "\n",
+        )
+        archive.writestr(
+            "flat-photo-parts-report.json",
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        )
+        archive.writestr(
+            "README.md",
+            _photo_jpeg_archive_readme(report),
+        )
+
+        for image_path in photo_jpeg_paths:
+            archive.write(image_path, f"photo/{image_path.name}")
+    return buffer.getvalue()
+
+
 def _archive_readme(report: dict[str, Any]) -> str:
     return f"""# omoi Physical Output Export
 
@@ -483,12 +575,36 @@ for traceability and is not rewritten with physical millimeter values.
 - `physical-output-config.json`: manufacturing values used for this export
 - `flat-photo-parts-report.json`: dimensions, warnings, and assembly metadata
 
-Download the photo-paper layout separately with `outputFormat=photoPdf`.
+Download the photo-paper layout separately with `outputFormat=photoPdf`, or
+download convenience-store photo print JPEGs with `outputFormat=photoJpegZip`.
 
 ## Assembly
 
 Use the numbered base slots from front-left to back-right. Parts keep their
 Artwork `layerIndex`; details are in `flat-photo-parts-report.json`.
+
+Artwork ID: {report["artworkId"]}
+"""
+
+
+def _photo_jpeg_archive_readme(report: dict[str, Any]) -> str:
+    layout = report.get("printLayout") or {}
+    page_size = layout.get("photoPdfPageSizeMm") or {}
+    pixel_size = layout.get("photoImagePixelSize") or {}
+    return f"""# omoi Photo Print JPEG Export
+
+Input is confirmed Artwork Data + Assets. The included `artwork.json` is copied
+for traceability and is not rewritten with physical millimeter values.
+
+## Files
+
+- `photo/`: 2L landscape JPEG files for convenience-store photo printing
+- `physical-output-config.json`: manufacturing values used for this export
+- `flat-photo-parts-report.json`: dimensions, warnings, and layout metadata
+
+Print each JPEG at 2L / landscape / no scaling where possible. The default page
+size is {page_size.get("widthMm")} x {page_size.get("heightMm")} mm,
+{layout.get("photoImageDpi")} dpi, {pixel_size.get("widthPx")} x {pixel_size.get("heightPx")} px.
 
 Artwork ID: {report["artworkId"]}
 """

@@ -30,6 +30,8 @@ EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 PHOTO_2L_LANDSCAPE_WIDTH_MM = 178.0
 PHOTO_2L_LANDSCAPE_HEIGHT_MM = 127.0
+PHOTO_PRINT_DPI = 300.0
+PHOTO_JPEG_QUALITY = 95
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,8 @@ class FlatPhotoPartConfig:
     print_layout_gutter_mm: float = 6.0
     print_layout_page_width_mm: float = PHOTO_2L_LANDSCAPE_WIDTH_MM
     print_layout_page_height_mm: float = PHOTO_2L_LANDSCAPE_HEIGHT_MM
+    print_layout_dpi: float = PHOTO_PRINT_DPI
+    photo_jpeg_quality: int = PHOTO_JPEG_QUALITY
     material: str = "PLA"
 
 
@@ -160,6 +164,8 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "printLayoutGutterMm": config.print_layout_gutter_mm,
         "printLayoutPageWidthMm": config.print_layout_page_width_mm,
         "printLayoutPageHeightMm": config.print_layout_page_height_mm,
+        "printLayoutDpi": config.print_layout_dpi,
+        "photoJpegQuality": config.photo_jpeg_quality,
         "material": config.material,
     }
 
@@ -2792,13 +2798,14 @@ def _photo_pdf_layout_placements(
     )
 
 
-def _photo_pdf_layout_report(layout: PhotoPdfLayout) -> dict:
+def _photo_pdf_layout_report(layout: PhotoPdfLayout, config: FlatPhotoPartConfig) -> dict:
     paper = "2L landscape"
     if not (
         math.isclose(layout.page_width_mm, PHOTO_2L_LANDSCAPE_WIDTH_MM)
         and math.isclose(layout.page_height_mm, PHOTO_2L_LANDSCAPE_HEIGHT_MM)
     ):
         paper = "custom"
+    page_width_px, page_height_px = _photo_print_pixel_size(layout, config)
 
     return {
         "photoPdfPaper": paper,
@@ -2809,17 +2816,32 @@ def _photo_pdf_layout_report(layout: PhotoPdfLayout) -> dict:
         "photoPdfPageCount": len(layout.placements),
         "photoPdfPlacementMode": "oneImageAreaPerPage",
         "photoPdfOverflowPageCount": sum(1 for placement in layout.placements if placement.overflows_page),
+        "photoImageFormat": "JPEG",
+        "photoImageDpi": round(config.print_layout_dpi, 3),
+        "photoImagePixelSize": {
+            "widthPx": page_width_px,
+            "heightPx": page_height_px,
+        },
     }
 
 
-def _write_print_layout_pdf(
-    path: pathlib.Path,
+def _photo_print_pixel_size(
+    layout: PhotoPdfLayout,
+    config: FlatPhotoPartConfig,
+) -> tuple[int, int]:
+    px_per_mm = config.print_layout_dpi / 25.4
+    return (
+        max(1, round(layout.page_width_mm * px_per_mm)),
+        max(1, round(layout.page_height_mm * px_per_mm)),
+    )
+
+
+def _render_photo_print_pages(
     parts: list[dict],
     cropped_images: list[Image.Image],
     config: FlatPhotoPartConfig,
-) -> PhotoPdfLayout:
-    dpi = 300.0
-    px_per_mm = dpi / 25.4
+) -> tuple[PhotoPdfLayout, list[Image.Image]]:
+    px_per_mm = config.print_layout_dpi / 25.4
     layout = _photo_pdf_layout_placements(parts, config)
 
     def mm_to_px(value: float) -> int:
@@ -2828,8 +2850,7 @@ def _write_print_layout_pdf(
     def mm_size_to_px(value: float) -> int:
         return max(1, mm_to_px(value))
 
-    page_width_px = mm_size_to_px(layout.page_width_mm)
-    page_height_px = mm_size_to_px(layout.page_height_mm)
+    page_width_px, page_height_px = _photo_print_pixel_size(layout, config)
     canvases: list[Image.Image] = []
 
     for placement, part, image in zip(layout.placements, parts, cropped_images):
@@ -2890,16 +2911,53 @@ def _write_print_layout_pdf(
         }
         canvases.append(canvas)
 
+    return layout, canvases
+
+
+def _write_print_layout_pdf(
+    path: pathlib.Path,
+    parts: list[dict],
+    cropped_images: list[Image.Image],
+    config: FlatPhotoPartConfig,
+) -> PhotoPdfLayout:
+    layout, canvases = _render_photo_print_pages(parts, cropped_images, config)
+
     if canvases:
         canvases[0].save(
             path,
             "PDF",
-            resolution=dpi,
+            resolution=config.print_layout_dpi,
             save_all=True,
             append_images=canvases[1:],
         )
 
     return layout
+
+
+def _write_photo_jpeg_pages(
+    out_dir: pathlib.Path,
+    parts: list[dict],
+    cropped_images: list[Image.Image],
+    config: FlatPhotoPartConfig,
+) -> list[pathlib.Path]:
+    _layout, canvases = _render_photo_print_pages(parts, cropped_images, config)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outputs: list[pathlib.Path] = []
+    dpi = round(config.print_layout_dpi)
+
+    for part, canvas in zip(parts, canvases):
+        filename = f"photo-2l-layer-{part['layerIndex']}-{_slug(part['layerId'])}.jpg"
+        path = out_dir / filename
+        canvas.save(
+            path,
+            "JPEG",
+            quality=config.photo_jpeg_quality,
+            subsampling=0,
+            dpi=(dpi, dpi),
+        )
+        outputs.append(path)
+
+    return outputs
 
 
 def _selected_layers(artwork: dict, layer_ids: set[str], include_background: bool) -> list[dict]:
@@ -2956,10 +3014,13 @@ def build_poc(
 
     print_layout_path = out_dir / "flat-photo-print-layout.svg"
     print_layout_pdf_path = out_dir / "flat-photo-print-layout.pdf"
+    photo_jpeg_dir = out_dir / "photo-jpeg"
     photo_pdf_layout = None
+    photo_jpeg_paths: list[pathlib.Path] = []
     if parts:
         _write_print_layout(print_layout_path, parts, cropped_images, config)
         photo_pdf_layout = _write_print_layout_pdf(print_layout_pdf_path, parts, cropped_images, config)
+        photo_jpeg_paths = _write_photo_jpeg_pages(photo_jpeg_dir, parts, cropped_images, config)
 
     report_path = out_dir / "flat-photo-parts-report.json"
     report = {
@@ -2970,13 +3031,14 @@ def build_poc(
             "assetsDir": _display_path(assets_dir),
         },
         "flatPhotoPartConfig": _config_to_json(config),
-        "printLayout": _photo_pdf_layout_report(photo_pdf_layout) if photo_pdf_layout else None,
+        "printLayout": _photo_pdf_layout_report(photo_pdf_layout, config) if photo_pdf_layout else None,
         "parts": parts,
         "base": base,
         "outputs": {
             "report": _display_path(report_path),
             "printLayoutSvg": _display_path(print_layout_path) if parts else None,
             "printLayoutPdf": _display_path(print_layout_pdf_path) if parts else None,
+            "photoJpegFiles": [_display_path(path) for path in photo_jpeg_paths],
             "stlFiles": [part["outputStl"] for part in parts] + ([base["outputStl"]] if base else []),
         },
         "warnings": warnings,
@@ -3110,6 +3172,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=FlatPhotoPartConfig.print_layout_page_height_mm,
     )
+    parser.add_argument("--print-layout-dpi", type=float, default=FlatPhotoPartConfig.print_layout_dpi)
+    parser.add_argument("--photo-jpeg-quality", type=int, default=FlatPhotoPartConfig.photo_jpeg_quality)
     background_group = parser.add_mutually_exclusive_group()
     background_group.add_argument("--include-background", dest="include_background", action="store_true")
     background_group.add_argument("--exclude-background", dest="include_background", action="store_false")
@@ -3167,6 +3231,8 @@ def main() -> int:
         background_fill_mode=args.background_fill_mode,
         print_layout_page_width_mm=args.print_layout_page_width_mm,
         print_layout_page_height_mm=args.print_layout_page_height_mm,
+        print_layout_dpi=args.print_layout_dpi,
+        photo_jpeg_quality=args.photo_jpeg_quality,
     )
     report = build_poc(
         args.artwork,
@@ -3184,6 +3250,7 @@ def main() -> int:
         "stlFiles": report["outputs"]["stlFiles"],
         "printLayoutSvg": report["outputs"]["printLayoutSvg"],
         "printLayoutPdf": report["outputs"]["printLayoutPdf"],
+        "photoJpegFiles": report["outputs"]["photoJpegFiles"],
         "report": report["outputs"]["report"],
         "warnings": report["warnings"],
     }, ensure_ascii=False, indent=2))
