@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omoi.example/contracts/generate-accepted-response.schema.json",
+  "title": "omoi Generate Accepted Response",
+  "description": "POST /api/v1/artworks/generate を非同期方式で受け付けたときの 202 レスポンス正本。技術設計 §14.2 の非同期Contract に対応する。受付結果として jobId だけを返し、以降の状態取得は GET /api/v1/jobs/{jobId}（job-status-response.schema.json）で行う。最終成功Resultはこのレスポンスには含まれない。失敗時は AGENTS.md §4 の Error形式であり本Schemaではない。",
+  "type": "object",
+  "required": ["jobId"],
+  "additionalProperties": false,
+  "properties": {
+    "jobId": {
+      "description": "受け付けたJobの識別子。GET /api/v1/jobs/{jobId} へそのまま渡す。",
+      "$ref": "https://omoi.example/contracts/artwork.schema.json#/$defs/opaqueId"
+    }
+  }
+}

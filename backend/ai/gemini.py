@@ -57,10 +57,25 @@ from ai.types import AssetBlob, GenerationResult, InputPhoto
 logger = logging.getLogger(__name__)
 
 
+def _log_performance(stage: str, elapsed_ms: float, **fields: object) -> None:
+    """Cloud Run向けのprivate観測ログ。画像・memoryText・labelは出さない。"""
+
+    context = "".join(
+        f" {key}={_log_value(value)}" for key, value in fields.items() if value is not None
+    )
+    logger.info("ai.performance stage=%s elapsed_ms=%.1f%s", stage, elapsed_ms, context)
+
+
+def _log_value(value: object) -> str:
+    return str(value).replace("\n", "\\n").replace("\r", "\\r")
+
+
 @dataclass(frozen=True)
 class CandidateMetric:
     candidate_id: str
     label: str
+    # 候補全体の累積時間。component / retry単位の時間ではないため、Cloud Runでは
+    # `ai.performance stage=candidate.segmentation_attempt` を参照する。
     segmentation_elapsed_ms: float
     layer_build_elapsed_ms: float
     mask_score: float | None
@@ -162,7 +177,13 @@ class GeminiSemanticPlanner:
         self._semantic_profile = semantic_profile
 
     async def plan(self, images: Sequence[Image.Image], memory_text: str | None) -> SemanticPlan:
+        prepare_started = time.perf_counter()
         photo_parts = [_image_part(thumbnail(image, self._analysis_max_side)) for image in images]
+        _log_performance(
+            "semantic.gemini_input_prepare",
+            _elapsed_ms(prepare_started),
+            photo_count=len(images),
+        )
         prompt = (
             "You are planning a layered physical-memory artwork from a group of photos. "
             "Study every photo together and treat the memory text as a primary signal "
@@ -183,17 +204,23 @@ class GeminiSemanticPlanner:
         )
         if memory_text:
             prompt += f"\nMemory text: {memory_text}"
-        response = await _generate_structured(
-            self._client,
-            self._model,
-            [prompt, *photo_parts],
-            SemanticPlan,
-            _semantic_plan_schema(
-                require_semantic_role=self._semantic_profile == "physical_layer_v3_architecture",
-                require_extraction_plan=self._semantic_profile == "coherent_group_planning",
-            ),
-            self._request_timeout_ms,
-        )
+        api_started = time.perf_counter()
+        try:
+            response = await _generate_structured(
+                self._client,
+                self._model,
+                [prompt, *photo_parts],
+                SemanticPlan,
+                _semantic_plan_schema(
+                    require_semantic_role=self._semantic_profile == "physical_layer_v3_architecture",
+                    require_extraction_plan=self._semantic_profile == "coherent_group_planning",
+                ),
+                self._request_timeout_ms,
+            )
+        except Exception:
+            _log_performance("semantic.gemini_api", _elapsed_ms(api_started), outcome="error")
+            raise
+        _log_performance("semantic.gemini_api", _elapsed_ms(api_started), outcome="ok")
         return SemanticPlan.model_validate(response)
 
 
@@ -217,16 +244,21 @@ class GeminiComposer:
         )
 
     async def compose(self, layers: Sequence[AcceptedLayer]) -> CompositionPlan:
-        return await self._compose(layers, max_bottom_gap=None)
+        return await self._compose(layers, max_bottom_gap=None, phase="initial")
 
     async def recompose(
         self, layers: Sequence[AcceptedLayer], *, max_bottom_gap: float
     ) -> CompositionPlan:
-        return await self._compose(layers, max_bottom_gap=max_bottom_gap)
+        return await self._compose(layers, max_bottom_gap=max_bottom_gap, phase="recompose")
 
     async def _compose(
-        self, layers: Sequence[AcceptedLayer], *, max_bottom_gap: float | None
+        self,
+        layers: Sequence[AcceptedLayer],
+        *,
+        max_bottom_gap: float | None,
+        phase: str,
     ) -> CompositionPlan:
+        prepare_started = time.perf_counter()
         parts: list[object] = [
             "Create an initial composition for supplied transparent artwork layers. "
             f"The landscape canvas width/height ratio is {self._canvas_aspect_ratio:.9f}. "
@@ -265,13 +297,32 @@ class GeminiComposer:
                 f"height_px={layer.asset.height_px}"
             )
             parts.append(_image_part(_asset_thumbnail(layer.asset)))
-        response = await _generate_structured(
-            self._client,
-            self._model,
-            parts,
-            CompositionPlan,
-            _composition_schema(),
-            self._request_timeout_ms,
+        _log_performance(
+            "composition.gemini_input_prepare",
+            _elapsed_ms(prepare_started),
+            phase=phase,
+            layer_count=len(layers),
+        )
+        api_started = time.perf_counter()
+        try:
+            response = await _generate_structured(
+                self._client,
+                self._model,
+                parts,
+                CompositionPlan,
+                _composition_schema(),
+                self._request_timeout_ms,
+            )
+        except Exception:
+            _log_performance(
+                "composition.gemini_api",
+                _elapsed_ms(api_started),
+                phase=phase,
+                outcome="error",
+            )
+            raise
+        _log_performance(
+            "composition.gemini_api", _elapsed_ms(api_started), phase=phase, outcome="ok"
         )
         return CompositionPlan.model_validate(response)
 
@@ -405,25 +456,41 @@ class GeminiArtworkGenerator:
             ]
             raise AiNotConfiguredError(f"未設定の環境変数: {', '.join(missing)}")
         started = time.perf_counter()
-        decoded = [decode_photo(photo) for photo in photos]
+        decoded = []
+        for photo_index, photo in enumerate(photos):
+            decode_started = time.perf_counter()
+            decoded.append(decode_photo(photo))
+            _log_performance(
+                "input.decode_preprocess",
+                _elapsed_ms(decode_started),
+                photo_index=photo_index,
+            )
+        source_assets_started = time.perf_counter()
         source_assets = _build_source_assets(decoded)
+        _log_performance(
+            "source_asset_build", _elapsed_ms(source_assets_started), photo_count=len(source_assets)
+        )
 
         semantic_started = time.perf_counter()
         try:
             semantic_plan = await self._planner.plan([item.image for item in decoded], memory_text)
         except AiError:
+            semantic_elapsed_ms = _elapsed_ms(semantic_started)
             self.last_metrics = GenerationMetrics(
-                semantic_planning_elapsed_ms=_elapsed_ms(semantic_started),
+                semantic_planning_elapsed_ms=semantic_elapsed_ms,
                 total_elapsed_ms=_elapsed_ms(started),
             )
+            _log_performance("semantic.planning_total", semantic_elapsed_ms, outcome="error")
+            _log_performance("ai.total", self.last_metrics.total_elapsed_ms, outcome="error")
             raise
         semantic_elapsed_ms = _elapsed_ms(semantic_started)
         if self._observer is not None:
             self._observer.semantic_plan(semantic_plan, [item.image for item in decoded])
-        logger.info(
-            "ai.semantic_plan elapsed_ms=%.1f candidates=%d",
+        _log_performance(
+            "semantic.planning_total",
             semantic_elapsed_ms,
-            len(semantic_plan.candidates),
+            outcome="ok",
+            candidate_count=len(semantic_plan.candidates),
         )
 
         usable_layers: list[AcceptedLayer] = []
@@ -464,8 +531,25 @@ class GeminiArtworkGenerator:
                     )
                 )
                 continue
-            layer, metric = await self._build_candidate(
-                candidate, decoded[candidate.source_photo_index].image
+            candidate_started = time.perf_counter()
+            try:
+                layer, metric = await self._build_candidate(
+                    candidate, decoded[candidate.source_photo_index].image
+                )
+            except Exception:
+                _log_performance(
+                    "candidate.segmentation_pipeline",
+                    _elapsed_ms(candidate_started),
+                    candidate_id=candidate.candidate_id,
+                    outcome="error",
+                )
+                _log_performance("ai.total", _elapsed_ms(started), outcome="error")
+                raise
+            _log_performance(
+                "candidate.segmentation_pipeline",
+                _elapsed_ms(candidate_started),
+                candidate_id=candidate.candidate_id,
+                outcome="ok" if layer is not None else "rejected",
             )
             candidate_metrics.append(metric)
             if layer is not None:
@@ -475,7 +559,14 @@ class GeminiArtworkGenerator:
             candidate.semantic_role == "architecture_primary"
             for candidate in semantic_plan.candidates
         )
+        selection_started = time.perf_counter()
         accepted, scene_anchor_candidate_id = self._select_layers(usable_layers)
+        _log_performance(
+            "layer_selection",
+            _elapsed_ms(selection_started),
+            usable_layer_count=len(usable_layers),
+            selected_layer_count=len(accepted),
+        )
 
         if len(accepted) < self._target_layer_min or (
             architecture_primary_planned
@@ -486,10 +577,12 @@ class GeminiArtworkGenerator:
                 total_elapsed_ms=_elapsed_ms(started),
                 candidates=tuple(candidate_metrics),
             )
+            _log_performance("ai.total", self.last_metrics.total_elapsed_ms, outcome="error")
             raise AiError("品質基準を満たすLayerを十分に生成できませんでした")
 
         composition_started = time.perf_counter()
         composition_plan = await self._composer.compose(accepted)
+        normalize_started = time.perf_counter()
         layout = normalize_composition(
             accepted,
             composition_plan,
@@ -501,6 +594,11 @@ class GeminiArtworkGenerator:
                 if scene_anchor_candidate_id is not None
                 else None
             ),
+        )
+        _log_performance(
+            "composition.normalize_constraint",
+            _elapsed_ms(normalize_started),
+            phase="initial",
         )
         initial_gaps = (
             bottom_gaps(accepted, layout, canvas_aspect_ratio=self._canvas_aspect_ratio)
@@ -514,11 +612,14 @@ class GeminiArtworkGenerator:
         ):
             recomposed = True
             recompose = getattr(self._composer, "recompose", None)
+            recompose_started = time.perf_counter()
             constrained_plan = (
                 await recompose(accepted, max_bottom_gap=self._physical_max_bottom_gap)
                 if callable(recompose)
                 else await self._composer.compose(accepted)
             )
+            _log_performance("physical_ready.recompose", _elapsed_ms(recompose_started))
+            normalize_started = time.perf_counter()
             layout = normalize_composition(
                 accepted,
                 constrained_plan,
@@ -531,18 +632,25 @@ class GeminiArtworkGenerator:
                     else None
                 ),
             )
+            _log_performance(
+                "composition.normalize_constraint",
+                _elapsed_ms(normalize_started),
+                phase="recompose",
+            )
             if any(
                 gap > self._physical_max_bottom_gap
                 for gap in bottom_gaps(
                     accepted, layout, canvas_aspect_ratio=self._canvas_aspect_ratio
                 ).values()
             ):
+                clamp_started = time.perf_counter()
                 layout, corrections = clamp_bottom_gaps(
                     accepted,
                     layout,
                     canvas_aspect_ratio=self._canvas_aspect_ratio,
                     max_bottom_gap=self._physical_max_bottom_gap,
                 )
+                _log_performance("physical_ready.clamp", _elapsed_ms(clamp_started))
         composition_elapsed_ms = _elapsed_ms(composition_started)
         physical_ready = (
             PhysicalReadyDiagnostics(
@@ -585,12 +693,14 @@ class GeminiArtworkGenerator:
             else None
         )
         self._notify_composition(accepted, physical_ready)
+        assembly_started = time.perf_counter()
         artwork = assemble_artwork(
             source_assets,
             accepted,
             layout,
             canvas_aspect_ratio=self._canvas_aspect_ratio,
         )
+        _log_performance("artwork_assembly", _elapsed_ms(assembly_started))
         self.last_metrics = GenerationMetrics(
             semantic_planning_elapsed_ms=semantic_elapsed_ms,
             composition_elapsed_ms=composition_elapsed_ms,
@@ -598,11 +708,11 @@ class GeminiArtworkGenerator:
             candidates=tuple(candidate_metrics),
             physical_ready=physical_ready,
         )
-        logger.info(
-            "ai.composition elapsed_ms=%.1f ai.total elapsed_ms=%.1f layers=%d",
-            composition_elapsed_ms,
-            self.last_metrics.total_elapsed_ms,
-            len(accepted),
+        _log_performance(
+            "composition.total", composition_elapsed_ms, selected_layer_count=len(accepted)
+        )
+        _log_performance(
+            "ai.total", self.last_metrics.total_elapsed_ms, outcome="ok", layer_count=len(accepted)
         )
         return GenerationResult(
             artwork=artwork,
@@ -671,17 +781,64 @@ class GeminiArtworkGenerator:
             else None
         )
         for component in candidate.components:
+            bbox_started = time.perf_counter()
             prompt_box = gemini_box_to_px(component.box_2d, image.size)
+            _log_performance(
+                "candidate.bbox_convert",
+                _elapsed_ms(bbox_started),
+                candidate_id=candidate.candidate_id,
+                component_id=component.component_id,
+            )
             result = None
             quality: MaskQuality | None = None
             for attempt in range(self._segmentation_max_retries + 1):
-                current_box = prompt_box if attempt == 0 else expand_box(prompt_box, image.size)
-                raw_result = await asyncio.to_thread(self._segmenter.segment, image, current_box)
+                if attempt == 0:
+                    current_box = prompt_box
+                else:
+                    retry_box_started = time.perf_counter()
+                    current_box = expand_box(prompt_box, image.size)
+                    _log_performance(
+                        "candidate.retry_bbox_expand",
+                        _elapsed_ms(retry_box_started),
+                        candidate_id=candidate.candidate_id,
+                        component_id=component.component_id,
+                        attempt=attempt,
+                    )
+                attempt_started = time.perf_counter()
+                try:
+                    raw_result = await asyncio.to_thread(
+                        self._segmenter.segment, image, current_box
+                    )
+                except Exception:
+                    _log_performance(
+                        "candidate.segmentation_attempt",
+                        _elapsed_ms(attempt_started),
+                        candidate_id=candidate.candidate_id,
+                        component_id=component.component_id,
+                        attempt=attempt,
+                        outcome="error",
+                    )
+                    raise
+                _log_segmentation_timings(
+                    raw_result,
+                    candidate_id=candidate.candidate_id,
+                    component_id=component.component_id,
+                    attempt=attempt,
+                )
+                raw_quality_started = time.perf_counter()
                 raw_quality = assess_mask(
                     raw_result.mask,
                     current_box,
                     raw_result.score,
                     diagnostics_max_side=diagnostics_max_side,
+                )
+                _log_performance(
+                    "candidate.mask_quality_check",
+                    _elapsed_ms(raw_quality_started),
+                    candidate_id=candidate.candidate_id,
+                    component_id=component.component_id,
+                    attempt=attempt,
+                    phase="raw",
                 )
                 if self._observer is not None:
                     self._observer.segmentation_attempt(
@@ -709,11 +866,28 @@ class GeminiArtworkGenerator:
                     score=raw_result.score,
                     prompt_box_px=raw_result.prompt_box_px,
                 )
+                quality_started = time.perf_counter()
                 quality = assess_mask(
                     result.mask,
                     current_box,
                     result.score,
                     diagnostics_max_side=diagnostics_max_side,
+                )
+                _log_performance(
+                    "candidate.mask_quality_check",
+                    _elapsed_ms(quality_started),
+                    candidate_id=candidate.candidate_id,
+                    component_id=component.component_id,
+                    attempt=attempt,
+                    phase="component",
+                )
+                _log_performance(
+                    "candidate.segmentation_attempt",
+                    _elapsed_ms(attempt_started),
+                    candidate_id=candidate.candidate_id,
+                    component_id=component.component_id,
+                    attempt=attempt,
+                    outcome="accepted" if quality.accepted else "rejected",
                 )
                 if self._observer is not None:
                     self._observer.segmentation_attempt(
@@ -727,16 +901,6 @@ class GeminiArtworkGenerator:
                         stage="normalized",
                         normalization=normalization,
                     )
-                logger.info(
-                    "ai.segmentation candidate=%s component=%s elapsed_ms=%.1f score=%s "
-                    "area_ratio=%.5f accepted=%s",
-                    candidate.candidate_id,
-                    component.component_id,
-                    _elapsed_ms(segmentation_started),
-                    result.score,
-                    quality.area_ratio,
-                    quality.accepted,
-                )
                 if quality.accepted:
                     break
             if quality is None or result is None or not quality.accepted:
@@ -769,6 +933,7 @@ class GeminiArtworkGenerator:
                 False,
                 "no_accepted_components",
             )
+        union_started = time.perf_counter()
         combined_mask = union_masks(masks)
         is_coherent_group = candidate.extraction_intent == "coherent_group"
         coherent_group_metrics = (
@@ -789,6 +954,13 @@ class GeminiArtworkGenerator:
                 # closingが外部へ通じる細い通路を閉じると、新しい閉鎖穴が生じ得る。
                 # 最終Layerの穴を残さないため、形状変更後にも同じ規則を適用する。
                 combined_mask = fill_closed_mask_holes(combined_mask)
+        _log_performance(
+            "candidate.mask_union",
+            _elapsed_ms(union_started),
+            candidate_id=candidate.candidate_id,
+            component_count=len(masks),
+        )
+        combined_quality_started = time.perf_counter()
         combined_quality = assess_mask(
             combined_mask,
             (0, 0, image.width, image.height),
@@ -796,6 +968,12 @@ class GeminiArtworkGenerator:
             diagnostics_max_side=diagnostics_max_side,
         )
         cleanup_limit = self._mask_micro_island_max_area_ratio
+        _log_performance(
+            "candidate.mask_quality_check",
+            _elapsed_ms(combined_quality_started),
+            candidate_id=candidate.candidate_id,
+            phase="combined",
+        )
         if self._architecture_ready and candidate.semantic_role in {
             "architecture_primary",
             "architecture_detail",
@@ -803,9 +981,16 @@ class GeminiArtworkGenerator:
             cleanup_limit = self._architecture_micro_island_max_area_ratio
         mask_cleanup = "not_needed"
         if self._micro_island_cleanup_enabled and self._physical_ready and not is_coherent_group:
+            cleanup_started = time.perf_counter()
             cleanup = clean_micro_islands(
                 combined_mask,
                 max_removed_area_ratio=cleanup_limit,
+            )
+            _log_performance(
+                "candidate.architecture_cleanup",
+                _elapsed_ms(cleanup_started),
+                candidate_id=candidate.candidate_id,
+                outcome="applied" if cleanup.applied else "not_applied",
             )
             if cleanup.component_count > 1 and not cleanup.applied:
                 return None, _candidate_metric(
@@ -821,11 +1006,18 @@ class GeminiArtworkGenerator:
                 )
             if cleanup.applied:
                 combined_mask = cleanup.mask
+                combined_quality_started = time.perf_counter()
                 combined_quality = assess_mask(
                     combined_mask,
                     (0, 0, image.width, image.height),
                     max(scores) if scores else None,
                     diagnostics_max_side=diagnostics_max_side,
+                )
+                _log_performance(
+                    "candidate.mask_quality_check",
+                    _elapsed_ms(combined_quality_started),
+                    candidate_id=candidate.candidate_id,
+                    phase="post_architecture_cleanup",
                 )
                 mask_cleanup = f"removed_micro_islands:{cleanup.removed_area_ratio:.6f}"
             elif cleanup.component_count == 1:
@@ -885,6 +1077,11 @@ class GeminiArtworkGenerator:
             height_px=height,
             data=png,
         )
+        _log_performance(
+            "candidate.rgba_layer_build",
+            _elapsed_ms(layer_started),
+            candidate_id=candidate.candidate_id,
+        )
         return (
             AcceptedLayer(
                 candidate_id=candidate.candidate_id,
@@ -932,15 +1129,31 @@ class GeminiArtworkGenerator:
                 layer_build_mode="rectangular_crop",
             )
         component = candidate.components[0]
+        bbox_started = time.perf_counter()
         box = gemini_box_to_px(component.box_2d, image.size)
+        _log_performance(
+            "candidate.bbox_convert",
+            _elapsed_ms(bbox_started),
+            candidate_id=candidate.candidate_id,
+            component_id=component.component_id,
+        )
         x0, y0, x1, y1 = box
         mask = np.zeros((image.height, image.width), dtype=bool)
         mask[y0:y1, x0:x1] = True
+        quality_started = time.perf_counter()
         quality = assess_mask(
             mask,
             box,
             None,
             diagnostics_max_side=self._quality_diagnostics_max_side,
+        )
+        _log_performance(
+            "candidate.mask_quality_check",
+            _elapsed_ms(quality_started),
+            candidate_id=candidate.candidate_id,
+            component_id=component.component_id,
+            attempt=0,
+            phase="scene_anchor",
         )
         if self._observer is not None:
             self._observer.segmentation_attempt(
@@ -977,6 +1190,11 @@ class GeminiArtworkGenerator:
             height_px=height,
             data=png,
         )
+        _log_performance(
+            "candidate.rgba_layer_build",
+            _elapsed_ms(layer_started),
+            candidate_id=candidate.candidate_id,
+        )
         return (
             AcceptedLayer(
                 candidate_id=candidate.candidate_id,
@@ -1002,6 +1220,30 @@ class GeminiArtworkGenerator:
                 layer_build_mode="rectangular_crop",
             ),
         )
+
+
+def _log_segmentation_timings(
+    result: SegmentationResult,
+    *,
+    candidate_id: str,
+    component_id: str,
+    attempt: int,
+) -> None:
+    timings = result.timings
+    for stage, elapsed_ms in (
+        ("efficient_sam.resize", timings.resize_elapsed_ms),
+        ("efficient_sam.tensor_preparation", timings.tensor_preparation_elapsed_ms),
+        ("efficient_sam.onnx_inference", timings.onnx_inference_elapsed_ms),
+        ("efficient_sam.mask_restore", timings.mask_restore_elapsed_ms),
+    ):
+        if elapsed_ms is not None:
+            _log_performance(
+                stage,
+                elapsed_ms,
+                candidate_id=candidate_id,
+                component_id=component_id,
+                attempt=attempt,
+            )
 
 
 def _candidate_metric(

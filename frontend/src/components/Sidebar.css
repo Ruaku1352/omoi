@@ -1,0 +1,39 @@
+.sidebar {
+  width: 104px;
+  flex: none;
+  background: #fff;
+  border-right: 0.5px solid var(--omoi-gray);
+  border-radius: 16px;
+  box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.25);
+  padding: 62px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.sidebar-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sidebar-btn img {
+  width: 48px;
+  height: 48px;
+  display: block;
+}
+
+.sidebar-swap {
+  width: 16px;
+  height: 16px;
+}
+
+/* スマホ版では左サイドバーの代わりに各画面上部のボタン（微調整する/編集を終わる等）で
+   同じ画面遷移ができるので、サイドバーごと隠す */
+@media (max-width: 600px) {
+  .sidebar {
+    display: none;
+  }
+}

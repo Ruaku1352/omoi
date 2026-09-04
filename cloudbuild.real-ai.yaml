@@ -1,0 +1,33 @@
+# Real AI Image（EfficientSAM ONNX同梱）を Cloud Build でBuildし、
+# Artifact Registry へpushする。
+#
+#   gcloud builds submit --config cloudbuild.real-ai.yaml .
+#
+# なぜCloud Buildを経由するか:
+#   `gcloud run deploy --source .` はDockerfileの**最終stage**（default target）を
+#   Buildするため、ONNX artifactを含む real-ai target が選ばれない。
+#   `--source` にtargetを指定する仕組みが無いので、targetを明示できる本Configを使う。
+#
+# 前提:
+#   - backend/.models/efficientsam_ti.onnx を事前取得・checksum検証しておくこと
+#     （scripts/fetch_efficientsam_onnx.py。Runtime Downloadはしない）
+#   - リポジトリルートの .gcloudignore が必要。無いと gcloud が .gitignore を代用し、
+#     .gitignore で除外している backend/.models/ がBuild Contextへ入らず COPY が失敗する
+#
+# 手順の詳細・Deployコマンド・IAMの注意は docs/deploy.md §3.5 を参照。
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target
+      - real-ai
+      - -t
+      - asia-northeast1-docker.pkg.dev/$PROJECT_ID/omoi/omoi-backend-real:latest
+      - .
+
+images:
+  - asia-northeast1-docker.pkg.dev/$PROJECT_ID/omoi/omoi-backend-real:latest
+
+options:
+  machineType: E2_HIGHCPU_8

@@ -7,6 +7,12 @@ dependencies = [
     # 【仮決定】FastAPI 0.139系 / Pydantic（AGENTS.md §6）
     "fastapi~=0.139.0",
     "google-genai~=2.19",
+    # 非同期化: Job Store(Firestore) / Asset・Job入力Storage(GCS) / 実行基盤(Cloud Tasks)。
+    # 既定Backendは memory / local / inline なので、これらは job_store_backend=firestore 等を
+    # 明示的に有効化するまで実際には呼ばれない（AGENTS.md: 単独でFIXしない範囲の配慮）。
+    "google-cloud-firestore>=2.16,<3",
+    "google-cloud-storage>=2.16,<3",
+    "google-cloud-tasks>=2.16,<3",
     "numpy~=2.3",
     "onnxruntime~=1.24",
     "pillow~=12.0",

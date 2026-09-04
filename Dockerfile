@@ -36,9 +36,11 @@ WORKDIR /srv
 COPY backend/pyproject.toml backend/uv.lock backend/.python-version /srv/backend/
 RUN cd /srv/backend && uv sync --locked --no-install-project --no-dev
 
-# アプリ本体 + 共通Contract。backend/ と contracts/ の兄弟関係を保ったまま積む。
+# アプリ本体 + 共通Contract + Physical Output PoC生成器。
+# backend/ と contracts/ の兄弟関係を保ったまま積む。
 COPY backend /srv/backend
 COPY contracts /srv/contracts
+COPY scripts /srv/scripts
 
 RUN cd /srv/backend && uv sync --locked --no-dev
 
