@@ -90,11 +90,19 @@ python scripts/flat_photo_parts_poc.py
 - `supportBridgeWidthMm`: 1.8
 - `verticalSupportWidthMm`: 4
 - `verticalSupportMinHeightMm`: 1
+- `supportRootPadWidthMm`: 12
+- `supportRootPadHeightMm`: 5
+- `supportRootOverlapMm`: 2
 - `supportMode`: rail
+- `treeBranchWidthMm`: 2.4
+- `treeSupportEdgeMarginMm`: 4
+- `railBodyHeightMm`: 4
+- `railSupportWidthMm`: 10
+- `railEdgeMarginMm`: 0
 - `mountMode`: front-tab
 - `tabWidthMm`: 12
 - `tabHeightMm`: 5
-- `tabOverlapMm`: 1
+- `tabOverlapMm`: 2
 - `slotClearanceMm`: 0.35
 - `baseMode`: square-grid
 - `baseWidthMm`: 170
@@ -102,8 +110,8 @@ python scripts/flat_photo_parts_poc.py
 - `baseLayerCapacity`: 4
 - `baseSlotsPerLayer`: 3
 - `baseSlotLengthMm`: 12
-- `baseFrontMarginYMm`: 8
-- `baseBackMarginYMm`: 8
+- `baseFrontMarginYMm`: 11
+- `baseBackMarginYMm`: 5
 - `baseLayerGapMm`: 7
 - `baseHeightMm`: 5
 - `baseSlotLabelEngraveDepthMm`: 0.45
@@ -768,6 +776,7 @@ Layer本体は短いスロット中心へスナップしない。Artwork Dataの
 
 - `supportMode`: `straight`、`tree`、`rail`
 - `railBodyHeightMm`: 横レール本体の高さ。既定は4mm
+- `railSupportWidthMm`: 横レールとLayer本体をつなぐ支え板の幅。既定は10mm
 - `railEdgeMarginMm`: 横レールを土台左右端から内側へ逃がす余白。既定は0mm
 
 レポートには、各Partへ `rails[]` を追加する。`slotAssignment.selectedBy` は `rowRail`、`assemblyLabel` は `1-3`、`4-6` のように行全体を表す。`tabs[]` は従来の1つではなく、同じ行の3穴へ入る3つの差し込み足を持つ。Backend/FastAPI候補Endpointも `physicalOutputConfig.supportMode: "rail"` を受け取れる。
@@ -855,10 +864,20 @@ pdftoppm -png -f 1 -l 1 -singlefile -r 72 poc-output\physical-print\01-kanazawa-
 
 結果は成功。BackendのPhysical Output Endpointテストは `12 passed`、Ruffは成功した。`pdfinfo` では `Pages: 4`、`Page size: 504.48 x 360 pts`、`MediaBox: 0.00 0.00 504.48 360.00` で、2L Landscapeとして出力できている。確認後、`tmp\pdfs\2l-cover-background-check-20260904` は削除した。
 
-### 背景行スロットの奥寄せ
+### 土台スロット全体の奥寄せ
 
-2026-09-04に、番号付き土台の最奥行 `10, 11, 12` が背景パネル用としては手前に見える問題を確認した。土台は `170 x 121 x 5mm` のまま、後ろ余白を `20mm` から `8mm` へ変更し、前余白と同じ値にそろえた。
+2026-09-04に、番号付き土台の最奥行 `10, 11, 12` が背景パネル用としては手前に見える問題を確認した。いったん後ろ余白だけを詰める案を試したが、土台全体としてもスロット列が中央寄りに見えるため、4行すべてを少し奥へ寄せる設定にした。
 
-これにより、4行目の背景スロットは奥端から約8mm手前まで下がる。前景側の `1, 2, 3` は従来どおり手前8mm位置に残し、中間行の間隔を広げることで、前景から背景へ奥行きが出る配置にした。FrontendのPhysical Previewへ反映する場合も、同じ `baseBackMarginYMm: 8` を表示要件として共有する。
+土台寸法は `170 x 121 x 5mm` のまま、前余白を `11mm`、後ろ余白を `5mm` にする。これにより、数字刻印が前端やスロットに食い込む余白を残しつつ、`1-3` から `10-12` までの全行を約3mm奥へ移動する。
 
-Driveテストデータで再生成した出力は `poc-output/physical-print/01-kanazawa-memories-background-row-back-20260904/` に置いた。report上の各行は、`1-3: 8.00-9.95mm`、`4-6: 42.35-44.30mm`、`7-9: 76.70-78.65mm`、`10-12: 111.05-113.00mm` になった。検証は `python -m py_compile scripts\flat_photo_parts_poc.py` と `uv run pytest tests\test_physical_output_endpoint.py -q` で通過した。PDFは引き続き `Pages: 4`、`Page size: 504.48 x 360 pts`、`MediaBox: 0.00 0.00 504.48 360.00` の2L Landscapeである。
+同じ設定で `C:\Users\indod\Downloads\osaka-test.zip` も再生成した。ZIP内の `osaka-test/artwork.json` と `osaka-test/assets/` を一時展開して使い、一時展開分は生成後に残していない。出力は `poc-output/physical-print/osaka-test-slot-base-all-back-20260904/`、STLだけをまとめたZIPは `poc-output/physical-print/osaka-test-slot-base-all-back-20260904-stl.zip` に置いた。生成結果は4レイヤー + 番号付き土台で、warningsは空。report上の各行は、`1-3: 11.00-12.95mm`、`4-6: 45.35-47.30mm`、`7-9: 79.70-81.65mm`、`10-12: 114.05-116.00mm` になった。PDFは4ページ、2L Landscape、`Page size: 504.48 x 360 pts`、`MediaBox: 0.00 0.00 504.48 360.00` である。
+
+### 横レール支えの接合強化
+
+2026-09-04に、Bambu Studio上で横レール支えがLayer本体へ細くしか接続していない問題を確認した。原因は、rail方式の縦支えを画像中心基準の1本だけで作り、幅も `verticalSupportWidthMm: 4`、重なりも `tabOverlapMm: 1` にしていたことにある。下端の素材が左寄りのLayerでは、支えが実際の輪郭外側に寄り、印刷後に引きちぎれるリスクが高かった。
+
+rail方式では、`verticalSupportWidthMm` ではなく `railSupportWidthMm: 10` を使う。支え位置は画像中心ではなく、alpha maskの下端4mmを走査した `bottomSupportIntervalsMm` から選ぶ。広い下端素材がある場合は同じ横レールへ2本の支えを落とし、狭い場合はその素材範囲に収まる最大10mm幅の支えを1本置く。`tabOverlapMm` も2mmへ増やし、Layer本体、`rootPad`、支え、横レール、差し込み足の重なりを増やした。
+
+`flat-photo-parts-report.json` には、横レール側へ `railSupportSpansMm`、各支えへ `bodyAnchorSpanMm` と `imageBottomIntervalMm` を残す。これにより、支えがどの下端素材を根拠に配置されたかを後から確認できる。
+
+同じ `C:\Users\indod\Downloads\osaka-test.zip` を新設定で再生成した。出力は `poc-output/physical-print/osaka-test-rail-strong-support-20260904/`、STLだけをまとめたZIPは `poc-output/physical-print/osaka-test-rail-strong-support-20260904-stl.zip` に置いた。結果は4レイヤー + 番号付き土台で、warningsは空。浮いている2レイヤーのうち、Tsutenkaku人物Layerは10mm幅支え2本、たこ焼き箱Layerは10mm幅支え1本になった。PDFは4ページ、2L Landscape、`Page size: 504.48 x 360 pts`、`MediaBox: 0.00 0.00 504.48 360.00` である。

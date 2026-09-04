@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from app.config import REPO_ROOT, Settings
 from app.main import create_app
@@ -70,6 +70,16 @@ def _png_bytes(width_px: int, height_px: int, color: tuple[int, int, int, int]) 
     return buffer.getvalue()
 
 
+def _left_bottom_shape_png_bytes() -> bytes:
+    image = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((5, 20, 95, 62), fill=(32, 64, 96, 255))
+    draw.rectangle((10, 62, 32, 99), fill=(32, 64, 96, 255))
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
 def test_physical_output_exports_zip_from_artwork_and_assets(client: TestClient) -> None:
     artwork = _mock_artwork()
 
@@ -99,11 +109,26 @@ def test_physical_output_exports_zip_from_artwork_and_assets(client: TestClient)
         assert report["schemaImpact"]["needsArtworkSchemaChange"] is False
         assert report["flatPhotoPartConfig"]["targetWidthMm"] == 178.0
         assert report["flatPhotoPartConfig"]["supportMode"] == "rail"
+        assert report["flatPhotoPartConfig"]["baseFrontMarginYMm"] == 11.0
+        assert report["flatPhotoPartConfig"]["baseBackMarginYMm"] == 5.0
         assert report["flatPhotoPartConfig"]["partSlotLabelEngraveDepthMm"] == 0.35
         assert report["flatPhotoPartConfig"]["verticalSupportWidthMm"] == 4.0
+        assert report["flatPhotoPartConfig"]["railSupportWidthMm"] == 10.0
+        assert report["flatPhotoPartConfig"]["tabOverlapMm"] == 2.0
         assert report["flatPhotoPartConfig"]["supportRootPadWidthMm"] == 12.0
         assert report["flatPhotoPartConfig"]["supportRootPadHeightMm"] == 5.0
         assert report["flatPhotoPartConfig"]["supportRootOverlapMm"] == 2.0
+        assert report["base"]["frontMarginMm"] == 11.0
+        assert report["base"]["backMarginMm"] == 5.0
+        assert [
+            (slot["frontMm"], slot["backMm"])
+            for slot in report["base"]["slots"]
+        ] == [
+            (11.0, 12.95),
+            (45.35, 47.3),
+            (79.7, 81.65),
+            (114.05, 116.0),
+        ]
         assert report["outputs"]["printLayoutPdf"] is None
         assert report["outputs"]["printLayoutSvg"] is None
         assert all(part["outputStl"].startswith("stl/") for part in report["parts"])
@@ -125,6 +150,16 @@ def test_physical_output_exports_zip_from_artwork_and_assets(client: TestClient)
             for support in part["verticalSupports"]
         )
         assert all(
+            support["widthMm"] >= report["flatPhotoPartConfig"]["railSupportWidthMm"]
+            for part in lifted_parts
+            for support in part["verticalSupports"]
+        )
+        assert all(
+            support["overlapMm"] == report["flatPhotoPartConfig"]["tabOverlapMm"]
+            for part in lifted_parts
+            for support in part["verticalSupports"]
+        )
+        assert all(
             support["rootPad"]["widthMm"] >= support["widthMm"]
             and (
                 support["rootPad"]["heightMm"]
@@ -134,7 +169,7 @@ def test_physical_output_exports_zip_from_artwork_and_assets(client: TestClient)
                 support["rootPad"]["overlapIntoImageMm"]
                 == report["flatPhotoPartConfig"]["supportRootOverlapMm"]
             )
-            and support["rootPad"]["yMm"] < support["yMm"]
+            and support["rootPad"]["yMm"] <= support["yMm"]
             for part in lifted_parts
             for support in part["verticalSupports"]
         )
@@ -144,6 +179,63 @@ def test_physical_output_exports_zip_from_artwork_and_assets(client: TestClient)
             for mark in part["assemblyMarks"]
         )
         assert "omoi-physical-output-" not in json.dumps(report, ensure_ascii=False)
+
+
+def test_physical_output_anchors_rail_support_to_visible_bottom_material(
+    client: TestClient,
+) -> None:
+    artwork = _mock_artwork()
+    target_layer = next(layer for layer in artwork["layers"] if layer["layerIndex"] == 3)
+    target_layer["asset"] = {
+        "assetId": "left-bottom-shape",
+        "mimeType": "image/png",
+        "widthPx": 100,
+        "heightPx": 100,
+    }
+    target_layer["x"] = 0.5
+    target_layer["y"] = 0.35
+    target_layer["scale"] = 0.4
+
+    files = []
+    for layer in artwork["layers"]:
+        asset = layer["asset"]
+        if asset["assetId"] == "left-bottom-shape":
+            files.append((
+                "assets",
+                (
+                    "left-bottom-shape.png",
+                    _left_bottom_shape_png_bytes(),
+                    "image/png",
+                ),
+            ))
+            continue
+        ext = EXT_BY_MIME[asset["mimeType"]]
+        path = CONTRACTS / "assets" / f"{asset['assetId']}.{ext}"
+        files.append(("assets", (path.name, path.read_bytes(), asset["mimeType"])))
+
+    response = client.post(
+        "/api/v1/physical-output/exports",
+        data={"artwork": json.dumps(artwork)},
+        files=files,
+    )
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        report = json.loads(archive.read("flat-photo-parts-report.json"))
+
+    [part] = [
+        candidate
+        for candidate in report["parts"]
+        if candidate["layerId"] == target_layer["layerId"]
+    ]
+    assert part["verticalSupports"]
+    support = part["verticalSupports"][0]
+    image_center_x = part["imageAreaMm"]["xMm"] + part["imageAreaMm"]["widthMm"] / 2
+
+    assert support["widthMm"] == 10.0
+    assert support["rootPad"]["widthMm"] >= support["widthMm"]
+    assert support["imageBottomIntervalMm"]["widthMm"] >= support["widthMm"]
+    assert abs(support["anchorXMm"] - image_center_x) > 12.0
 
 
 def test_physical_output_cover_crops_opaque_background_to_2l(
