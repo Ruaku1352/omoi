@@ -67,11 +67,12 @@ class FlatPhotoPartConfig:
     tree_branch_width_mm: float = 2.4
     tree_support_edge_margin_mm: float = 4.0
     rail_body_height_mm: float = 4.0
+    rail_support_width_mm: float = 10.0
     rail_edge_margin_mm: float = 0.0
     mount_mode: str = "front-tab"
     tab_width_mm: float = 12.0
     tab_height_mm: float = 5.0
-    tab_overlap_mm: float = 1.0
+    tab_overlap_mm: float = 2.0
     tab_edge_margin_mm: float = 4.0
     slot_clearance_mm: float = 0.35
     slot_side_clearance_mm: float = 0.8
@@ -82,8 +83,8 @@ class FlatPhotoPartConfig:
     base_slots_per_layer: int = 3
     base_slot_length_mm: float = 12.0
     base_margin_x_mm: float = 12.0
-    base_margin_y_mm: float = 8.0
-    base_back_margin_y_mm: float = 8.0
+    base_margin_y_mm: float = 11.0
+    base_back_margin_y_mm: float = 5.0
     base_layer_gap_mm: float = 7.0
     base_height_mm: float = 5.0
     base_slot_label_engrave_depth_mm: float = 0.45
@@ -123,6 +124,7 @@ def _config_to_json(config: FlatPhotoPartConfig) -> dict:
         "treeBranchWidthMm": config.tree_branch_width_mm,
         "treeSupportEdgeMarginMm": config.tree_support_edge_margin_mm,
         "railBodyHeightMm": config.rail_body_height_mm,
+        "railSupportWidthMm": config.rail_support_width_mm,
         "railEdgeMarginMm": config.rail_edge_margin_mm,
         "mountMode": config.mount_mode,
         "tabWidthMm": config.tab_width_mm,
@@ -1050,6 +1052,110 @@ def _clamp(value: float, minimum: float, maximum: float) -> float:
     return min(max(value, minimum), maximum)
 
 
+def _rail_support_span(
+    interval: tuple[float, float],
+    desired_width_mm: float,
+    anchor_ratio: float,
+) -> dict | None:
+    start_mm, end_mm = interval
+    interval_width_mm = end_mm - start_mm
+    if interval_width_mm <= 0:
+        return None
+
+    width_mm = min(desired_width_mm, interval_width_mm)
+    center_mm = start_mm + interval_width_mm * anchor_ratio
+    x_start_mm = _clamp(center_mm - width_mm / 2, start_mm, end_mm - width_mm)
+    x_end_mm = x_start_mm + width_mm
+    return {
+        "xStartMm": round(x_start_mm, 3),
+        "xEndMm": round(x_end_mm, 3),
+        "anchorXMm": round((x_start_mm + x_end_mm) / 2, 3),
+        "widthMm": round(width_mm, 3),
+        "imageBottomIntervalMm": {
+            "xStartMm": round(start_mm, 3),
+            "xEndMm": round(end_mm, 3),
+            "widthMm": round(interval_width_mm, 3),
+        },
+    }
+
+
+def _rail_support_spans(
+    support_intervals: list[tuple[float, float]],
+    image_width_mm: float,
+    config: FlatPhotoPartConfig,
+) -> list[dict]:
+    desired_width_mm = max(config.rail_support_width_mm, config.vertical_support_width_mm, 0.1)
+    min_interval_width_mm = max(config.vertical_support_width_mm, desired_width_mm * 0.45, 0.5)
+    intervals = [
+        (max(0.0, start_mm), min(image_width_mm, end_mm))
+        for start_mm, end_mm in support_intervals
+        if end_mm > start_mm
+    ]
+    valid = [
+        interval
+        for interval in intervals
+        if interval[1] - interval[0] >= min_interval_width_mm
+    ]
+
+    if not valid:
+        fallback_width_mm = min(desired_width_mm, max(image_width_mm, 0.1))
+        center_mm = image_width_mm / 2
+        x_start_mm = _clamp(center_mm - fallback_width_mm / 2, 0.0, image_width_mm - fallback_width_mm)
+        return [
+            {
+                "xStartMm": round(x_start_mm, 3),
+                "xEndMm": round(x_start_mm + fallback_width_mm, 3),
+                "anchorXMm": round(x_start_mm + fallback_width_mm / 2, 3),
+                "widthMm": round(fallback_width_mm, 3),
+                "imageBottomIntervalMm": None,
+            }
+        ]
+
+    widest = max(valid, key=lambda interval: interval[1] - interval[0])
+    widest_width_mm = widest[1] - widest[0]
+    spans: list[dict] = []
+    if widest_width_mm >= desired_width_mm * 2.4:
+        for anchor_ratio in (0.25, 0.75):
+            span = _rail_support_span(widest, desired_width_mm, anchor_ratio)
+            if span:
+                spans.append(span)
+        return spans
+
+    if len(valid) >= 2 and valid[-1][1] - valid[0][0] >= desired_width_mm * 2.4:
+        for interval in (valid[0], valid[-1]):
+            span = _rail_support_span(interval, desired_width_mm, 0.5)
+            if span:
+                spans.append(span)
+        return spans
+
+    span = _rail_support_span(widest, desired_width_mm, 0.5)
+    return [span] if span else []
+
+
+def _support_root_pad_spec(
+    *,
+    anchor_x: float,
+    support_width_mm: float,
+    image_width_mm: float,
+    image_height_mm: float,
+    overlap_mm: float,
+    config: FlatPhotoPartConfig,
+) -> dict:
+    root_overlap = min(max(config.support_root_overlap_mm, 0.0), image_height_mm)
+    root_width = max(support_width_mm, config.support_root_pad_width_mm)
+    root_width = min(root_width, image_width_mm + root_overlap * 2)
+    root_x = anchor_x - root_width / 2
+    root_y = image_height_mm - root_overlap
+    root_height = max(config.support_root_pad_height_mm, overlap_mm + root_overlap)
+    return {
+        "xMm": round(root_x, 3),
+        "yMm": round(root_y, 3),
+        "widthMm": round(root_width, 3),
+        "heightMm": round(root_height, 3),
+        "overlapIntoImageMm": round(root_overlap, 3),
+    }
+
+
 def _tab_specs(
     width_mm: float,
     image_height_mm: float,
@@ -1077,6 +1183,7 @@ def _tab_specs(
         ]
         if config.support_mode == "rail" and slot_assignment:
             slot_spans = _grid_slot_x_spans(config, config.base_width_mm)
+            rail_support_spans = _rail_support_spans(support_intervals, width_mm, config)
             rail_base_left = min(
                 max(config.rail_edge_margin_mm, 0.0),
                 max(config.base_width_mm / 2 - 0.5, 0.0),
@@ -1098,6 +1205,11 @@ def _tab_specs(
                 "targetBaseXCenterMm": round(target_base_x, 3),
                 "railBaseXStartMm": round(rail_base_left, 3),
                 "railBaseXEndMm": round(rail_base_left + rail_width, 3),
+                "railSupportWidthMm": round(
+                    max(config.rail_support_width_mm, config.vertical_support_width_mm),
+                    3,
+                ),
+                "railSupportSpansMm": rail_support_spans,
             }
             tabs = []
             for slot_column_index, (slot_start, slot_end) in enumerate(slot_spans):
@@ -1273,10 +1385,58 @@ def _vertical_support_specs(
     if config.mount_mode != "front-tab" or support_height_mm <= 0:
         return []
 
+    if config.support_mode == "rail":
+        rail_tab = next((tab for tab in tabs if tab.get("rail")), None)
+        if rail_tab is None:
+            return []
+
+        rail = rail_tab.get("rail") or {}
+        overlap = rail_tab.get("overlapMm", 0.0)
+        y_mm = image_height_mm - overlap
+        height_mm = support_height_mm + overlap
+        if height_mm <= 0:
+            return []
+
+        supports = []
+        for index, span in enumerate(rail.get("railSupportSpansMm") or []):
+            x_start_mm = float(span["xStartMm"])
+            x_end_mm = float(span["xEndMm"])
+            width_mm = max(0.1, x_end_mm - x_start_mm)
+            anchor_x = (x_start_mm + x_end_mm) / 2
+            supports.append(
+                {
+                    "supportId": f"{rail.get('railId', 'rail')}-vertical-support-{index + 1}",
+                    "tabId": rail_tab["tabId"],
+                    "railId": rail.get("railId"),
+                    "supportMode": config.support_mode,
+                    "xMm": round(x_start_mm, 3),
+                    "yMm": round(y_mm, 3),
+                    "widthMm": round(width_mm, 3),
+                    "heightMm": round(height_mm, 3),
+                    "anchorXMm": round(anchor_x, 3),
+                    "supportHeightMm": round(support_height_mm, 3),
+                    "overlapMm": round(overlap, 3),
+                    "rootPad": _support_root_pad_spec(
+                        anchor_x=anchor_x,
+                        support_width_mm=width_mm,
+                        image_width_mm=image_width_mm,
+                        image_height_mm=image_height_mm,
+                        overlap_mm=overlap,
+                        config=config,
+                    ),
+                    "bodyAnchorSpanMm": {
+                        "xStartMm": round(x_start_mm, 3),
+                        "xEndMm": round(x_end_mm, 3),
+                        "widthMm": round(width_mm, 3),
+                    },
+                    "imageBottomIntervalMm": span.get("imageBottomIntervalMm"),
+                    "branches": [],
+                }
+            )
+        return supports
+
     supports = []
     for tab in tabs:
-        if config.support_mode == "rail" and not tab.get("carriesSupport", True):
-            continue
         overlap = tab.get("overlapMm", 0.0)
         width_mm = max(0.1, min(config.vertical_support_width_mm, tab["widthMm"]))
         anchor_x = tab.get("supportAnchorXMm", tab["xMm"] + tab["widthMm"] / 2)
@@ -1285,12 +1445,6 @@ def _vertical_support_specs(
         height_mm = support_height_mm + overlap
         if height_mm <= 0:
             continue
-        root_overlap = min(max(config.support_root_overlap_mm, 0.0), image_height_mm)
-        root_width = max(width_mm, config.support_root_pad_width_mm)
-        root_width = min(root_width, image_width_mm + root_overlap * 2)
-        root_x = anchor_x - root_width / 2
-        root_y = image_height_mm - root_overlap
-        root_height = max(config.support_root_pad_height_mm, overlap + root_overlap)
         branches = []
         if config.support_mode == "tree" and support_height_mm >= 4.0:
             branch_width = max(0.8, min(config.tree_branch_width_mm, width_mm * 0.85))
@@ -1339,13 +1493,14 @@ def _vertical_support_specs(
                 "anchorXMm": round(anchor_x, 3),
                 "supportHeightMm": round(support_height_mm, 3),
                 "overlapMm": round(overlap, 3),
-                "rootPad": {
-                    "xMm": round(root_x, 3),
-                    "yMm": round(root_y, 3),
-                    "widthMm": round(root_width, 3),
-                    "heightMm": round(root_height, 3),
-                    "overlapIntoImageMm": round(root_overlap, 3),
-                },
+                "rootPad": _support_root_pad_spec(
+                    anchor_x=anchor_x,
+                    support_width_mm=width_mm,
+                    image_width_mm=image_width_mm,
+                    image_height_mm=image_height_mm,
+                    overlap_mm=overlap,
+                    config=config,
+                ),
                 "branches": branches,
             }
         )
@@ -1646,6 +1801,10 @@ def _part_from_layer(
         for rail in rails:
             rail["xMm"] = round(rail["xMm"] + shift_x, 3)
             rail["supportAnchorXMm"] = round(rail["supportAnchorXMm"] + shift_x, 3)
+            for span in rail.get("railSupportSpansMm", []):
+                span["xStartMm"] = round(span["xStartMm"] + shift_x, 3)
+                span["xEndMm"] = round(span["xEndMm"] + shift_x, 3)
+                span["anchorXMm"] = round(span["anchorXMm"] + shift_x, 3)
         for tab in tabs:
             tab["xMm"] = round(tab["xMm"] + shift_x, 3)
             if "supportAnchorXMm" in tab:
@@ -1653,6 +1812,10 @@ def _part_from_layer(
         for support in vertical_supports:
             support["xMm"] = round(support["xMm"] + shift_x, 3)
             support["anchorXMm"] = round(support["anchorXMm"] + shift_x, 3)
+            body_anchor = support.get("bodyAnchorSpanMm")
+            if body_anchor:
+                body_anchor["xStartMm"] = round(body_anchor["xStartMm"] + shift_x, 3)
+                body_anchor["xEndMm"] = round(body_anchor["xEndMm"] + shift_x, 3)
             root_pad = support.get("rootPad")
             if root_pad:
                 root_pad["xMm"] = round(root_pad["xMm"] + shift_x, 3)
@@ -2871,6 +3034,7 @@ def parse_args() -> argparse.Namespace:
         default=FlatPhotoPartConfig.tree_support_edge_margin_mm,
     )
     parser.add_argument("--rail-body-height-mm", type=float, default=FlatPhotoPartConfig.rail_body_height_mm)
+    parser.add_argument("--rail-support-width-mm", type=float, default=FlatPhotoPartConfig.rail_support_width_mm)
     parser.add_argument("--rail-edge-margin-mm", type=float, default=FlatPhotoPartConfig.rail_edge_margin_mm)
     parser.add_argument("--mount-mode", choices=("rear", "front-tab"), default=FlatPhotoPartConfig.mount_mode)
     parser.add_argument("--tab-width-mm", type=float, default=FlatPhotoPartConfig.tab_width_mm)
@@ -2975,6 +3139,7 @@ def main() -> int:
         tree_branch_width_mm=args.tree_branch_width_mm,
         tree_support_edge_margin_mm=args.tree_support_edge_margin_mm,
         rail_body_height_mm=args.rail_body_height_mm,
+        rail_support_width_mm=args.rail_support_width_mm,
         rail_edge_margin_mm=args.rail_edge_margin_mm,
         mount_mode=args.mount_mode,
         tab_width_mm=args.tab_width_mm,

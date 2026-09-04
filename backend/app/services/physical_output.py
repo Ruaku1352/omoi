@@ -297,6 +297,7 @@ def _validate_config(config: Any) -> list[str]:
         "support_root_pad_height_mm",
         "tree_branch_width_mm",
         "rail_body_height_mm",
+        "rail_support_width_mm",
         "tab_width_mm",
         "tab_height_mm",
         "base_width_mm",
