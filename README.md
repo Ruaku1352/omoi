@@ -71,6 +71,8 @@ omoiは、Tornado 2026にて **NTTレゾナントテクノロジー賞** をい�
   <a href="https://github.com/takonami28-byte"><img src="https://github.com/takonami28-byte.png?size=100" width="72" height="72" alt="takonami28-byte" /></a>
   <a href="https://github.com/indo40722"><img src="https://github.com/indo40722.png?size=100" width="72" height="72" alt="indo40722" /></a>
   <a href="https://github.com/Ruaku1352"><img src="https://github.com/Ruaku1352.png?size=100" width="72" height="72" alt="Ruaku1352" /></a>
+  <a href="https://github.com/Kannii0620"><img src="https://github.com/Kannii0620.png?size=100" width="72" height="72" alt="Kannii0620" /></a>
+  <a href="https://github.com/Kaho-Sumikawa"><img src="https://github.com/Kaho-Sumikawa.png?size=100" width="72" height="72" alt="Kaho-Sumikawa" /></a>
 </div>
 
 ---
