@@ -188,7 +188,7 @@ flowchart TB
     Photo --> Object
 ```
 
-写真貼り付け用JPEGは、背景を含む2L判横の画像一式です。物理出力の詳しい寸法と組み立ては、[物理出力仕様書](physical-output-specification-tornado2026.md)を参照してください。
+写真貼り付け用JPEGは、背景を含む2L判横の画像一式です。物理出力の詳しい寸法と組み立ては、[物理出力仕様書](physical-output.md)を参照してください。
 
 ## 12. フロントエンド実装
 

@@ -31,13 +31,15 @@ flowchart LR
 
 | 資料 | 内容 |
 | --- | --- |
-| [システム仕様書](system-specification-tornado2026.md) | 作品づくりを支える全体構成とデータの流れ |
-| [Artwork Data仕様書](artwork-data-specification-tornado2026.md) | 一つの作品を表すデータ、座標、奥行き、素材の仕様 |
-| [フロントエンド仕様書](frontend-specification-tornado2026.md) | 写真選択から完成までの画面と操作 |
-| [バックエンド仕様書](backend-specification-tornado2026.md) | 生成、進捗、作品データ、出力データの受け渡し |
-| [AI・画像処理仕様書](ai-image-processing-specification-tornado2026.md) | 写真理解、要素抽出、構成提案、品質確認の流れ |
-| [物理出力仕様書](physical-output-specification-tornado2026.md) | 立体レイヤーアートと写真貼り付け用データの仕様 |
-| [ギャラリー](gallery.md) | Tornado 2026で発表した作品とプロダクトイメージ |
+| [システム仕様書](specifications/system.md) | 全体構成、非同期処理、公開API、クラウド構成 |
+| [Artwork Data仕様書](specifications/artwork-data.md) | JSONモデル、座標変換、奥行き、素材の仕様 |
+| [フロントエンド仕様書](specifications/frontend.md) | React、Three.js、Konvaによる写真選択・3D確認・2D編集 |
+| [バックエンド仕様書](specifications/backend.md) | FastAPI、ジョブ、素材配信、物理出力API |
+| [AI・画像処理仕様書](specifications/ai-image-processing.md) | Gemini、EfficientSAM-Ti、マスク品質、構図生成 |
+| [物理出力仕様書](specifications/physical-output.md) | STLメッシュ、2L印刷、製造データ検証 |
+| [ギャラリー](showcase/gallery.md) | Tornado 2026で発表した作品とプロダクトイメージ |
+| [開発ガイド](guides/development.md) | ローカルでのセットアップと共通ルール |
+| [デプロイガイド](guides/deployment.md) | Firebase HostingとCloud Runへの公開手順 |
 
 ## 提供機能
 

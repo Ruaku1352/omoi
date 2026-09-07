@@ -26,7 +26,7 @@
   ### クイックリンク
 
   [![技術仕様書](https://img.shields.io/badge/技術仕様書-詳細ドキュメント-blue?style=for-the-badge)](./docs/README.md)
-  [![ギャラリー](https://img.shields.io/badge/ギャラリー-発表資料-green?style=for-the-badge)](./docs/gallery.md)
+  [![ギャラリー](https://img.shields.io/badge/ギャラリー-発表資料-green?style=for-the-badge)](./docs/showcase/gallery.md)
   [![Live Demo](https://img.shields.io/badge/Live%20Demo-omoi-4285F4?style=for-the-badge&logo=firebase&logoColor=white)](https://omoi-506412.web.app/)
 
 </div>
@@ -37,7 +37,7 @@
 
 - [Live Demo](#live-demo)
 - [🎉 Tornado 2026 🎉](#-tornado-2026-)
-- [開発メンバー](#開発メンバー)
+- [Contributors](#contributors)
 - [製品概要](#製品概要)
   - [背景（製品開発のきっかけ・課題など）](#背景製品開発のきっかけ課題など)
   - [製品説明（具体的な製品の説明）](#製品説明具体的な製品の説明)
@@ -64,16 +64,14 @@
 
 omoiは、Tornado 2026にて **NTTレゾナントテクノロジー賞** をいただきました。
 
-## 開発メンバー
+## Contributors
 
-| 名前 | 担当 |
-| :--- | :--- |
-| 担当者 | AI・画像処理 |
-| 担当者 | Design / UI |
-| 担当者 | Physical Output |
-| 担当者 | Backend |
-| 担当者 | 横断支援・開発基盤 |
-| 担当者 | Frontend |
+<div align="center">
+  <a href="https://github.com/Soki0909"><img src="https://github.com/Soki0909.png?size=100" width="72" height="72" alt="Soki0909" /></a>
+  <a href="https://github.com/takonami28-byte"><img src="https://github.com/takonami28-byte.png?size=100" width="72" height="72" alt="takonami28-byte" /></a>
+  <a href="https://github.com/indo40722"><img src="https://github.com/indo40722.png?size=100" width="72" height="72" alt="indo40722" /></a>
+  <a href="https://github.com/Ruaku1352"><img src="https://github.com/Ruaku1352.png?size=100" width="72" height="72" alt="Ruaku1352" /></a>
+</div>
 
 ---
 
@@ -167,38 +165,54 @@ omoiは、元の記録にないものをAIが新たに描き加えるのでは�
 ### Tornado 2026版
 
 - **[プロダクト仕様書](./docs/README.md)** - omoiの全体像と作品づくりの流れ
-- **[Artwork Data仕様書](./docs/artwork-data-specification-tornado2026.md)** - 画面と実物をつなぐ作品構成
-- **[フロントエンド仕様書](./docs/frontend-specification-tornado2026.md)** - 写真選択、3D確認、2D微調整、完成までの体験
-- **[バックエンド仕様書](./docs/backend-specification-tornado2026.md)** - 作品生成、進行状況、出力データの受け渡し
-- **[AI・画像処理仕様書](./docs/ai-image-processing-specification-tornado2026.md)** - 写真理解、要素抽出、構成提案
-- **[物理出力仕様書](./docs/physical-output-specification-tornado2026.md)** - STL・写真プリント用データから立体作品へ至る流れ
+- **[Artwork Data仕様書](./docs/specifications/artwork-data.md)** - 画面と実物をつなぐ作品構成
+- **[フロントエンド仕様書](./docs/specifications/frontend.md)** - 写真選択、3D確認、2D微調整、完成までの体験
+- **[バックエンド仕様書](./docs/specifications/backend.md)** - 作品生成、進行状況、出力データの受け渡し
+- **[AI・画像処理仕様書](./docs/specifications/ai-image-processing.md)** - 写真理解、要素抽出、構成提案
+- **[物理出力仕様書](./docs/specifications/physical-output.md)** - STL・写真プリント用データから立体作品へ至る流れ
 
 ## 📸 ギャラリー
 
 Tornado 2026の発表資料に含まれる、プロダクトの考え方、入力から作品への変換、構成図はギャラリーページにまとめています。
 
-**[ギャラリーページを見る](./docs/gallery.md)**
+**[ギャラリーページを見る](./docs/showcase/gallery.md)**
 
 ## 開発技術
 
-### 活用した技術
+<div align="center">
 
-| カテゴリ | 技術スタック | 用途 |
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-8.2-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev/)
+[![Three.js](https://img.shields.io/badge/Three.js-r185-000000?style=for-the-badge&logo=threedotjs&logoColor=white)](https://threejs.org/)
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.139-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Gemini](https://img.shields.io/badge/Gemini-Developer_API-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
+[![Firebase](https://img.shields.io/badge/Firebase-Hosting-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Google Cloud](https://img.shields.io/badge/Google_Cloud-Cloud_Run-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
+
+</div>
+
+| 区分 | 技術 | 実装上の役割 |
 | :--- | :--- | :--- |
-| **Frontend** | React / TypeScript / Vite | 写真入力、生成結果の表示、作品編集UI |
-| **3D / 2D表現** | three / React Three Fiber / Konva | 立体プレビューと2D編集 |
-| **Backend** | Python / FastAPI / Pydantic | 生成の受け付け、作品データと素材の提供 |
-| **AI・画像処理** | Gemini / EfficientSAM-Ti / ONNX Runtime | 意味理解、要素選定、透明Layer生成 |
-| **Hosting** | Firebase Hosting / Cloud Run | Frontend・BackendのDeploy Unit |
+| **Frontend** | TypeScript 6 / React 19 / Vite 8 | 写真入力、生成状態、作品のWorking Copy、ダウンロード画面 |
+| **3D Preview** | Three.js r185 / React Three Fiber 9 / Drei 10 | RGBA PNGをテクスチャにしたPlane、OrbitControls、奥行き順の可視化 |
+| **2D Editor** | Konva 10 / React Konva 19 | ドラッグ、縦横比を保つ拡大縮小、前後順の再計算 |
+| **画像入力** | heic2any / Canvas API | HEIC・HEIFのPNG変換、長辺2,048 pxへの縮小 |
+| **Backend** | Python 3.13 / FastAPI 0.139 / Pydantic 2 | multipart API、JSON Schemaとの型整合、非同期ジョブ、エラー応答 |
+| **意味理解** | Gemini Developer API / Structured Output | 写真群から候補・対象範囲・構図をJSONとして生成 |
+| **輪郭抽出** | EfficientSAM-Ti / ONNX Runtime / NumPy / SciPy / Pillow | bboxを手がかりにマスクを生成し、穴・微小成分を補正してRGBA PNG化 |
+| **物理出力** | Pillow / 三角形メッシュ / ASCII STL | 2L判横のレイヤー部品、番号付き台座、PDF、JPEGを生成 |
+| **クラウド** | Firebase Hosting / Cloud Run / Firestore / Cloud Storage / Cloud Tasks | 静的配信、API実行、ジョブ状態、素材配信、非同期実行 |
 
 ### 独自の設計
 
 | 設計 | 概要 | 仕様書 |
 | :--- | :--- | :--- |
-| **Artwork Data** | AI、Backend、Frontend、物理出力で共有する、作品構成の唯一の正本 | [システム仕様書](./docs/system-specification-tornado2026.md) |
-| **Asset Manifest** | Artwork Dataから実行時URLを分離し、Layer Assetを解決する仕組み | [バックエンド仕様書](./docs/backend-specification-tornado2026.md) |
-| **編集可能な作品構成** | 一枚の完成画像で終わらせず、位置・大きさ・前後関係を持つLayerとして扱う | [フロントエンド仕様書](./docs/frontend-specification-tornado2026.md) |
-| **物理出力への接続** | 画面で確認・編集した同じ作品データを、物理作品の入力として使う | [物理出力仕様書](./docs/physical-output-specification-tornado2026.md) |
+| **Artwork Data** | AI、Backend、Frontend、物理出力で共有する、作品構成の唯一の正本 | [システム仕様書](./docs/specifications/system.md) |
+| **Asset Manifest** | Artwork Dataから実行時URLを分離し、Layer Assetを解決する仕組み | [バックエンド仕様書](./docs/specifications/backend.md) |
+| **編集可能な作品構成** | 一枚の完成画像で終わらせず、位置・大きさ・前後関係を持つLayerとして扱う | [フロントエンド仕様書](./docs/specifications/frontend.md) |
+| **物理出力への接続** | 画面で確認・編集した同じ作品データを、物理作品の入力として使う | [物理出力仕様書](./docs/specifications/physical-output.md) |
 
 ## UI・デザイン
 

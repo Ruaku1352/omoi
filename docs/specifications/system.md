@@ -172,7 +172,7 @@ flowchart LR
     Manufacture --> Object[2L判の立体レイヤーアート]
 ```
 
-物理出力の標準サイズは2L判横の178 × 127 mmです。レイヤー部品と台座の詳細は、[物理出力仕様書](physical-output-specification-tornado2026.md)に記載しています。
+物理出力の標準サイズは2L判横の178 × 127 mmです。レイヤー部品と台座の詳細は、[物理出力仕様書](physical-output.md)に記載しています。
 
 ## 11. 利用者の写真を扱うための配慮
 

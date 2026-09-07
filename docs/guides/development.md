@@ -1,6 +1,6 @@
 # Development Conventions
 
-ローカル開発と並行作業で共有する約束をまとめます。実装時の正本は[AGENTS.md](../AGENTS.md)であり、この文書はREADMEから移した開始時の案内です。
+ローカル開発と並行作業で共有する約束をまとめます。実装時の正本は[AGENTS.md](../../AGENTS.md)であり、この文書はREADMEから移した開始時の案内です。
 
 ## 情報源の優先順位
 
@@ -10,7 +10,7 @@
 | 作るもの | Drive「要件定義」 |
 | 技術的な決定と状態ラベル | Drive「技術設計」 |
 | 実際のデータ形・API | [contracts/](../contracts/) |
-| Agentの実装ルール | [AGENTS.md](../AGENTS.md) と `skills/*/SKILL.md` |
+| Agentの実装ルール | [AGENTS.md](../../AGENTS.md) と `skills/*/SKILL.md` |
 
 担当本人が自分の処理を「Input → 処理 → Output」で説明できれば、担当内で完結する実装は開始できます。共通技術設計、Artwork Data、API・Protocol、MVP Scope、他担当の実装前提、費用に影響する変更は公開チャンネルで共有してから進めます。
 
@@ -43,15 +43,15 @@ python scripts/validate_contracts.py path/to/generate-response.json
 
 `contracts/`、API、Repository Top Level、共通Stack、P0スコープ、費用に影響する変更は、担当内だけで確定しません。公開チャンネルで共有してから進めます。
 
-変更が合意された場合は、同じ変更単位でSchema・Mock・[AGENTS.md](../AGENTS.md)・関連Skillsを更新します。破壊的変更では`schemaVersion`を上げます。
+変更が合意された場合は、同じ変更単位でSchema・Mock・[AGENTS.md](../../AGENTS.md)・関連Skillsを更新します。破壊的変更では`schemaVersion`を上げます。
 
 ## ドキュメントの置き方
 
 - README: プロダクト概要、最初の導線、開発開始に必要な最小情報
-- `docs/README.md`: システム仕様書の入口と領域別仕様書の一覧
-- `docs/system-specification-tornado2026.md`: Deploy Unitと責務境界の概要
-- `docs/development-guide.md` / `docs/deployment-guide.md`: 開発・デプロイ資料
-- `docs/ai/`: AI処理の設計、評価、調査資料
+- `docs/README.md`: 技術資料の入口と領域別仕様書の一覧
+- `docs/specifications/system.md`: Deploy Unitと責務境界の概要
+- `docs/guides/development.md` / `docs/guides/deployment.md`: 開発・デプロイ資料
+- `docs/archive/ai-research/ai/`: AI処理の設計、評価、調査資料
 - 各Deploy UnitのREADME: そのUnit固有のセットアップと実装範囲
 
 PoCの入出力や発表素材は`poc-images/`、`poc-output/`、`assets/`に保管し、実装ドキュメントと混在させません。
