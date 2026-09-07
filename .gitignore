@@ -1,8 +1,10 @@
 # Secret — 絶対にCommitしない
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
 *.pem
+*.key
+*.p12
+*.pfx
 *-service-account*.json
 credentials.json
 
@@ -40,8 +42,18 @@ Thumbs.db
 # 共通Fixtureとして全担当が同じものを使うため contracts/assets/ は追跡する）
 /tmp/
 
-poc-images/
-poc-output/
-backend/.models/
+# ローカルPoC・モデルキャッシュ
+# 入力データ、評価出力、デバッグ画像、調査用の鍵を含み得るため追跡しない。
+# READMEで利用する公開用の発表画像は assets/ に置き、こちらには含めない。
+/poc-images/
+/poc-output/
+/backend/.models/
 
+# ルート直下で行う一時調査メモ
 prompt.md
+
+# Test / coverage artifacts
+coverage/
+.coverage
+htmlcov/
+*.tsbuildinfo
