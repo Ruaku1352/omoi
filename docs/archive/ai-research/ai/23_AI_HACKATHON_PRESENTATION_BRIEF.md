@@ -180,8 +180,8 @@ private raw mask 7枚でのclosed-hole fill比較では、同一output hashを�
 
 ## 11. 発表者向け根拠メモ（公開資料へは不要）
 
-- 現行の速度改善計画: `docs/ai/22_AI_PERFORMANCE_OPTIMIZATION_PLAN.md`
-- 実行記録・計測根拠: `docs/ai/19_AI_EXECUTION_BACKLOG.md` §8.68〜§8.76
+- 現行の速度改善計画: `docs/archive/ai-research/ai/22_AI_PERFORMANCE_OPTIMIZATION_PLAN.md`
+- 実行記録・計測根拠: `docs/archive/ai-research/ai/19_AI_EXECUTION_BACKLOG.md` §8.68〜§8.76
 - 実装: `backend/ai/gemini.py`、`backend/ai/segmentation.py`、`backend/ai/image_ops.py`
 - 決定論的benchmark script: `scripts/run_deterministic_segmentation_benchmark.py`
 - private速度artifact: `poc-output/performance-optimization-*/`

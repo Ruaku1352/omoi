@@ -9,7 +9,7 @@
 | 全体像・共通前提 | Drive「ドパガキ向け_5分でわかる設計理解」 |
 | 作るもの | Drive「要件定義」 |
 | 技術的な決定と状態ラベル | Drive「技術設計」 |
-| 実際のデータ形・API | [contracts/](../contracts/) |
+| 実際のデータ形・API | [contracts/](../../contracts/) |
 | Agentの実装ルール | [AGENTS.md](../../AGENTS.md) と `skills/*/SKILL.md` |
 
 担当本人が自分の処理を「Input → 処理 → Output」で説明できれば、担当内で完結する実装は開始できます。共通技術設計、Artwork Data、API・Protocol、MVP Scope、他担当の実装前提、費用に影響する変更は公開チャンネルで共有してから進めます。

@@ -113,7 +113,7 @@ union後に大きな分離成分が残る
 
 | 日付 | Commit / Artifact | 内容 | PR / Push状態 |
 | --- | --- | --- | --- |
-| 2026-08-24〜27 | `d500cd7`, `93f0883`, `fac2ef3` | Model選定、Cloud Run制約、作品品質Gap、評価workflowを`docs/ai/`へ追加。 | main反映済み |
+| 2026-08-24〜27 | `d500cd7`, `93f0883`, `fac2ef3` | Model選定、Cloud Run制約、作品品質Gap、評価workflowを`docs/archive/ai-research/ai/`へ追加。 | main反映済み |
 | 2026-08-31 | `poc-output/architecture-ab-*` | 親`cedb1a6`と`43b0e4f`の固定6ケースA/B。architectureは親1/3、candidate 3/3が4 Layerへ到達し、非architectureは両variant 3/3が到達した。各ケース1回のローカル試行で、実効Model記録もないため改善の示唆に留める。現行Cloud Run条件・Codex上の画像確認・人手目視での再確認はP0。 | private検証、PR対象外 |
 | 2026-08-31 | `poc-output/user-evaluation-*` | 匿名化した候補・source・bbox・mask・Layer・構図を人手評価できるpackage。 | private検証、PR対象外 |
 | 2026-09-01 | `poc-output/kanazawa-micro-island-evaluation-*` | 金沢5枚、3.7 Flash設定で人物Maskの飛び地0.4788%を削除して4 Layer生成、Contract validation成功。 | private検証。実装`4189159`は未PR |

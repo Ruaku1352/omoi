@@ -281,7 +281,7 @@ uv --directory backend run python ../scripts/fetch_efficientsam_onnx.py \
 gcloud builds submit --config cloudbuild.real-ai.yaml .
 ```
 
-Build設定はリポジトリルートの [`cloudbuild.real-ai.yaml`](../cloudbuild.real-ai.yaml)。
+Build設定はリポジトリルートの [`cloudbuild.real-ai.yaml`](../../../cloudbuild.real-ai.yaml)。
 生成されるImageは次の1つ。
 
 ```
@@ -385,13 +385,13 @@ Frontendから通しで確認する場合は `--allow-unauthenticated` が要る
 
 | 設定 | 値 | 根拠 |
 |---|---|---|
-| `--cpu` / `--memory` | 1 / 2Gi | [`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`](ai/09_CLOUD_RUN_CONSTRAINTS.md) が正本 |
+| `--cpu` / `--memory` | 1 / 2Gi | [`docs/archive/ai-research/ai/09_CLOUD_RUN_CONSTRAINTS.md`](../ai-research/ai/09_CLOUD_RUN_CONSTRAINTS.md) が正本 |
 | `--min-instances` | 0 | 同上 |
 | `--concurrency` | **4** | 非同期化に伴い変更。理由は §6.7 |
 | `--max-instances` | 1 | LocalDirAssetStoreが複数Instanceで破綻するため上げられない（§4 / §6.7） |
 | `--timeout` | 600 | **初回測定候補であってFIX値ではない** |
 
-`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md` のConcurrency 1 は同期実行前提の値。
+`docs/archive/ai-research/ai/09_CLOUD_RUN_CONSTRAINTS.md` のConcurrency 1 は同期実行前提の値。
 非同期化でWorkerとPollingが同一Instanceに同居するため4へ上げている（§6.7）。
 CPU / Memory / Min instances は同Documentが正本のまま。
 
@@ -711,7 +711,7 @@ GCS化はBucket名・URL方式・保持期間がチーム確認待ちで、共�
 
 | # | 手段 | 制約 |
 |---|---|---|
-| 1 | `--memory` を 4Gi へ上げる | **1 vCPUでの上限が4GiB**（`docs/ai/09_CLOUD_RUN_CONSTRAINTS.md`）。まずここ |
+| 1 | `--memory` を 4Gi へ上げる | **1 vCPUでの上限が4GiB**（`docs/archive/ai-research/ai/09_CLOUD_RUN_CONSTRAINTS.md`）。まずここ |
 | 2 | `--cpu=2 --memory=8Gi` へ上げる | 2 vCPUなら8GiBまで。費用が上がる |
 | 3 | `--concurrency` を 2〜3 へ下げる | Pollingの詰まりと引き換え。Frontendのポーリング間隔を延ばす調整とセット |
 | 4 | AssetをGCS化して `--max-instances` を上げる | **共通契約に関わるためチーム合意が先**（§5） |

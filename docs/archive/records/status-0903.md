@@ -22,7 +22,7 @@ Real AI・非同期化・Frontend のポーリングまで、**コードはす�
 
 ## 2. Provisioning の途中経過
 
-`docs/deploy.md` §3.1 / §6.3–6.6 に沿って進めている。
+`docs/archive/records/deploy-notes.md` §3.1 / §6.3–6.6 に沿って進めている。
 
 ### 完了（Editor 権限でできた分）
 
@@ -108,7 +108,7 @@ Schema 上 `pending` は `stage` を持てないが、実装が `pending` / `pro
 
 ### Deploy 手順の不整合
 
-Secret 名が §3.2 と §6.7 で食い違っており（`GEMINI_API_KEY` / `gemini-api-key`）、そのままでは Deploy が通らない状態だった。`docs/deploy.md` の統合時にあわせて修正済み。
+Secret 名が §3.2 と §6.7 で食い違っており（`GEMINI_API_KEY` / `gemini-api-key`）、そのままでは Deploy が通らない状態だった。`docs/archive/records/deploy-notes.md` の統合時にあわせて修正済み。
 
 ---
 
@@ -169,7 +169,7 @@ E2E 確認のたびに一時的に開ける必要があり、その都度担当�
 
 ## 7. 参照
 
-- Deploy 手順一式：`docs/deploy.md` §3.1（事前準備）→ §6.3–6.6（Provisioning）→ §3.5（Build / Deploy）→ §6.8（確認）
+- Deploy 手順一式：`docs/archive/records/deploy-notes.md` §3.1（事前準備）→ §6.3–6.6（Provisioning）→ §3.5（Build / Deploy）→ §6.8（確認）
 - どの手順が Owner 権限を必要とするかは §3.5 冒頭の実行順マップに記載
 - 非同期 Job の契約：`contracts/job-status-response.schema.json` / `contracts/generate-accepted-response.schema.json`
 - 動作確認用 Mock：`contracts/mock/job-status-{processing,completed,failed}.json`

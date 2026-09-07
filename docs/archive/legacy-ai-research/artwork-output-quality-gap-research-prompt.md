@@ -62,7 +62,7 @@ https://github.com/Ruaku1352/omoi
 - working tree
 - `backend/ai/*`
 - `contracts/*`
-- `docs/ai/*`
+- `docs/archive/ai-research/ai/*`
 - `scripts/*`
 - AI tests
 - PoC output
@@ -599,7 +599,7 @@ P2
 以下へMarkdownとして保存する。
 
 ```text
-docs/ai/13_ARTWORK_OUTPUT_QUALITY_GAP_REPORT.md
+docs/archive/ai-research/ai/13_ARTWORK_OUTPUT_QUALITY_GAP_REPORT.md
 ```
 
 既に同名ファイルが存在する場合は内容を確認し、
@@ -899,7 +899,7 @@ Geminiの実出力自体を確認しないと判断できない場合は、
 今回変更してよいのは、原則として
 
 ```text
-docs/ai/13_ARTWORK_OUTPUT_QUALITY_GAP_REPORT.md
+docs/archive/ai-research/ai/13_ARTWORK_OUTPUT_QUALITY_GAP_REPORT.md
 ```
 
 のみ。

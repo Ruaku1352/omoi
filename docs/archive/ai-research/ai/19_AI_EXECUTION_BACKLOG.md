@@ -1808,7 +1808,7 @@ component=1 / hole=0だけでは、被写体と連結した背景混入か意図
 
 ### 8.59 資料20との現行状態照合 — 更新は行わず差異を記録（2026-09-04）
 
-資料21を優先して`docs/ai/20_AI_PROCESSING_SEQUENCE.md`とcurrent implementationを照合した。資料20は
+資料21を優先して`docs/archive/ai-research/ai/20_AI_PROCESSING_SEQUENCE.md`とcurrent implementationを照合した。資料20は
 Git管理外（untracked）の既存ファイルであり、AI側の品質記録先として指定された資料19以外を、明示的な依頼なしに
 上書きしない。従って資料20そのものは変更していない。
 

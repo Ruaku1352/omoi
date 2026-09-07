@@ -42,7 +42,7 @@ poc-output/final-mvp/frontend-debug-bundle-20260826-122150/
 ```
 
 このbundleの `README.md` は「Real AIへ入力した5枚の写真とmemoryTextから生成」と明記する。
-`MOCK_AI` の出力は本評価に使用していない。比較用に `docs/ai/12_MVP_POC_RESULT.md` と
+`MOCK_AI` の出力は本評価に使用していない。比較用に `docs/archive/ai-research/ai/12_MVP_POC_RESULT.md` と
 過去のPoC出力も確認したが、主評価を古い5 layer / 非2L結果へ混ぜていない。
 
 | Evidence | 用途 |
@@ -76,7 +76,7 @@ poc-output/final-mvp/frontend-debug-bundle-20260826-122150/
 ## 4. Functional Requirements
 
 本レビューは `AGENTS.md` のArtwork SSOT、P0の4-layer 2L Landscape、及び
-`docs/ai/08_ACCEPTANCE_CRITERIA.md` のSemantic / Segmentation / Layer / Composition /
+`docs/archive/ai-research/ai/08_ACCEPTANCE_CRITERIA.md` のSemantic / Segmentation / Layer / Composition /
 Contract受入項目を、画像品質の観点まで具体化して評価した。
 
 評価記号は **○ 問題なし / △ 改善余地あり / × 明確な問題 / ? 判断材料不足**。
