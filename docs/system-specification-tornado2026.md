@@ -13,6 +13,9 @@
 9. [生成中の案内](#9-生成中の案内)
 10. [デジタルと実物の対応](#10-デジタルと実物の対応)
 11. [利用者の写真を扱うための配慮](#11-利用者の写真を扱うための配慮)
+12. [技術構成と責務境界](#12-技術構成と責務境界)
+13. [非同期処理とクラウド構成](#13-非同期処理とクラウド構成)
+14. [公開インターフェース](#14-公開インターフェース)
 
 ## 1. 概要
 
@@ -178,3 +181,97 @@ flowchart LR
 - エラー時に、認証情報、内部の処理内容、利用者の写真そのものを画面へ表示しません。
 - 作品の編集では、写真を再度AIへ送らず、確定した作品構成とレイヤー素材を使います。
 - 物理出力では、作品構成と必要なレイヤー素材を使い、製造条件によって思い出の構図を書き換えません。
+
+## 12. 技術構成と責務境界
+
+omoiは、ブラウザ上の対話、作品生成、AI・画像処理、物理出力を分離しつつ、共通の作品データで接続します。これにより、長時間かかるAI処理を画面操作から切り離し、同じ作品構成を3D表示とSTL生成へ渡せます。
+
+| 層 | 使用技術 | 実現すること |
+| --- | --- | --- |
+| Webクライアント | TypeScript、React 19、Vite | 写真アップロード、状態管理、編集画面、出力ファイルのダウンロード |
+| 3D表示 | Three.js、React Three Fiber、Drei | 透過PNGをテクスチャとする平面レイヤー、OrbitControlsによる回転・ズーム |
+| 2D編集 | Konva、React Konva | ドラッグ、Transformerによる拡大縮小、レイヤー順の変更 |
+| API | Python 3.13、FastAPI、Pydantic | multipart入力、型検証、非同期ジョブ、エラー応答 |
+| AI | Gemini Developer API | 写真群の意味理解、候補選定、構図計画をJSONとして取得 |
+| 輪郭抽出 | EfficientSAM-Ti、ONNX Runtime、NumPy、SciPy、Pillow | 対象範囲からマスクを作り、透明PNGへ変換・品質確認 |
+| クラウド | Firebase Hosting、Cloud Run、Firestore、Cloud Storage、Cloud Tasks | 静的Web配信、API実行、ジョブ状態、画像一時保存、非同期実行 |
+| 物理出力 | Python、Pillow、STL生成 | 輪郭を一定厚の部品へ変換し、台座・印刷レイアウトを生成 |
+
+```mermaid
+flowchart LR
+    Browser[React Webアプリ] -->|HTTPS / multipart| API[FastAPI on Cloud Run]
+    API -->|構造化JSON| Gemini[Gemini Developer API]
+    API -->|bbox| Sam[EfficientSAM-Ti on ONNX Runtime]
+    API --> Store[(Firestore / Cloud Storage)]
+    API --> Queue[Cloud Tasks]
+    Queue --> API
+    API -->|Artwork Data + Asset Manifest| Browser
+    Browser -->|確定Artwork + PNG| Export[物理出力]
+    Export --> STL[STL / PDF / JPEG]
+```
+
+## 13. 非同期処理とクラウド構成
+
+写真の理解とセグメンテーションは、HTTPリクエスト中に完了を待つには時間がかかる処理です。そのため生成要求は受け付け時点で `202 Accepted` を返し、ジョブIDを使って状態を取得します。
+
+```mermaid
+sequenceDiagram
+    participant C as Webクライアント
+    participant A as FastAPI
+    participant J as Firestore
+    participant Q as Cloud Tasks
+    participant W as 生成Worker
+    C->>A: POST /api/v1/artworks/generate
+    A->>J: Jobをpendingで記録
+    A->>Q: 実行を登録
+    A-->>C: 202 { jobId }
+    Q->>W: 内部実行を要求
+    W->>J: processing / stageを更新
+    W->>W: Gemini・EfficientSAM-Tiで生成
+    W->>J: completed + resultを記録
+    loop 2秒ごと
+        C->>A: GET /api/v1/jobs/{jobId}
+        A->>J: Jobを取得
+        A-->>C: 状態または完成結果
+    end
+```
+
+ローカル環境ではメモリ上のジョブストアとその場で実行するキューを使えるため、クラウドの外部サービスを必要とせず同じAPI契約を検証できます。クラウド環境ではFirestoreにジョブ状態、Cloud Storageに入力画像・生成素材、Cloud Tasksに実行要求を分離して保持します。
+
+## 14. 公開インターフェース
+
+### 14.1 作品生成
+
+`POST /api/v1/artworks/generate` は `multipart/form-data` を受け取ります。
+
+| フィールド | 型 | 内容 |
+| --- | --- | --- |
+| `photos` | 複数ファイル | JPEG、PNG、WebP。1枚以上、最大20枚 |
+| `memoryText` | 文字列 | 任意。写真の文脈を補う説明 |
+
+受付時の応答は次の形です。
+
+```json
+{ "jobId": "a7d0d90b6e4f4f7e9f1b2c3d4e5f6789" }
+```
+
+1枚は15 MiBまで、合計は60 MiBまでを受け付けます。HEIC／HEIFはブラウザ側でPNGへ変換してからこの形式で送信します。
+
+### 14.2 生成状態と完了結果
+
+`GET /api/v1/jobs/{jobId}` は、`pending`、`processing`、`completed`、`failed` を返します。処理中は `analyzing`、`extracting`、`composing`、`finalizing` の段階を持ちます。完了時の結果は、作品構成と素材の参照情報です。
+
+```json
+{
+  "jobId": "a7d0d90b6e4f4f7e9f1b2c3d4e5f6789",
+  "status": "completed",
+  "result": {
+    "artwork": { "schemaVersion": "1.0", "artworkId": "...", "canvas": { "aspectRatio": 1.401575 } },
+    "assetManifest": { "assets": [{ "assetId": "...", "url": "https://...", "mimeType": "image/png", "widthPx": 1024, "heightPx": 768 }] }
+  }
+}
+```
+
+### 14.3 物理出力
+
+`POST /api/v1/physical-output/exports` は、確定した作品構成のJSONと、各レイヤー画像を `multipart/form-data` で受け取ります。`outputFormat` は `stlZip`、`photoPdf`、`photoJpegZip` のいずれかです。画像メタデータと実際に送る画像のピクセル寸法を照合してから、出力物を生成します。

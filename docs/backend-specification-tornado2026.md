@@ -12,6 +12,9 @@
 8. [完成時に受け取るもの](#8-完成時に受け取るもの)
 9. [物理出力の受け渡し](#9-物理出力の受け渡し)
 10. [利用者に伝えるエラー](#10-利用者に伝えるエラー)
+11. [API契約と入力検証](#11-api契約と入力検証)
+12. [非同期実行の実装](#12-非同期実行の実装)
+13. [素材配信とセキュリティ](#13-素材配信とセキュリティ)
 
 ## 1. 概要
 
@@ -185,3 +188,98 @@ flowchart TB
     Check -->|再試行できる| RetryGuide[再試行の案内]
     Check -->|出力できない| OutputGuide[作品・素材の確認案内]
 ```
+
+## 11. API契約と入力検証
+
+APIはFastAPIとPydanticで実装し、入出力の型をJSON SchemaとPydanticモデルの両方で検証します。作品生成、ジョブ状態、生成成功結果、物理出力の境界を分けることで、時間のかかるAI処理とブラウザ操作を疎結合にします。
+
+| API | HTTP | 入力 | 成功時の出力 |
+| --- | --- | --- | --- |
+| `/api/v1/artworks/generate` | POST | `photos[]`、任意の`memoryText` | `202 { jobId }` |
+| `/api/v1/jobs/{jobId}` | GET | ジョブID | 状態、処理段階、完了時の作品構成と素材一覧 |
+| `/api/v1/physical-output/exports` | POST | Artwork Data JSON、レイヤー画像、出力形式 | STL ZIP、PDF、またはJPEG ZIP |
+
+### 11.1 作品生成の入力制約
+
+| 項目 | 制約 |
+| --- | --- |
+| 写真形式 | JPEG、PNG、WebP |
+| 写真枚数 | 1〜20枚 |
+| 1枚あたりの上限 | 15 MiB |
+| 合計サイズの上限 | 60 MiB |
+| 思い出テキスト | 任意の文字列 |
+| 生成レイヤー素材 | RGBA PNG |
+
+写真形式、枚数、バイト数を読み込み時に確認します。物理出力では、Artwork Dataが参照する`assetId`とアップロードされた画像ファイル名を対応付け、MIMEタイプとピクセル寸法が一致することを確認します。
+
+### 11.2 エラー形式
+
+失敗時は、すべてのAPIで同じエラー構造を返します。
+
+```json
+{
+  "error": {
+    "code": "PAYLOAD_TOO_LARGE",
+    "message": "写真の合計サイズが大きすぎます。",
+    "retryable": false,
+    "details": null
+  }
+}
+```
+
+| コード | 主な原因 | `retryable` |
+| --- | --- | --- |
+| `INVALID_INPUT` | 必須項目不足、作品構成と素材の不一致 | 状況による |
+| `UNSUPPORTED_MEDIA_TYPE` | 非対応の画像形式 | false |
+| `PAYLOAD_TOO_LARGE` | 枚数またはファイルサイズの上限超過 | false |
+| `AI_RATE_LIMITED` | AIサービスの利用制限 | true |
+| `AI_TIMEOUT` | AI処理の応答待ち超過 | true |
+| `AI_FAILED` | AI処理を完了できない | 状況による |
+| `ASSET_BUILD_FAILED` | 素材・印刷データの生成に失敗 | true |
+| `INTERNAL_ERROR` | 想定外の処理失敗 | true |
+
+## 12. 非同期実行の実装
+
+生成ジョブは、状態を保持する`JobStore`、入力写真を一時的に扱う`JobInputStore`、実行を依頼する`TaskQueue`、生成本体を呼び出す`JobRunner`で構成します。これらはプロトコルとして抽象化されているため、ローカル実行とクラウド実行で同じAPI応答を保てます。
+
+```mermaid
+flowchart TB
+    Request[生成リクエスト] --> JobStore[JobStore]
+    Request --> Queue[TaskQueue]
+    Queue --> InputStore[JobInputStore]
+    Queue --> Runner[JobRunner]
+    Runner --> Generator[AI・画像処理]
+    Generator --> AssetStore[AssetStore]
+    Runner --> JobStore
+    AssetStore --> Manifest[Asset Manifest]
+    JobStore --> Status[ジョブ状態API]
+```
+
+| 実行要素 | ローカル環境 | クラウド環境 |
+| --- | --- | --- |
+| ジョブ状態 | メモリ | Firestore |
+| 入力写真 | ローカル一時領域 | Cloud Storage |
+| 実行キュー | インライン実行 | Cloud Tasks |
+| 生成ワーカー | 同一プロセス | Cloud Runの内部ワーカーエンドポイント |
+| 生成素材 | ローカル静的配信 | Cloud Storageの公開URLまたは署名付きURL |
+
+ジョブは `pending → processing → completed` または `failed` と遷移します。`processing`中の段階は、解析、抽出、構成、仕上げに対応し、各ジョブIDにひも付けて更新します。Cloud Tasksからの内部実行はトークンで保護し、再試行が発生しても同じジョブIDを使うことで二重実行を避けます。
+
+## 13. 素材配信とセキュリティ
+
+Artwork Dataは素材のURLを直接持たず、`assetId`、MIMEタイプ、幅、高さだけを持ちます。素材の取得先はAsset Manifestで解決します。これにより、作品構成をCloud StorageのURLやブラウザの一時URLに依存させず、素材配信方式を変更できます。
+
+```mermaid
+flowchart LR
+    Artwork[Artwork Data] --> Ref[assetId / mimeType / widthPx / heightPx]
+    Ref --> Manifest[Asset Manifest]
+    Manifest --> URL[URL]
+    URL --> PNG[透明PNG]
+    PNG --> Client[3D表示・2D編集]
+    PNG --> Export[物理出力]
+```
+
+- CORSは許可したWebアプリのOriginだけを受け付けます。
+- Gemini APIキーやCloud Tasksの内部トークンは、ブラウザへ送らずサーバー環境で扱います。
+- Cloud Storageを使う場合は、公開URLまたは有効期限を持つ署名付きURLで素材を配信できます。
+- エラー応答にはスタックトレース、保存先のパス、認証情報、AIサービスの生応答を含めません。

@@ -10,6 +10,7 @@ omoiは、思い出の写真と任意の言葉をもとに、多層の作品を�
 2. [仕様書一覧](#仕様書一覧)
 3. [提供機能](#提供機能)
 4. [作品づくりの原則](#作品づくりの原則)
+5. [技術アーキテクチャ](#技術アーキテクチャ)
 
 ## プロダクトの流れ
 
@@ -74,3 +75,29 @@ flowchart TB
     Review --> Final[そのまま完成]
     Edit --> Final
 ```
+
+## 技術アーキテクチャ
+
+omoiは、生成AIを一枚絵の生成器として使うのではなく、写真群の意味理解・切り抜き・構図・編集・物理出力を分けたパイプラインとして実装しています。
+
+| 段階 | 主要技術 | 生成・処理するもの |
+| --- | --- | --- |
+| 写真入力 | React、TypeScript、heic2any、Canvas API | HEIC変換、画像縮小、`multipart/form-data` |
+| 非同期生成 | FastAPI、Firestore、Cloud Tasks | `jobId`、生成状態、再試行可能なエラー |
+| 意味理解 | Gemini Developer API、Structured Output | 要素候補、対象範囲、ラベル、構図計画 |
+| セグメンテーション | EfficientSAM-Ti、ONNX Runtime | 2値マスク、RGBA PNGのレイヤー素材 |
+| 表示・編集 | Three.js、React Three Fiber、Konva | 3D Plane、2D座標変換、`layerIndex`の再計算 |
+| 物理出力 | Pillow、三角形メッシュ、STL | 2L判横のレイヤー部品、台座、PDF、JPEG |
+
+```mermaid
+flowchart LR
+    A[写真] --> B[Geminiで意味理解]
+    B --> C[EfficientSAM-Tiで輪郭抽出]
+    C --> D[Artwork Data + RGBA PNG]
+    D --> E[Three.jsで3D確認]
+    D --> F[Konvaで2D調整]
+    F --> D
+    D --> G[STL / PDF / JPEG]
+```
+
+詳しい通信契約・データモデル・変換式・品質確認は、各仕様書で個別に説明しています。

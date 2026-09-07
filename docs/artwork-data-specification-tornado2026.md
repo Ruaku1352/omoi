@@ -12,6 +12,8 @@
 8. [座標の見方](#8-座標の見方)
 9. [素材一覧の役割](#9-素材一覧の役割)
 10. [編集したときに守ること](#10-編集したときに守ること)
+11. [JSONモデルと検証規則](#11-jsonモデルと検証規則)
+12. [描画座標への変換](#12-描画座標への変換)
 
 ## 1. 作品データの役割
 
@@ -170,3 +172,85 @@ flowchart TB
 | 候補カットへ差し替える | レイヤーの位置、大きさ、奥行き順 |
 
 編集のたびにAIで作り直すのではなく、作品データを直接更新します。そのため、利用者が意図した位置や前後関係をそのまま3D確認と物理出力へ反映できます。
+
+## 11. JSONモデルと検証規則
+
+Artwork DataはJSON Schema Draft 2020-12で定義される機械可読なデータモデルです。ブラウザ、API、AI・画像処理、物理出力が同じフィールド名と意味を共有するため、担当する処理ごとに独自の作品形式へ変換しません。
+
+```json
+{
+  "schemaVersion": "1.0",
+  "artworkId": "artwork-2026-001",
+  "canvas": { "aspectRatio": 1.401575 },
+  "sourcePhotos": [
+    { "sourcePhotoId": "photo-01", "asset": { "assetId": "source-01", "mimeType": "image/jpeg", "widthPx": 3024, "heightPx": 4032 } }
+  ],
+  "layers": [
+    {
+      "layerId": "layer-01",
+      "sourcePhotoId": "photo-01",
+      "sourceLayerId": "subject-01",
+      "asset": { "assetId": "layer-01-png", "mimeType": "image/png", "widthPx": 640, "heightPx": 720 },
+      "label": "人物",
+      "x": 0.5,
+      "y": 0.62,
+      "scale": 0.32,
+      "layerIndex": 2,
+      "replacementCandidates": []
+    }
+  ]
+}
+```
+
+| 規則 | 理由 |
+| --- | --- |
+| `sourcePhotos` と `layers` は1件以上の可変長配列 | 写真数・レイヤー数を作品ごとに変えられるようにする |
+| `x`、`y` は0〜1 | 画面寸法・印刷寸法から独立した配置にする |
+| `scale` は0より大きい値 | レイヤー幅をキャンバス幅に対する比率で表す |
+| `layerIndex` は0から始まる連続した重複なしの整数 | 奥行き順を一意に決める |
+| レイヤー素材は `image/png` | アルファチャンネルを保ち、切り抜き部分を透明にする |
+| 素材のバイナリはJSONに入れない | レスポンスを肥大化させず、画像配信方法を分離する |
+
+JSON Schemaでは個別フィールドの型・範囲・必須性を検証し、アプリケーション側ではレイヤー順が `0..N-1` の連番であること、素材のMIMEタイプとピクセル寸法が一致することを追加で検証します。
+
+## 12. 描画座標への変換
+
+### 12.1 3Dプレビュー
+
+Three.jsではキャンバス幅を1.0とする座標へ変換します。`layerIndex` から得るZ値は、プレビューでレイヤーを見分けるための表示上の距離であり、物理作品のミリメートル値ではありません。
+
+```text
+canvasHeight = 1 / canvas.aspectRatio
+x3d          = x - 0.5
+y3d          = (0.5 - y) × canvasHeight
+z             = layerIndex × previewDepthStep
+width         = scale
+height        = scale × asset.heightPx / asset.widthPx
+```
+
+```mermaid
+flowchart LR
+    Data[x・y・scale・layerIndex] --> Transform[正規化値を3D座標へ変換]
+    Asset[画像の幅・高さ] --> Transform
+    Transform --> Plane[テクスチャ付きPlane]
+    Plane --> Three[Three.js Canvas]
+```
+
+各レイヤー画像はThree.jsのテクスチャとして読み込み、`alphaTest` により透明部分を除いた平面として描画します。両面描画を有効にすることで、回転して裏側から見たときにもレイヤーを確認できます。
+
+### 12.2 2D編集
+
+Konvaはピクセル座標で描画するため、表示時にだけ正規化値をピクセルへ変換し、編集結果を保存するときは比率へ戻します。
+
+```text
+pixelWidth  = scale × stageWidth
+pixelHeight = pixelWidth × asset.heightPx / asset.widthPx
+leftPx      = x × stageWidth - pixelWidth / 2
+topPx       = y × stageHeight - pixelHeight / 2
+
+scale = pixelWidth / stageWidth
+x     = (leftPx + pixelWidth / 2) / stageWidth
+y     = (topPx + pixelHeight / 2) / stageHeight
+```
+
+拡大縮小時には素材の縦横比を固定し、レイヤー全体がキャンバス外へ出ないよう中心位置と最大スケールを補正します。この制約は、2L判の物理出力範囲から部品がはみ出すことを防ぐ役割も持ちます。

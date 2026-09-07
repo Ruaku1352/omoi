@@ -13,6 +13,8 @@
 9. [3D確認と2D調整の関係](#9-3d確認と2d調整の関係)
 10. [操作の境界](#10-操作の境界)
 11. [完成時の出力](#11-完成時の出力)
+12. [フロントエンド実装](#12-フロントエンド実装)
+13. [画像前処理と通信](#13-画像前処理と通信)
 
 ## 1. 体験の全体像
 
@@ -187,3 +189,83 @@ flowchart TB
 ```
 
 写真貼り付け用JPEGは、背景を含む2L判横の画像一式です。物理出力の詳しい寸法と組み立ては、[物理出力仕様書](physical-output-specification-tornado2026.md)を参照してください。
+
+## 12. フロントエンド実装
+
+WebクライアントはTypeScript、React 19、Viteで構成します。画面ごとの状態をReactで管理し、編集結果は正規化されたArtwork Dataとして保持します。画面のピクセル座標やThree.js固有の座標を、作品データとして保存することはありません。
+
+| 領域 | 使用技術 | 実装方法 |
+| --- | --- | --- |
+| アプリケーション | React 19、TypeScript、Vite | 写真選択、生成、プレビュー、編集、完成の画面状態を管理 |
+| 3Dプレビュー | Three.js、React Three Fiber、Drei | `Canvas` 内にレイヤーごとのPlaneを置き、`OrbitControls` で操作 |
+| 2D編集 | Konva、React Konva | `Stage`、`Image`、`Transformer` によりドラッグ・拡大縮小を実装 |
+| HEIC変換 | heic2any | ブラウザ内でHEIC／HEIFをPNGへ変換 |
+| 出力ダウンロード | Fetch API、Blob、FormData | Artwork Dataとレイヤー画像を送信し、ZIPまたはPDFを保存 |
+
+```mermaid
+flowchart TB
+    React[Reactの画面状態] --> Data[Artwork Data]
+    Data --> R3F[React Three Fiber]
+    Data --> Konva[React Konva]
+    R3F --> Preview[3Dプレビュー]
+    Konva --> Editor[2D編集]
+    Editor --> Data
+    Data --> Form[FormData]
+    Form --> API[物理出力API]
+```
+
+### 12.1 3Dプレビュー
+
+レイヤー画像は `useTexture` でGPUテクスチャとして読み込みます。各レイヤーは、Artwork Dataから変換した `x3d`、`y3d`、`z`、幅、高さを持つPlaneです。透明PNGのアルファを `alphaTest = 0.5` で評価し、透明な背景部分を描画しません。カメラ位置は、最も手前のレイヤーのZ値に一定距離を足して求めるため、レイヤー数や奥行きが変わっても全体を確認できます。
+
+立体感を見せるため、表示上の薄いシートをレイヤーごとに重ねます。これは3Dプレビューの見え方のための値であり、出力するSTLの部品厚や台座間隔とは別に扱います。
+
+### 12.2 2D編集
+
+Konvaの`Transformer`は縦横比を固定したままサイズ変更を受け取り、編集結果を `x`、`y`、`scale` に戻します。ドラッグ中もレイヤーの四辺をキャンバス範囲で判定し、位置を制限します。前後順の変更では配列の並びに意味を持たせず、`layerIndex` を再計算して `0..N-1` の連番に正規化します。
+
+```mermaid
+sequenceDiagram
+    participant K as Konva Stage
+    participant G as 座標変換
+    participant D as Artwork Data
+    K->>G: ドラッグ後のleft/top/width (px)
+    G->>G: Canvas範囲と縦横比を確認
+    G->>D: x/y/scaleへ変換して保存
+    D-->>K: 正規化した値で再描画
+    D-->>D: layerIndexを連番へ正規化
+```
+
+## 13. 画像前処理と通信
+
+### 13.1 写真の準備
+
+ブラウザで写真を選ぶと、HEIC／HEIFはPNGへ変換します。それ以外の写真は `createImageBitmap` とCanvasを使い、長辺が2,048 pxを超える場合だけ縦横比を保って縮小します。送信時のJPEG品質は0.85です。これにより、モバイル写真をそのまま送る場合の通信量とAI処理時の画像サイズを抑えます。
+
+```mermaid
+flowchart LR
+    Input[写真ファイル] --> Type{HEIC / HEIF?}
+    Type -->|Yes| Convert[heic2anyでPNGへ変換]
+    Type -->|No| Decode[createImageBitmapでデコード]
+    Convert --> Resize[長辺2,048 pxへ縮小]
+    Decode --> Resize
+    Resize --> Form[FormDataへ追加]
+    Form --> Generate[作品生成API]
+```
+
+### 13.2 非同期生成の通信
+
+作品生成は、`POST /api/v1/artworks/generate` で開始し、返された`jobId`を用いて `GET /api/v1/jobs/{jobId}` を2秒間隔で取得します。ポーリングは最大600秒で打ち切り、通信の中断や失敗は再試行可能性を持つエラーとして画面に渡します。
+
+| 項目 | 値 |
+| --- | --- |
+| 写真送信 | `multipart/form-data` の `photos` と任意の `memoryText` |
+| 受付応答 | HTTP 202 と `jobId` |
+| 状態取得 | HTTP GET、2秒間隔 |
+| 状態 | `pending` / `processing` / `completed` / `failed` |
+| 進行段階 | `analyzing` / `extracting` / `composing` / `finalizing` |
+| 待機上限 | 600秒 |
+
+### 13.3 物理出力の通信
+
+確定後は、使用中レイヤーの画像を`assetId`ごとに取得し、Artwork Dataと一緒に物理出力APIへ送ります。送信画像が大きい場合は、透明度と縦横比を保ったまま縮小し、作品データ中の幅・高さも送信する画像の実寸へ合わせます。これにより、API側で行う画像寸法の整合性検証と、画面で見た構図の両方を保ちます。
