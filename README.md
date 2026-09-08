@@ -61,10 +61,6 @@
 
 **Webアプリ**: https://omoi-506412.web.app/
 
-## 🎉 Tornado 2026 🎉
-
-omoiは、Tornado 2026にて **NTTレゾナントテクノロジー賞** をいただきました。
-
 ## Contributors
 
 <div align="center">
